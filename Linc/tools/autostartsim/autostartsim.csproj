@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-autostartsim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real StartupRegistration, compiled verbatim (D-036 pattern) — plain
+         Microsoft.Win32.Registry + an optional ILogService, no WinUI dependency, so it links
+         into an ordinary net8.0-windows console. LogService.cs is pulled in the same way
+         tools\devicesim already does for an unrelated reason. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\StartupRegistration.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+  </ItemGroup>
+</Project>

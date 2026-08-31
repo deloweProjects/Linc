@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Linc.Desktop.Views.FilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Linc.Desktop.ViewModels">
+
+    <Grid Padding="32">
+        <Border Style="{StaticResource ExpressiveCard}" Padding="20">
+            <Grid RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Toolbar -->
+                <CommandBar
+                    DefaultLabelPosition="Right"
+                    Background="Transparent"
+                    HorizontalAlignment="Left"
+                    IsEnabled="{x:Bind ViewModel.IsNotTransferring, Mode=OneWay}">
+                    <CommandBar.Content>
+                        <DropDownButton
+                            MinWidth="170"
+                            Margin="0,0,8,0"
+                            HorizontalContentAlignment="Left"
+                            ToolTipService.ToolTip="Jump to a top-level location on the phone">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE8B7;" FontSize="15" />
+                                <TextBlock Text="Go to" />
+                            </StackPanel>
+                            <DropDownButton.Flyout>
+                                <MenuFlyout x:Name="RootsFlyout" Opening="OnRootsFlyoutOpening" />
+                            </DropDownButton.Flyout>
+                        </DropDownButton>
+                    </CommandBar.Content>
+                    <AppBarButton Icon="Up" Label="Up" Command="{x:Bind ViewModel.UpCommand}" />
+                    <AppBarButton Icon="Refresh" Label="Refresh" Command="{x:Bind ViewModel.RefreshCommand}" />
+                    <AppBarButton Icon="NewFolder" Label="New folder" Click="OnNewFolderClick" />
+                    <AppBarButton Icon="Upload" Label="Upload here" Click="OnUploadClick" />
+                    <AppBarButton Icon="Send" Label="Share to phone" Click="OnShareToPhoneClick"
+                                  ToolTipService.ToolTip="Send a file to your phone's Share tab" />
+                    <AppBarButton
+                        Icon="Download"
+                        Label="Download"
+                        Command="{x:Bind ViewModel.DownloadCommand}"
+                        IsEnabled="{x:Bind ViewModel.HasSelection, Mode=OneWay}" />
+                    <AppBarButton
+                        Icon="Rename"
+                        Label="Rename"
+                        Click="OnRenameClick"
+                        IsEnabled="{x:Bind ViewModel.HasSelection, Mode=OneWay}" />
+                    <AppBarButton
+                        Icon="Delete"
+                        Label="Delete"
+                        Click="OnDeleteClick"
+                        IsEnabled="{x:Bind ViewModel.HasSelection, Mode=OneWay}" />
+                </CommandBar>
+
+                <!-- Path + loading -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+                    <BreadcrumbBar
+                        ItemsSource="{x:Bind ViewModel.PathSegments, Mode=OneWay}"
+                        ItemClicked="OnBreadcrumbItemClicked" />
+                    <ProgressRing
+                        IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}"
+                        Width="20" Height="20" />
+                </StackPanel>
+
+                <!-- Transfer status -->
+                <Grid Grid.Row="2" ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="4">
+                        <TextBlock
+                            Text="{x:Bind ViewModel.TransferText, Mode=OneWay}"
+                            Style="{StaticResource BodyText}" />
+                        <ProgressBar
+                            Maximum="100"
+                            Value="{x:Bind ViewModel.TransferProgress, Mode=OneWay}"
+                            Visibility="{x:Bind ViewModel.TransferActive, Mode=OneWay}" />
+                    </StackPanel>
+                    <Button
+                        Grid.Column="1"
+                        Content="Cancel"
+                        Command="{x:Bind ViewModel.CancelTransferCommand}"
+                        Visibility="{x:Bind ViewModel.TransferActive, Mode=OneWay}" />
+                </Grid>
+
+                <!-- File-operation errors -->
+                <TextBlock
+                    Grid.Row="3"
+                    Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                    Foreground="{ThemeResource ErrorBrush}"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind ViewModel.HasError, Mode=OneWay}" />
+
+                <!-- Listing -->
+                <ListView
+                    Grid.Row="4"
+                    ItemsSource="{x:Bind ViewModel.Entries}"
+                    SelectedItem="{x:Bind ViewModel.SelectedEntry, Mode=TwoWay}"
+                    DoubleTapped="OnEntryDoubleTapped"
+                    AllowDrop="True"
+                    DragOver="OnFilesDragOver"
+                    Drop="OnFilesDrop"
+                    SelectionMode="Single">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:RemoteEntryVm">
+                            <Grid ColumnSpacing="12" Padding="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="28" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="150" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="{x:Bind Glyph}" FontSize="16" />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Text="{x:Bind Name}"
+                                    VerticalAlignment="Center"
+                                    TextTrimming="CharacterEllipsis" />
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{x:Bind SizeText}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
+                                    Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                <TextBlock
+                                    Grid.Column="3"
+                                    Text="{x:Bind ModifiedText}"
+                                    VerticalAlignment="Center"
+                                    Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+    </Grid>
+</Page>

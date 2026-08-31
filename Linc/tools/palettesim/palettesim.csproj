@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-palettesim</AssemblyName>
+    <RootNamespace>Linc.PaletteSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      M18 Part B: DynamicPalette.cs is deliberately free of WinUI types so this harness links the
+      REAL derivation and the REAL contrast maths (GUIDE 4.1), rather than modelling them. B3 says
+      "it looked fine on my wallpaper" is not evidence, so this sweeps the colour cube instead.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DynamicPalette.cs" />
+  </ItemGroup>
+</Project>

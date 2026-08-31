@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "THE UPDATE CHANNEL. This file IS the release mechanism for Linc.",
+    "",
+    "Both apps fetch it with a plain GET from",
+    "  https://raw.githubusercontent.com/deloweProjects/Linc/main/Releases/update.json",
+    "That address is baked into each build as a constant, not a user setting:",
+    "  desktop  Linc/DESKTOP/Linc.Desktop/Services/UpdateChannel.cs   (UpdateChannel.ManifestUrl)",
+    "  android  Linc/ANDROID/.../service/UpdateSettings.kt            (UpdateSettings.MANIFEST_URL)",
+    "Change one and you must change the other, or the two apps split onto different channels.",
+    "",
+    "TO SHIP A RELEASE: edit this file and commit it. That is the whole mechanism.",
+    "  latest            the newest version. A build below it is offered an OPTIONAL update.",
+    "  minimumSupported  RAISING THIS FORCES the update for every build below it. A user cannot",
+    "                    skip past it. Raise it only when an older build is genuinely unusable.",
+    "  notes             ONE short line, shown to the user as-is. No markdown, no links.",
+    "  desktop/android   where to download, and the SHA256 the download must match. A mismatch",
+    "                    refuses the install; a missing sha256 refuses it too. Never guess a hash.",
+    "",
+    "The binaries themselves are NEVER in this repo - they are attached to the GitHub Release for",
+    "the tag. The desktop zip is ~171 MB and GitHub hard-rejects tracked blobs over 100 MB.",
+    "",
+    "SAFETY: anything unreachable, malformed or unparseable here is treated as NO UPDATE, never as",
+    "a forced one. A typo in this file cannot brick installed copies - see UpdateDecision on both",
+    "sides, and tools/updatesim, which proves it against a manifest with garbage in every field.",
+    "",
+    "SEEDED STATE (M19 C5): latest and minimumSupported are both the CURRENT shipped version, so",
+    "nothing prompts anybody until the owner deliberately bumps them.",
+    "",
+    "Keys beginning with an underscore are ignored by both parsers."
+  ],
+  "latest": "1.0.0-beta.1",
+  "minimumSupported": "1.0.0-beta.1",
+  "notes": "Linc 1.0.0-beta.1 — the first public beta.",
+  "desktop": {
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0-beta.1/Linc-Desktop-1.0.0-beta.1.zip",
+    "sha256": "27DAF1FC0D4CFDF7498F355206D761E93A51DD203BADA1E3D3E4A14BDE633796"
+  },
+  "android": {
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0-beta.1/Linc-Companion-1.0.0-beta.1.apk",
+    "sha256": "3B4960ED70CE80A3E7B88609E823A2468CB5C31C2DC348435D3705721192C139"
+  }
+}

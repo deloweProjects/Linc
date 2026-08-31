@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Received files land under external storage (Download/Linc); expose it to viewers. -->
+    <external-path name="external" path="." />
+    <!-- M17b C: downloaded update APKs live in the app's own cache, never external storage. -->
+    <cache-path name="updates" path="updates/" />
+</paths>

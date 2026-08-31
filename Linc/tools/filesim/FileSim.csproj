@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-filesim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The REAL Direct-TLS file service + FileServiceRouter + frame codec, compiled verbatim
+         against harness fakes (same technique as tools/syncsim). TlsFileService.cs also contains
+         FileServiceRouter, so this one file gives us both the transport under test and the router
+         whose HasAdb selection was the M1 Files-page bug suspect. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\TlsFileService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Protocol\Framing.cs" />
+  </ItemGroup>
+</Project>

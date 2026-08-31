@@ -1,0 +1,350 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Linc.Desktop.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Linc.Desktop.ViewModels">
+
+    <ScrollViewer Padding="32">
+        <StackPanel Spacing="16" MaxWidth="720" HorizontalAlignment="Left">
+            <TextBlock Text="Settings" Style="{StaticResource HeadlineText}" />
+
+            <TextBlock
+                Style="{StaticResource BodyText}"
+                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.HasStatusMessage, Mode=OneWay}" />
+
+            <!-- Sync -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Sync" Style="{StaticResource TitleText}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="Clipboard sync — phone → PC works while the Linc app is open on the phone (an Android limit)."
+                            Style="{StaticResource BodyText}" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.ClipboardSyncEnabled, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Notification relay" Style="{StaticResource BodyText}" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.NotificationSyncEnabled, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Notification history (M9b, D-045): opt-in, default OFF. -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Notification history" Style="{StaticResource TitleText}" />
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="Save notifications on this PC so you can see them after they are dismissed elsewhere."
+                            Style="{StaticResource BodyText}" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.NotificationHistoryEnabled, Mode=TwoWay}" />
+                    </Grid>
+
+                    <!-- Retention picker: 7 / 30 / 90 days, default 30. Disabled while the toggle is off (§2.6). -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Keep history for" Style="{StaticResource BodyText}" />
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <RadioButton Content="7 days" IsChecked="{x:Bind ViewModel.IsHistory7Days, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.IsHistoryRetentionEnabled, Mode=OneWay}" GroupName="HistoryRetention" />
+                            <RadioButton Content="30 days" IsChecked="{x:Bind ViewModel.IsHistory30Days, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.IsHistoryRetentionEnabled, Mode=OneWay}" GroupName="HistoryRetention" />
+                            <RadioButton Content="90 days" IsChecked="{x:Bind ViewModel.IsHistory90Days, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.IsHistoryRetentionEnabled, Mode=OneWay}" GroupName="HistoryRetention" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Content="Clear history" Click="OnClearHistoryClick" ToolTipService.ToolTip="Delete every stored notification, for all devices" />
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource BodyText}">
+                        <Run Text="When on, notification bodies are stored on this PC." />
+                        <LineBreak />
+                        <Run Text="History is kept per device. Turning it OFF stops new ones but does NOT delete what is already stored — use Clear history for that." />
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- Connection -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Connection" Style="{StaticResource TitleText}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Allow USB connections" Style="{StaticResource BodyText}" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.AllowUsbConnections, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="Background connection — the phone finds this PC by itself, no ADB needed"
+                            Style="{StaticResource BodyText}" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.BackgroundConnectionEnabled, Mode=TwoWay}" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button
+                            Content="Resume auto-reconnect"
+                            Command="{x:Bind ViewModel.ResumeAutomaticCommand}"
+                            Visibility="{x:Bind ViewModel.IsPaused, Mode=OneWay}" />
+                        <Button Content="Clear saved phone data" Command="{x:Bind ViewModel.ClearDeviceDataCommand}" ToolTipService.ToolTip="Drops the offline copy of this phone (stats, wallpaper, photo thumbnails) without unpairing it" />
+                        <Button Content="Forget paired device" Command="{x:Bind ViewModel.ForgetDeviceCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Startup (M12e): opt-in, default OFF. -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Startup" Style="{StaticResource TitleText}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Start Linc when I sign in" Style="{StaticResource BodyText}" />
+                            <TextBlock Text="Linc opens quietly in the notification area." Style="{StaticResource BodyText}" Opacity="0.7" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.StartWithWindows, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Appearance (M18 B1): dynamic colour on by default, neutral ramp underneath. -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Appearance" Style="{StaticResource TitleText}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Use my phone&apos;s colours" Style="{StaticResource BodyText}" />
+                            <TextBlock Text="Tints Linc with your phone wallpaper&apos;s main colour. Off uses Linc&apos;s own black-and-white theme." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.UsePhoneColours, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Updates (M19 C3): one switch, default ON. There is no address to configure -
+                 the manifest is Releases/update.json in Linc's own repo, baked in at build time. -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Updates" Style="{StaticResource TitleText}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="Keep Linc up to date" Style="{StaticResource BodyText}" />
+                            <TextBlock Text="Off means Linc never checks for anything. You can still update by hand from the Releases page." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.UpdatesEnabled, Mode=TwoWay}" />
+                    </Grid>
+                    <TextBlock Text="{x:Bind ViewModel.UpdateStatus, Mode=OneWay}" Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                    <Button Content="Check now" Command="{x:Bind ViewModel.CheckForUpdatesNowCommand}" />
+                    <TextBlock
+                        Text="{x:Bind ViewModel.UpdateCheckResult, Mode=OneWay}"
+                        Style="{StaticResource BodyText}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind ViewModel.HasUpdateCheckResult, Mode=OneWay}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Paired devices (M2a): the management home the tab strip's +/close flow complements -->
+            <Border
+                Style="{StaticResource ExpressiveCard}"
+                Padding="20,16"
+                Visibility="{x:Bind ViewModel.HasKnownDevices, Mode=OneWay}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Devices" Style="{StaticResource TitleText}" />
+                    <TextBlock
+                        Style="{StaticResource BodyText}"
+                        Text="Every phone paired with this PC. Set active switches the tabs and pages to it (and re-opens a closed tab); Forget unpairs it and deletes its saved copy." />
+                    <!-- M15c A2: the limit, stated where a phone gets added rather than after. -->
+                    <TextBlock
+                        Style="{StaticResource BodyText}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind ViewModel.ShowOneAtATimeNote, Mode=OneWay}"
+                        Text="{x:Bind ViewModel.OneAtATimeText, Mode=OneWay}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.KnownDevices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:KnownDeviceVm">
+                                <Grid ColumnSpacing="12" Padding="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="{x:Bind Model}" FontWeight="SemiBold" />
+                                        <TextBlock Style="{StaticResource BodyText}">
+                                            <Run Text="{x:Bind Serial}" FontFamily="Consolas" />
+                                            <Run Text=" · " />
+                                            <Run Text="{x:Bind StateText}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <Button
+                                        Grid.Column="1"
+                                        Content="Set active"
+                                        VerticalAlignment="Center"
+                                        Command="{x:Bind SetActiveCommand}"
+                                        Visibility="{x:Bind IsNotActive}" />
+                                    <Button
+                                        Grid.Column="2"
+                                        Content="Forget"
+                                        VerticalAlignment="Center"
+                                        Command="{x:Bind ForgetCommand}"
+                                        ToolTipService.ToolTip="Unpair this phone and delete its saved copy" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- ADB status -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="ADB status" Style="{StaticResource TitleText}" VerticalAlignment="Center" />
+                        <Button Content="Refresh" Command="{x:Bind ViewModel.RefreshDevicesCommand}" Margin="16,0,0,0" />
+                        <Button Content="Restart ADB server" Command="{x:Bind ViewModel.RestartAdbServerCommand}" />
+                        <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="20" Height="20" />
+                    </StackPanel>
+                    <TextBlock Text="{x:Bind ViewModel.AdbPathText, Mode=OneWay}" Style="{StaticResource BodyText}" />
+
+                    <TextBlock Text="Devices" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Devices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AdbDeviceVm">
+                                <TextBlock>
+                                    <Run Text="{x:Bind Serial}" FontFamily="Consolas" />
+                                    <Run Text=" — " />
+                                    <Run Text="{x:Bind State}" />
+                                    <Run Text=" — " />
+                                    <Run Text="{x:Bind Model}" />
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock
+                        Text="Port forwards (connected device)"
+                        Style="{StaticResource BodyText}"
+                        FontWeight="SemiBold"
+                        Visibility="{x:Bind ViewModel.HasConnectedDevice, Mode=OneWay}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Forwards}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ForwardVm">
+                                <TextBlock FontFamily="Consolas">
+                                    <Run Text="{x:Bind Local}" />
+                                    <Run Text=" → " />
+                                    <Run Text="{x:Bind Remote}" />
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Shell command -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Run an ADB shell command" Style="{StaticResource TitleText}" />
+                    <TextBlock
+                        Style="{StaticResource BodyText}"
+                        Foreground="{ThemeResource ErrorBrush}"
+                        Text="Runs directly on your phone via ADB shell. Powerful — mistakes here can affect your phone. Use with care." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBox
+                            Style="{StaticResource ExpressiveTextBox}"
+                            Width="440"
+                            PlaceholderText="e.g. dumpsys battery"
+                            Text="{x:Bind ViewModel.ShellCommand, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            IsEnabled="{x:Bind ViewModel.HasConnectedDevice, Mode=OneWay}" />
+                        <Button
+                            Content="Run"
+                            Style="{StaticResource FilledButton}"
+                            Command="{x:Bind ViewModel.RunShellCommandCommand}"
+                            IsEnabled="{x:Bind ViewModel.HasConnectedDevice, Mode=OneWay}" />
+                    </StackPanel>
+                    <Border
+                        Background="{ThemeResource SurfaceContainerHighBrush}"
+                        CornerRadius="{StaticResource ShapeLarge}"
+                        Padding="12"
+                        MinHeight="80"
+                        MaxHeight="240">
+                        <ScrollViewer>
+                            <TextBlock
+                                Text="{x:Bind ViewModel.ShellOutput, Mode=OneWay}"
+                                FontFamily="Consolas"
+                                TextWrapping="Wrap" />
+                        </ScrollViewer>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Logs -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Logs" Style="{StaticResource TitleText}" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Content="Open log folder" Command="{x:Bind ViewModel.OpenLogFolderCommand}" />
+                        <Button Content="Clear logs" Command="{x:Bind ViewModel.ClearLogsCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- About -->
+            <TextBlock
+                Style="{StaticResource BodyText}"
+                Text="{x:Bind ViewModel.AppVersionText, Mode=OneWay}" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

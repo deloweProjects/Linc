@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-outboxsim</AssemblyName>
+    <RootNamespace>Linc.OutboxSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Compiled verbatim from Linc.Desktop — only the dependency-free sources, the same
+      posture as storesim / displaysim / homelayoutsim (D-036 / D-037). LincStore.cs is the
+      single place the runtime AND this harness build the outbox schema and run the
+      typed methods, so what is proven here is what the app does. DeviceRegistry comes along
+      so the PairedSerial path is real and the cache/store root must be taken from it
+      (D-057/D-058) — that link is one of the things under test. OutboxService.cs is compiled
+      in full so its pure statics (BuildSmsPayload / ParseSmsPayload / DecideDropVsAttempt)
+      are exercised by the harness directly rather than modelled — that is the M9b lesson
+      (§4.2): the more of this a harness can call, the less of it a harness has to re-implement.
+
+      The OutboxService constructor takes IConnectionSupervisor / IConnectionManager — both
+      live alongside heavy concrete classes (usb/adb/tls machinery) the harness cannot pull
+      in. So the harness declares minimal STUB interface + enum declarations of those two
+      interfaces and the LinkState enum in its Program.cs, in the same namespace, purely so
+      OutboxService.cs compiles. The stubs do NOT take part in any test: only the pure statics
+      and LincStore's outbox methods are exercised. A neighbour (storesim) already compiles
+      DeviceRegistry's real IDeviceRegistry, so that interface stays the real one here.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincStore.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\OutboxService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ToolLocator.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mirrors Linc.Desktop.csproj: Microsoft.Data.Sqlite is the M9a foundation (D-044).
+         Pinned to the same 8.0.29 patch so the app and this harness share one resolved version. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.29" />
+  </ItemGroup>
+</Project>

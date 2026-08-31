@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-storesim</AssemblyName>
+    <RootNamespace>Linc.StoreSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Compiled verbatim from Linc.Desktop — only the dependency-free sources, the same
+      posture as appssim / displaysim / homelayoutsim (D-036 / D-037). LincStore.cs is the
+      single place the runtime AND the harness build the schema and import devices, so what is
+      proven here is what the app does. DeviceRegistry comes along so the import path is real
+      and so the cache/store root must be taken from it (D-057/D-058) — that link is one of the
+      things under test.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincStore.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ToolLocator.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mirrors Linc.Desktop.csproj: Microsoft.Data.Sqlite is the M9a foundation (D-044).
+         Pinned to the same 8.0.29 patch so the app and this harness share one resolved version. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.29" />
+  </ItemGroup>
+</Project>

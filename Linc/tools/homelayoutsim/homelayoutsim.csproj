@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-homelayoutsim</AssemblyName>
+    <RootNamespace>Linc.HomeLayoutSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Compiled verbatim from Linc.Desktop Services -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ToolLocator.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+  </ItemGroup>
+</Project>

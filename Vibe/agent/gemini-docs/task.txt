@@ -1,0 +1,42 @@
+LINC — PLAIN-LANGUAGE STATUS (for the owner)
+============================================
+Updated: 2026-07-23
+
+WHERE THINGS STAND
+------------------
+The whole core product is built and working on the Pixel 7. We're now in the "Convergence"
+phase — refining and adding features so the phone and PC drive each other. Full formal docs
+live in the Documentation/ folder; the working plan is in docs/ROADMAP.md.
+
+DONE SO FAR THIS PHASE
+----------------------
+M1  Fixed the Files page (it shows the phone's folders again) and made the device tab always
+    visible once a phone is paired.
+M2a Device management now works: the "+" opens pairing (even while a phone is connected),
+    closing a tab works (the phone stays paired), and switching devices works. Added a
+    Settings > Devices screen to list / activate / forget phones. The Files page can now go
+    all the way up to the phone's root, shows a clear note when a folder can't be read, and
+    saves downloads into a "Linc" folder inside Downloads.
+
+NEXT
+----
+M2b The guided first-run wizard: open the app the first time -> it tells you no phone is
+    paired -> walks you through developer options / USB + wireless ADB -> the desktop
+    installs the companion app itself and connects -> the phone is saved for good. This also
+    makes the desktop CARRY the companion app so it can inject it. (After this: M3 vendors
+    scrcpy with a Linc-branded window, the foundation for the screen features.)
+
+TWO THINGS TO KNOW
+------------------
+1. During M2a testing, a test tool briefly overwrote your saved Pixel 7 pairing with fake
+   test devices. It was cleaned up and your phone re-paired itself over USB — but any
+   sync-lane / folder-sync settings you had for it MAY need re-setting. Worth a quick check.
+2. One small thing left to eyeball from M2a: open the Files page, go into a protected folder
+   like /data, and confirm you now see a "couldn't read this folder" note.
+
+HOW WE'RE WORKING
+-----------------
+Each session the agent does one milestone (code + tests) and reports back; you test it
+hands-on and tell me what to fix; I keep all the docs current and write the next prompt.
+When a check needs the mouse/cursor while you're working, the agent now hands you a
+step-by-step manual test instead of taking over your pointer.

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-cleanroomsim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real lookup functions under test (M12f Part A), compiled verbatim (D-036 pattern) —
+         plain System.IO, no WinUI dependency, so they link into an ordinary net8.0 console. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ToolLocator.cs" />
+    <!-- The real crash-log filename/format, so Half Two checks the actual sentinel name rather
+         than guessing it (task A2.4). -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\StartupCrashLogger.cs" />
+  </ItemGroup>
+</Project>

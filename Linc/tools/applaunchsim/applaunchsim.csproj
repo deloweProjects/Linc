@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-applaunchsim</AssemblyName>
+    <RootNamespace>Linc.AppLaunchSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Compiled verbatim from Linc.Desktop — only the dependency-free sources, the same posture as
+      appssim / displaysim / homelayoutsim (D-036 / D-037). AppLaunchService.cs is the single place
+      the app builds an app-window command line, and DesktopModeSettings.cs is the single place
+      either it or Desktop Mode computes geometry, so what is proven here is what the app runs.
+      Nothing in this harness spawns a process or touches %LOCALAPPDATA% at all (D-057).
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppLaunchService.cs" />
+    <!--
+      M9f (A2.2/A3.2): Desktop Mode's own launch path, compiled in ONLY so the harness can call the
+      REAL DesktopLaunchService.BuildScrcpyArgs and assert it does NOT carry the per-app-window
+      decoration flag — guarding the boundary that a future session must not "unify" the two paths.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopLaunchService.cs" />
+    <!--
+      M7b: the window-geometry store, and the registry it must take its root from. Compiled in for
+      the same reason appssim compiles AppCatalog + DeviceRegistry — the D-057/D-058 link between
+      them is one of the things under test, and a copy of the store here would prove nothing.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppWindowStore.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppCatalog.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppsPayload.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DisplayPayload.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ToolLocator.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+  </ItemGroup>
+</Project>

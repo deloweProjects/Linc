@@ -1,0 +1,98 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Linc.Desktop</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- MVVM Toolkit [ObservableProperty] on partial properties requires LangVersion
+         preview (MVVMTK0045 / WinRT AOT guidance). -->
+    <LangVersion>preview</LangVersion>
+    <!-- Unpackaged (no MSIX) during development; packaging decided at M10. -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!--
+      M18 C1: the first production release identity. `Version` is what M17b's update check compares
+      against, so it must be real and must match the phone's versionName exactly.
+
+      AssemblyVersion is kept to the numeric-only 1.0.0.0 because .NET assembly versions cannot
+      carry a pre-release suffix; InformationalVersion carries the full 1.0.0-beta.1, and that is
+      what a human sees in the file properties.
+
+      `Product` fixes the M12h note: with no Product, Windows lists the app as "Linc.Desktop" in
+      Apps & features, the tray tooltip and the installer UI, rather than "Linc".
+    -->
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0-beta.1</InformationalVersion>
+    <Product>Linc</Product>
+    <AssemblyTitle>Linc</AssemblyTitle>
+    <Company>Linc</Company>
+    <Description>Linc — Android companion for Windows</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets/**/*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="..\..\SCRCPY\Linc.scrcpy\bin\**\*">
+      <Link>SCRCPY\Linc.scrcpy\bin\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    Ship the companion APK beside the exe so PC-driven onboarding (M01, D-035) works on a
+    machine that doesn't have this repo. It is copied from the Android build output at build
+    time rather than committed: the APK is ~24 MB and would add a fresh blob to git history on
+    every rebuild. Same posture as scrcpy in D-023 — the binary is a build input, not a source.
+
+    Condition means a desktop-only build still succeeds; onboarding then degrades to "no copy
+    was found to install", which PhoneSetupService reports plainly. Run
+    `ANDROID\gradlew.bat assembleDebug` first to have it bundled.
+  -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\ANDROID\app\build\outputs\apk\debug\app-debug.apk')">
+    <Content Include="$(MSBuildThisFileDirectory)..\..\ANDROID\app\build\outputs\apk\debug\app-debug.apk"
+             Link="Assets/companion.apk">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AdvancedSharpAdbClient" Version="3.6.16" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- M9 SQLite store (D-044): Microsoft.Data.Sqlite tracks the EF Core 8 / net8.0 family,
+         the same line the rest of the .NET 8 packages here sit on. Pinned to the latest 8.0.x
+         patch so the app and tools/storesim share one resolved version. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.29" />
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.2.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250108002" />
+    <!-- SystemEvents.PowerModeChanged (resume-from-sleep). Lives in the Windows Desktop
+         framework, which WinUI/WindowsAppSDK apps don't reference — so it comes via package. -->
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="9.0.0" />
+    <!-- v17 quick controls (M4b, D-042): PC display brightness is WMI-only per the task
+         (WmiMonitorBrightness / WmiMonitorBrightnessMethods in root\WMI). System.Management is
+         the only in-box way to query WMI from .NET; there is no existing brightness code to
+         extend, so this is new, task-mandated ground rather than a refactor. -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <!-- M05 reverse mirror: DXGI Desktop Duplication capture and the D3D11 device the
+         hardware H.264 encoder shares. Media Foundation itself is hand-rolled interop
+         (Services/MediaFoundation.cs) rather than another package. -->
+    <PackageReference Include="Vortice.Direct3D11" Version="3.6.2" />
+    <PackageReference Include="Vortice.DXGI" Version="3.6.2" />
+    <PackageReference Include="Zeroconf" Version="3.7.16" />
+  </ItemGroup>
+
+</Project>

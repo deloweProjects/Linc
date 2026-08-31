@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows target so the WinRT Bluetooth APIs are available; still an ordinary
+         `dotnet run` console, since the VS-MSBuild rule applies only to the WinUI app. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-blescan</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- All three compiled verbatim from the app (D-036): the presence service under test,
+         the real registry it matches beacons against, and the real log it writes to. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\BlePresenceService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
+    <!-- DeviceRegistry.cs's KnownDevice record references these two settings types (D-054),
+         so they must be compiled in alongside it, like the app does. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+  </ItemGroup>
+</Project>

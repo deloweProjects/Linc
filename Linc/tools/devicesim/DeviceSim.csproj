@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-devicesim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real registry, compiled verbatim (D-036). It is plain System.IO + System.Text.Json
+         with no WinUI dependency, so it links into an ordinary net8.0 console. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
+    <!-- DeviceRegistry.cs's KnownDevice record references these two settings types (D-055 era
+         M5b/M5c), so they must be compiled in alongside it. D-054 records that MirrorSettings'
+         record defaults, the registry's null-substitute and Reset()'s target all match. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
+    <!-- DesktopModeSettings.ComputeRecommendedGeometry takes an optional ILogService; without
+         this the build fails with CS0246 (pre-existing, unrelated to M11 — the type was never
+         compiled in here even though DesktopModeSettings.cs has referenced it since M8). -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+  </ItemGroup>
+</Project>

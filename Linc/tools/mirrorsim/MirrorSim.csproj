@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows target for Media Foundation and DXGI; still an ordinary `dotnet run`
+         console, since the VS-MSBuild rule applies only to the WinUI app. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-mirrorsim</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real capture and encode path, compiled verbatim from the app (D-036), plus the
+         exception type they throw. Nothing here touches WinUI. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Protocol\VideoFraming.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MediaFoundation.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcScreenCapture.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcVideoEncoder.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcInputService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSource.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+    <!-- For ILogService/LogLevel only; the harness supplies its own console implementation
+         so no run ever writes to the app's real log. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Vortice.Direct3D11" Version="3.6.2" />
+    <PackageReference Include="Vortice.DXGI" Version="3.6.2" />
+  </ItemGroup>
+</Project>

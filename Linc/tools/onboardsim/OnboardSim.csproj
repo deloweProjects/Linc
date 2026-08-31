@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-onboardsim</AssemblyName>
+    <RootNamespace>Linc.OnboardSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real wizard step machine, compiled verbatim (same posture as devicesim/apkprobe).
+         OnboardingFlow is pure enum + transitions with no WinUI dependency, so the exact logic
+         OnboardingViewModel drives is exercised headlessly here — no app launch, no cursor, no
+         phone touched. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\OnboardingFlow.cs" />
+  </ItemGroup>
+</Project>

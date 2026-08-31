@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Linc</string>
+
+    <!-- Onboarding -->
+    <string name="onboard_welcome_title">Welcome to Linc</string>
+    <string name="onboard_welcome_body">Linc links this phone to your Windows PC — files, screen, clipboard and notifications. Setup takes about two minutes and you only do it once.</string>
+    <string name="onboard_devoptions_title">Step 1: Enable developer options</string>
+    <string name="onboard_devoptions_body">Open About phone and tap “Build number” seven times until you see “You are now a developer”. If you have already done this, just tap Next.</string>
+    <string name="onboard_devoptions_action">Open About phone</string>
+    <string name="onboard_wireless_title">Step 2: Turn on wireless debugging</string>
+    <string name="onboard_wireless_body">In Developer options, find “Wireless debugging” and switch it on. Keep the phone on the same Wi-Fi network as your PC.</string>
+    <string name="onboard_open_devsettings_action">Open Developer options</string>
+    <string name="onboard_pair_title">Step 3: Pair with your PC</string>
+    <string name="onboard_pair_body">Open Linc on your PC and choose “Pair phone”. Then, inside Wireless debugging on this phone, tap “Pair device with QR code” and scan the code your PC shows. Pairing with a 6-digit code works too.</string>
+    <string name="onboard_done_title">All set!</string>
+    <string name="onboard_done_body">Start the companion service on the next screen and your PC will take it from there. You will never need a cable or a terminal.</string>
+    <string name="onboard_back">Back</string>
+    <string name="onboard_next">Next</string>
+    <string name="onboard_finish">Finish</string>
+
+    <!-- Status screen -->
+    <string name="state_stopped">Companion service is off</string>
+    <string name="state_listening">Waiting for your PC…</string>
+    <string name="state_listening_hint">Make sure wireless debugging is on and Linc is running on your PC.</string>
+    <string name="state_connected">Connected to %1$s</string>
+    <string name="info_battery">Battery</string>
+    <string name="info_battery_value">%1$d%%</string>
+    <string name="info_battery_charging">%1$d%% (charging)</string>
+    <string name="info_storage">Storage</string>
+    <string name="info_storage_value">%1$s GB free of %2$s GB</string>
+    <string name="notif_access_on">Notification access: on — your PC sees phone notifications</string>
+    <string name="notif_access_off">Grant notification access to see phone notifications on your PC</string>
+    <string name="notif_access_action">Enable notification access</string>
+    <string name="wallpaper_access_on">Wallpaper on PC: on — your PC shows a blurred version of your wallpaper</string>
+    <string name="wallpaper_access_off">Show your wallpaper (blurred) behind the PC app’s Home widgets. Needs the “All files access” permission.</string>
+    <string name="wallpaper_access_action">Allow wallpaper access</string>
+    <string name="presence_on">Background connection: on — the phone finds your PC by itself</string>
+    <string name="presence_off">Background connection: off — connect via wireless debugging or USB only</string>
+    <string name="presence_toggle">Background connection</string>
+    <string name="sms_access_on">Messages: on — your PC can read and send your texts</string>
+    <string name="sms_access_off">Let your PC read and send texts (Messages lane on the PC)</string>
+    <string name="sms_access_action">Allow SMS access</string>
+    <string name="call_access_on">Calls: on — your PC can see calls and dial</string>
+    <string name="call_access_off">Let your PC see your call log and dial (Calls lane on the PC)</string>
+    <string name="call_access_action">Allow Calls access</string>
+    <string name="share_label">Send to PC (Linc)</string>
+    <string name="share_sent">Sent to your PC</string>
+    <string name="share_not_connected">Linc isn\'t connected to your PC right now.</string>
+    <string name="share_sending_one">Sending file to your PC…</string>
+    <string name="share_sending_many">Sending %1$d files to your PC…</string>
+    <string name="action_start">Start companion service</string>
+    <string name="action_stop">Stop companion service</string>
+    <string name="action_rerun_setup">Run setup again</string>
+
+    <!-- Companion service notification -->
+    <string name="notification_channel_name">Companion service</string>
+    <string name="notification_title">Linc companion is running</string>
+    <string name="notification_text">Your PC can connect to this phone.</string>
+    <!-- M17a B2: screen titles for the top app bars, and the Status screen's phone card. -->
+    <string name="nav_home">Home</string>
+    <string name="nav_status">Status</string>
+    <string name="nav_logs">Logs</string>
+    <string name="nav_settings">Settings</string>
+    <string name="status_phone_header">This phone</string>
+    <string name="status_phone_pending">Reading battery and storage…</string>
+    <string name="settings_permissions_header">Permissions</string>
+    <string name="settings_mirror_header">Mirror quality</string>
+    <string name="settings_hotspot_header">Instant hotspot link</string>
+    <string name="settings_about_header">This app</string>
+    <string name="logs_empty">Nothing has been logged yet. Start the companion service and activity will show up here.</string>
+    <string name="logs_clear">Clear</string>
+    <string name="logs_back">Back</string>
+    <string name="action_view_logs">View logs</string>
+
+    <!-- M17b B2: auto-update settings. Empty address = the feature is inert. -->
+    <string name="settings_updates_header">Updates</string>
+    <string name="settings_updates_label">Keep Linc up to date</string>
+    <string name="settings_updates_off">Automatic updates are off. Linc won’t check for anything. You can still update by hand from github.com/deloweProjects/Linc/releases.</string>
+    <string name="settings_updates_on">Linc will check for updates when it starts, at most once every 6 hours.</string>
+    <string name="update_available_title">An update is available</string>
+    <string name="update_action">Update</string>
+    <string name="update_skip">Skip this version</string>
+    <string name="update_forced_title">Linc needs to update</string>
+    <string name="update_forced_body">This version of Linc is no longer supported. Update to keep connecting to your PC.</string>
+    <string name="update_forced_closable">You can still leave this screen with the Back button.</string>
+</resources>

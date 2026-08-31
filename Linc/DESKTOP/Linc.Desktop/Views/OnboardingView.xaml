@@ -1,0 +1,196 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Linc.Desktop.Views.OnboardingView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="{ThemeResource SurfaceBrush}">
+        <!-- Add a bit of padding and a ScrollViewer so the content doesn't get clipped on smaller windows -->
+        <ScrollViewer Padding="32">
+            <StackPanel Spacing="24" MaxWidth="720" HorizontalAlignment="Left">
+                <TextBlock Text="Connect your phone" Style="{StaticResource HeadlineText}" />
+
+                <Border Style="{StaticResource ExpressiveCard}" Padding="32">
+                    <Grid>
+                        <!-- Intro -->
+                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsIntro, Mode=OneWay}">
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Text="Let's connect your phone. Linc will walk you through it and set everything up for you — no files to copy, no commands to type." />
+                            <StackPanel Spacing="12">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE8EA;" FontSize="18" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Style="{StaticResource BodyText}" Text="Turn on a couple of phone settings" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE8C9;" FontSize="18" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Style="{StaticResource BodyText}" Text="Plug in over USB, or scan a QR code" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE930;" FontSize="18" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Style="{StaticResource BodyText}" Text="Linc installs its companion app and connects" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Border
+                                Background="{ThemeResource SecondaryContainerBrush}"
+                                CornerRadius="12"
+                                Padding="16,12"
+                                Visibility="{x:Bind ViewModel.ApkMissing, Mode=OneWay}">
+                                <TextBlock
+                                    Style="{StaticResource BodyText}"
+                                    Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                    TextWrapping="Wrap"
+                                    Text="Heads up: this build doesn't include the companion app. If your phone doesn't already have Linc installed, connecting won't complete." />
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Enable debugging -->
+                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsEnableDebugging, Mode=OneWay}">
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Text="On your phone, turn on developer options, then USB and Wireless debugging:" />
+                            <StackPanel Spacing="12">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource PrimaryBrush}" VerticalAlignment="Top">
+                                        <TextBlock Text="1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap" MaxWidth="440" Text="Open Settings → About phone and tap Build number 7 times. You'll see &quot;You are now a developer&quot;." />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource PrimaryBrush}" VerticalAlignment="Top">
+                                        <TextBlock Text="2" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap" MaxWidth="440" Text="Go to Settings → System → Developer options and turn on both USB debugging and Wireless debugging." />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource PrimaryBrush}" VerticalAlignment="Top">
+                                        <TextBlock Text="3" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap" MaxWidth="440" Text="If you'll use a cable, plug your phone into this PC now. Otherwise you'll scan a QR code on the next screen." />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                FontSize="13"
+                                TextWrapping="Wrap"
+                                Text="Already plugged in with debugging on? Linc will jump ahead automatically." />
+                        </StackPanel>
+
+                        <!-- Detect + pair -->
+                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsDetectPair, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <ProgressRing IsActive="True" Width="20" Height="20" />
+                                <TextBlock Style="{StaticResource TitleText}" VerticalAlignment="Center" Text="{x:Bind ViewModel.PairingPhoneText, Mode=OneWay}" />
+                            </StackPanel>
+
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                Visibility="{x:Bind ViewModel.HasUsbStatus, Mode=OneWay}"
+                                Text="{x:Bind ViewModel.UsbStatusText, Mode=OneWay}" />
+
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Text="Over USB, Linc connects on its own — accept the &quot;Allow USB debugging?&quot; prompt on the phone if it appears." />
+
+                            <!-- M15c A2: the limit, stated before a second phone is plugged in. -->
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                TextWrapping="Wrap"
+                                Visibility="{x:Bind ViewModel.ShowOneAtATimeNote, Mode=OneWay}"
+                                Text="{x:Bind ViewModel.OneAtATimeText, Mode=OneWay}" />
+
+                            <Border Height="1" Background="{ThemeResource OutlineVariantBrush}" Opacity="0.5" />
+
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Text="No cable? On the phone: Developer options → Wireless debugging → &quot;Pair device with QR code&quot;, then scan this:" />
+                            <Border
+                                Background="White"
+                                CornerRadius="{StaticResource ShapeLarge}"
+                                Padding="16"
+                                HorizontalAlignment="Center">
+                                <Image Source="{x:Bind ViewModel.QrImage, Mode=OneWay}" Width="200" Height="200" />
+                            </Border>
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Text="Prefer typing? Choose &quot;Pair device with pairing code&quot; on the phone and enter the 6-digit code:" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <TextBox
+                                    Style="{StaticResource ExpressiveTextBox}"
+                                    Width="160"
+                                    PlaceholderText="6-digit code"
+                                    Text="{x:Bind ViewModel.PairingCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button
+                                    Style="{StaticResource TonalButton}"
+                                    Content="Pair"
+                                    Command="{x:Bind ViewModel.PairWithCodeCommand}"
+                                    IsEnabled="{x:Bind ViewModel.CanPairWithCode, Mode=OneWay}" />
+                            </StackPanel>
+
+                            <Border
+                                Background="{ThemeResource ErrorContainerBrush}"
+                                CornerRadius="12"
+                                Padding="16,12"
+                                Visibility="{x:Bind ViewModel.HasError, Mode=OneWay}">
+                                <TextBlock
+                                    Style="{StaticResource BodyText}"
+                                    Foreground="{ThemeResource OnErrorContainerBrush}"
+                                    TextWrapping="Wrap"
+                                    Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Installing the companion -->
+                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsInstall, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="16">
+                                <ProgressRing IsActive="True" Width="32" Height="32" />
+                                <StackPanel Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource TitleText}" Text="Setting up your phone…" />
+                                    <TextBlock Style="{StaticResource BodyText}" Foreground="{ThemeResource OnSurfaceVariantBrush}" Text="Installing the Linc companion and turning on its permissions." />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                FontSize="13"
+                                TextWrapping="Wrap"
+                                Text="This takes a few seconds. Nothing to tap on the phone — Linc handles it over the connection." />
+                        </StackPanel>
+
+                        <!-- Done -->
+                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsDone, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="16">
+                                <Border Width="48" Height="48" CornerRadius="24" Background="{ThemeResource PrimaryBrush}">
+                                    <FontIcon Glyph="&#xE73E;" FontSize="28" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                </Border>
+                                <StackPanel Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource TitleText}" Text="You're all set" />
+                                    <TextBlock Style="{StaticResource BodyText}" Foreground="{ThemeResource OnSurfaceVariantBrush}" Text="{x:Bind ViewModel.ConnectedModel, Mode=OneWay}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                TextWrapping="Wrap"
+                                Text="Your phone is connected and saved. It's now a tab at the top, and Linc will reconnect to it automatically from now on — over Wi-Fi or whenever it's plugged in." />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Action bar -->
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button
+                        Content="{x:Bind ViewModel.PrimaryText, Mode=OneWay}"
+                        Style="{StaticResource FilledButton}"
+                        Click="OnPrimaryButtonClick"
+                        Visibility="{x:Bind ViewModel.ShowPrimary, Mode=OneWay}" />
+                    <Button
+                        Content="Cancel"
+                        Style="{StaticResource TonalButton}"
+                        Click="OnCancelButtonClick" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

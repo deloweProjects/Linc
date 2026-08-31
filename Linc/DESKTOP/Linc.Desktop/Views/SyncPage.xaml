@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Linc.Desktop.Views.SyncPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Linc.Desktop.ViewModels">
+
+    <Grid Padding="24" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Offline sync-cache banner (M9d-2, §3.5) — same text/rule as Home's, reusing
+             HomeOfflineBanner.FormatText rather than a second formatter. -->
+        <Border Grid.Row="0" Background="{ThemeResource SecondaryContainerBrush}"
+                CornerRadius="14" Padding="14,10"
+                Visibility="{x:Bind ViewModel.ShowOfflineBanner, Mode=OneWay}">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE7BA;" FontSize="15" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                <TextBlock Text="{x:Bind ViewModel.OfflineBannerText, Mode=OneWay}" FontSize="13"
+                           VerticalAlignment="Center" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Lane toggles. Folders/Photos/Calls persist config now; engines land in M18b/c. -->
+        <Border Grid.Row="1" Style="{StaticResource ExpressiveCard}" Padding="20,16">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Sync" Style="{StaticResource HeadlineText}" />
+                <StackPanel Orientation="Horizontal" Spacing="28">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Folders" Style="{StaticResource BodyText}" />
+                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.FoldersOn, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Photos" Style="{StaticResource BodyText}" />
+                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.PhotosOn, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Messages" Style="{StaticResource BodyText}" />
+                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.MessagesOn, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Calls" Style="{StaticResource BodyText}" />
+                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.CallsOn, Mode=TwoWay}" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock
+                    Text="{x:Bind ViewModel.LaneMessage, Mode=OneWay}"
+                    FontSize="13"
+                    TextWrapping="Wrap"
+                    Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+
+                <!-- Folders lane config: PC folder ↔ phone folder, bidirectional (M18c). -->
+                <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.ShowFolderConfig, Mode=OneWay}">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            Style="{StaticResource ExpressiveTextBox}"
+                            Header="PC folder"
+                            IsReadOnly="True"
+                            PlaceholderText="Pick a folder on this PC…"
+                            Text="{x:Bind ViewModel.FolderPcPath, Mode=OneWay}" />
+                        <Button
+                            Grid.Column="1"
+                            Style="{StaticResource FilledButton}"
+                            VerticalAlignment="Bottom"
+                            Padding="18,10"
+                            Content="Choose…"
+                            Click="OnPickFolder" />
+                    </Grid>
+                    <TextBox
+                        Style="{StaticResource ExpressiveTextBox}"
+                        Header="Phone folder"
+                        PlaceholderText="/sdcard/Download"
+                        Text="{x:Bind ViewModel.FolderPhonePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock
+                        FontSize="13"
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                        Text="New files copy both ways and the newer copy wins. Deletes are never propagated. Top-level files only." />
+                </StackPanel>
+
+                <!-- Photos lane info: pull-only from the phone camera roll (M18c). -->
+                <TextBlock
+                    Visibility="{x:Bind ViewModel.ShowPhotosInfo, Mode=OneWay}"
+                    FontSize="13"
+                    TextWrapping="Wrap"
+                    Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                    Text="{x:Bind ViewModel.PhotosInfo, Mode=OneWay}" />
+
+                <Grid ColumnSpacing="12" Visibility="{x:Bind ViewModel.ShowSyncBar, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="13"
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                        Text="{x:Bind ViewModel.SyncStatus, Mode=OneWay}" />
+                    <Button
+                        Grid.Column="1"
+                        Style="{StaticResource TonalButton}"
+                        Padding="16,8"
+                        Content="Sync now"
+                        Command="{x:Bind ViewModel.SyncNowCommand}" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Messages & Calls sit side by side; a solo lane spans both columns
+             (SyncPage code-behind manages the span). M07 polish. -->
+        <Grid Grid.Row="2" x:Name="LaneArea" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Messages lane: conversations | thread + reply. -->
+            <Border x:Name="MessagesCard" Style="{StaticResource ExpressiveCard}" Padding="0"
+                    Visibility="{x:Bind ViewModel.ShowMessagesPanel, Mode=OneWay}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="260" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ListView
+                    ItemsSource="{x:Bind ViewModel.Conversations}"
+                    SelectedItem="{x:Bind ViewModel.Selected, Mode=TwoWay}"
+                    Padding="8">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ConversationVm">
+                            <StackPanel Spacing="2" Padding="6,8">
+                                <TextBlock Text="{x:Bind Address}" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="{x:Bind Snippet, Mode=OneWay}" FontSize="11"
+                                           TextTrimming="CharacterEllipsis" MaxLines="1"
+                                           Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <Grid Grid.Column="1" Padding="16" RowSpacing="10"
+                      BorderThickness="1,0,0,0" BorderBrush="{ThemeResource OutlineVariantBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ListView ItemsSource="{x:Bind ViewModel.Selected.Messages, Mode=OneWay}">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MessageVm">
+                                <Grid Padding="0,3">
+                                    <Border
+                                        MaxWidth="440"
+                                        CornerRadius="14"
+                                        Padding="12,8"
+                                        HorizontalAlignment="{x:Bind Alignment}"
+                                        Background="{x:Bind Bubble}">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{x:Bind Body}" TextWrapping="Wrap" FontSize="13" />
+                                            <!-- §3.3: a queued message never looks identical to a sent one — the
+                                                 "Queued" label plus a muted timestamp, not colour alone. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="Queued" FontSize="11" FontWeight="SemiBold"
+                                                           Opacity="0.6"
+                                                           Visibility="{x:Bind IsPending, Mode=OneWay}" />
+                                                <TextBlock Text="{x:Bind TimeText}" FontSize="11"
+                                                           Opacity="{x:Bind TimestampOpacity, Mode=OneWay}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <Grid Grid.Row="1" ColumnSpacing="8" Visibility="{x:Bind ViewModel.CanReply, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            Style="{StaticResource ExpressiveTextBox}"
+                            Text="{x:Bind ViewModel.ReplyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="Text back…" />
+                        <Button
+                            Grid.Column="1"
+                            Style="{StaticResource FilledButton}"
+                            Padding="20,10"
+                            Content="Send"
+                            Command="{x:Bind ViewModel.SendReplyCommand}" />
+                    </Grid>
+                </Grid>
+
+                <!-- Empty / disconnected state (M07). -->
+                <TextBlock Grid.ColumnSpan="2"
+                    Style="{StaticResource BodyText}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                    Text="{x:Bind ViewModel.MessagesPlaceholder, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.ShowMessagesPlaceholder, Mode=OneWay}" />
+            </Grid>
+            </Border>
+
+            <!-- Calls lane: incoming banner, dialer, call log. -->
+            <Border x:Name="CallsCard" Grid.Column="1" Style="{StaticResource ExpressiveCard}" Padding="20"
+                    Visibility="{x:Bind ViewModel.ShowCallsPanel, Mode=OneWay}">
+            <Grid RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Incoming-call banner. -->
+                <Border
+                    Background="{ThemeResource TertiaryContainerBrush}"
+                    CornerRadius="16"
+                    Padding="16,12"
+                    Visibility="{x:Bind ViewModel.IncomingRinging, Mode=OneWay}">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="{x:Bind ViewModel.IncomingText, Mode=OneWay}"
+                            VerticalAlignment="Center"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource OnTertiaryContainerBrush}" />
+                        <Button
+                            Grid.Column="1"
+                            Content="Decline"
+                            Background="{ThemeResource ErrorBrush}"
+                            Foreground="{ThemeResource OnPrimaryBrush}"
+                            BorderThickness="0"
+                            CornerRadius="20"
+                            Padding="18,8"
+                            Command="{x:Bind ViewModel.DeclineCommand}" />
+                    </Grid>
+                </Border>
+
+                <!-- Dialer. -->
+                <Grid Grid.Row="1" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox
+                        Style="{StaticResource ExpressiveTextBox}"
+                        Text="{x:Bind ViewModel.DialNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="Enter a number to call from your phone…"
+                        InputScope="TelephoneNumber" />
+                    <Button
+                        Grid.Column="1"
+                        Style="{StaticResource FilledButton}"
+                        Padding="20,10"
+                        Content="Call"
+                        Command="{x:Bind ViewModel.DialCommand}" />
+                </Grid>
+
+                <ListView Grid.Row="2" ItemsSource="{x:Bind ViewModel.Calls}" SelectionMode="None">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CallVm">
+                            <Grid ColumnSpacing="12" Padding="0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="{x:Bind Glyph}" FontSize="15" VerticalAlignment="Center"
+                                          Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="{x:Bind Number}" FontWeight="SemiBold" FontSize="13" />
+                                    <TextBlock Text="{x:Bind Detail}" FontSize="11"
+                                               Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                </StackPanel>
+                                <Button
+                                    Grid.Column="2"
+                                    Width="34" Height="34" Padding="0" CornerRadius="17"
+                                    Background="{ThemeResource SecondaryContainerBrush}" BorderThickness="0"
+                                    Command="{x:Bind DialCommand}"
+                                    ToolTipService.ToolTip="Call this number from your phone">
+                                    <FontIcon Glyph="&#xE717;" FontSize="13"
+                                              Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <!-- Empty / disconnected state (M07). -->
+                <TextBlock Grid.Row="2"
+                    Style="{StaticResource BodyText}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                    Text="{x:Bind ViewModel.CallsPlaceholder, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.ShowCallsPlaceholder, Mode=OneWay}" />
+            </Grid>
+            </Border>
+
+            <!-- When neither Messages nor Calls is on. -->
+            <TextBlock
+                Grid.ColumnSpan="2"
+                Style="{StaticResource BodyText}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                TextAlignment="Center"
+                Text="Turn on a lane above to sync it with this PC. Folders and Photos sync files here automatically; Messages and Calls need their permission on the phone (Settings on the phone)."
+                Visibility="{x:Bind ViewModel.NeitherLane, Mode=OneWay}" />
+        </Grid>
+    </Grid>
+</Page>

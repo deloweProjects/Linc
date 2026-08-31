@@ -1,0 +1,76 @@
+{
+  "_comment": "RECOMMENDED contents for D:\\deloweProjects\\yellow\\.claude\\settings.local.json — copy this over that file. Rationale in PERMISSIONS.md next to this file. Deny is evaluated before ask, which is evaluated before allow; first match wins.",
+
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)",
+      "Bash(git restore:*)",
+      "Bash(rm -rf:*)",
+      "Bash(adb shell input:*)",
+      "Bash(adb uninstall:*)",
+      "Bash(adb shell pm uninstall:*)",
+      "PowerShell(Remove-Item -Recurse:*)"
+    ],
+
+    "ask": [
+      "Bash(adb install:*)",
+      "Bash(git commit:*)",
+      "Bash(git add:*)"
+    ],
+
+    "allow": [
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/amd64/MSBuild.exe\":*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet run:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet --version)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(sed -n:*)",
+      "Bash(diff:*)",
+      "Bash(md5sum:*)",
+      "Bash(mkdir:*)",
+      "Bash(echo:*)",
+      "Bash(adb devices:*)",
+      "Bash(adb shell dumpsys:*)",
+      "Bash(adb shell pm list:*)",
+      "Bash(adb shell wm size)",
+      "Bash(adb shell wm density)",
+      "Bash(adb shell getprop:*)",
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Name Linc.Desktop:*)",
+
+      "PowerShell(& \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\amd64\\\\MSBuild.exe\":*)",
+      "PowerShell(& \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\":*)",
+      "PowerShell(& \"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\":*)",
+      "PowerShell(dotnet:*)",
+      "PowerShell(Stop-Process -Name Linc.Desktop:*)",
+      "PowerShell(Get-Process:*)",
+      "PowerShell(Get-Content:*)",
+      "PowerShell(Get-ChildItem:*)",
+      "PowerShell(Get-Item:*)",
+      "PowerShell(Select-String:*)",
+      "PowerShell(Test-Path:*)",
+      "PowerShell(Measure-Object:*)",
+      "PowerShell(Join-Path:*)",
+      "PowerShell(Write-Host:*)",
+      "PowerShell(echo:*)",
+      "PowerShell(Set-Location:*)",
+      "PowerShell(New-Item -ItemType Directory:*)",
+      "PowerShell(git status:*)",
+      "PowerShell(git diff:*)",
+      "PowerShell(git log:*)"
+    ]
+  }
+}

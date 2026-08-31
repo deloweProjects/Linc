@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-apkprobe</AssemblyName>
+    <RootNamespace>Linc.ApkProbe</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real resolver, compiled verbatim (same posture as devicesim linking DeviceRegistry).
+         It is plain System.IO with no WinUI dependency, so it links into an ordinary net8.0
+         console — the desktop and this harness run byte-for-byte the same resolution logic. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ApkResolver.cs" />
+  </ItemGroup>
+</Project>

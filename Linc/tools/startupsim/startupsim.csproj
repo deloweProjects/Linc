@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-startupsim</AssemblyName>
+    <RootNamespace>Linc.StartupSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real formatter/writer, compiled verbatim (D-036 pattern): plain System.IO, no WinUI
+         dependency, so it links into an ordinary net8.0 console and this harness calls the
+         PRODUCTION code instead of modelling it (GUIDE.md §4.1). -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\StartupCrashLogger.cs" />
+  </ItemGroup>
+</Project>

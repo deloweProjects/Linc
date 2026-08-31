@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-apkinstallsim</AssemblyName>
+    <RootNamespace>Linc.ApkInstallSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Compiled verbatim from Linc.Desktop, same posture as displaysim / mirrorsettingssim
+      (D-036 / D-037). ApkInstall.cs is dependency-free (no WinUI, no AdvancedSharpAdbClient)
+      so it is the single place both the harness and the real app get validation, staged
+      progress text, and failure translation from.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ApkInstall.cs" />
+    <!--
+      M12c-amend Part C: CompanionInstallGate.cs is dependency-free (no WinUI, no
+      AdvancedSharpAdbClient) so section 5 below calls the real Decide() truth table instead of
+      modelling it.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\CompanionInstallGate.cs" />
+  </ItemGroup>
+</Project>

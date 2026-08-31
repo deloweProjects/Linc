@@ -1,0 +1,23 @@
+﻿Linc 1.0.0-beta.1 - SHA256 checksums
+====================================
+
+Verify a download on Windows with:
+
+    certutil -hashfile <filename> SHA256
+
+or in PowerShell:
+
+    Get-FileHash <filename> -Algorithm SHA256
+
+The hash you get must match the line below exactly. If it does not, the file is
+damaged or has been tampered with - do not run it.
+
+
+27DAF1FC0D4CFDF7498F355206D761E93A51DD203BADA1E3D3E4A14BDE633796  Linc-Desktop-1.0.0-beta.1.zip
+3B4960ED70CE80A3E7B88609E823A2468CB5C31C2DC348435D3705721192C139  Linc-Companion-1.0.0-beta.1.apk
+
+
+File sizes (bytes), as a second check:
+
+    Linc-Desktop-1.0.0-beta.1.zip     170988255
+    Linc-Companion-1.0.0-beta.1.apk   25928213

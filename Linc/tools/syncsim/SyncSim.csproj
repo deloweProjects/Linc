@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-syncsim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real engine, compiled verbatim against harness fakes (D-027's scripted
+         round-trip is the accepted stand-in for the 24 h soak). -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\SyncEngine.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-updatesim</AssemblyName>
+    <RootNamespace>Linc.UpdateSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      M17b: compiled verbatim from Linc.Desktop, the same posture as packagesim/ToolLocator.cs and
+      apkinstallsim/ApkInstall.cs (GUIDE 4.1 — a harness that re-implements the thing it tests
+      proves nothing). These three files carry no WinUI types precisely so this can link them and
+      call the REAL decision, the REAL gate and the REAL hash check.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\UpdateChannel.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\UpdateDecision.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\UpdateManifest.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\UpdateCheckService.cs" />
+  </ItemGroup>
+</Project>

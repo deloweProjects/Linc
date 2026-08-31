@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-displaysim</AssemblyName>
+    <RootNamespace>Linc.DisplaySim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Compiled verbatim from Linc.Desktop. Only the dependency-free sources are pulled in
+      (the same posture as mirrorsettingssim / devicesim / blescan — see D-036 / D-037).
+      DisplayPayload.cs is the single place the runtime AND the harness reach into for
+      payload construction and parsing, so what we test here is what the app sends and
+      receives.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DisplayPayload.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+  </ItemGroup>
+</Project>

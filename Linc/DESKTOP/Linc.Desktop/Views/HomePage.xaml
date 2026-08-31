@@ -1,0 +1,877 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Linc.Desktop.Views.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Linc.Desktop.ViewModels">
+
+    <Page.Resources>
+        <!-- Retheme ToggleButton to M3: tonal when idle, primary when checked. These
+             reference the shared brush instances, so the live palette sync applies. -->
+        <StaticResource x:Key="ToggleButtonBackground" ResourceKey="SecondaryContainerBrush" />
+        <StaticResource x:Key="ToggleButtonForeground" ResourceKey="OnSecondaryContainerBrush" />
+        <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="SurfaceContainerHighBrush" />
+        <StaticResource x:Key="ToggleButtonForegroundPointerOver" ResourceKey="OnSurfaceBrush" />
+        <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="PrimaryBrush" />
+        <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="OnPrimaryBrush" />
+        <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="PrimaryBrush" />
+        <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="OnPrimaryBrush" />
+        <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="PrimaryBrush" />
+        <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="OnPrimaryBrush" />
+    </Page.Resources>
+
+    <Grid Padding="24,24,24,24" ColumnSpacing="0">
+        <Grid.ColumnDefinitions>
+            <!-- Widgets a bit wider by default; both panes user-resizable via the splitter. -->
+            <ColumnDefinition x:Name="LeftColumn" Width="430" MinWidth="320" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition x:Name="RightColumn" Width="*" MinWidth="360" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <!-- Offline banner row (M9d-1, §2.5): Auto so it only takes space while shown, then
+                 the widgets/right-pane row below fills the rest exactly as before this row existed. -->
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Offline sync-cache banner (M9d-1, §2.5): spans both panes, at the very top of the Home
+             content grid — the one place true regardless of which pane holds Messages/Calls/Photos
+             (D-032/D-044). This is the single offline banner: the older per-pane "Offline copy
+             banner (M02)" that used to overlap the tab strip (IsShowingCached/LastSeenText) was
+             removed in M13f §7 — it duplicated the disconnected statement AND rendered behind the
+             tab buttons. -->
+        <Border Grid.Row="0" Grid.ColumnSpan="3" Background="{ThemeResource SecondaryContainerBrush}"
+                CornerRadius="14" Padding="14,10" Margin="0,0,0,14"
+                Visibility="{x:Bind ViewModel.ShowOfflineBanner, Mode=OneWay}">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE7BA;" FontSize="15" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                <TextBlock Text="{x:Bind ViewModel.OfflineBannerText, Mode=OneWay}" FontSize="13"
+                           VerticalAlignment="Center" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Widgets section: floats on the phone's (pre-blurred) wallpaper with a theme-aware
+             scrim (whitey fog in light, shadow in dark) tinted toward its dominant colour. -->
+        <Border x:Name="WidgetsPane" Grid.Row="1" Grid.Column="0" CornerRadius="28">
+            <Border.Background>
+                <ImageBrush ImageSource="{x:Bind ViewModel.Wallpaper, Mode=OneWay}" Stretch="UniformToFill" />
+            </Border.Background>
+            <Grid>
+                <Border
+                    CornerRadius="28"
+                    Background="{ThemeResource WallpaperScrimBrush}"
+                    Visibility="{x:Bind ViewModel.HasWallpaper, Mode=OneWay}" />
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+                    <StackPanel Spacing="14" Padding="10">
+
+                        <!-- Widget options behind a 3-dots button (M13f §8): the widgets column
+                             had a whole row of buttons sitting on top; now one compact entry point.
+                             Same commands, same behaviour. -->
+                        <Grid>
+                            <Button Content="&#xE712;" HorizontalAlignment="Left" Padding="12,8" CornerRadius="16"
+                                    Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                    BorderThickness="0" FontSize="15" ToolTipService.ToolTip="Widget options">
+                                <Button.Flyout>
+                                    <Flyout Placement="BottomEdgeAlignedLeft">
+                                        <StackPanel Spacing="8" Width="220">
+                                            <Button Content="Sections" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
+                                                    Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                                    BorderThickness="0" FontSize="13" FontWeight="SemiBold">
+                                                <Button.Flyout>
+                                                    <Flyout Placement="BottomEdgeAlignedLeft">
+                                                        <StackPanel Spacing="8" Width="220">
+                                                            <ItemsControl ItemsSource="{x:Bind ViewModel.SectionToggles}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate x:DataType="vm:HomeSectionToggle">
+                                                                        <ToggleSwitch Header="{x:Bind DisplayName}" IsOn="{x:Bind IsVisible, Mode=TwoWay}"
+                                                                                      OnContent="" OffContent="" MinWidth="0" HorizontalAlignment="Stretch" />
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </Flyout>
+                                                </Button.Flyout>
+                                            </Button>
+                                            <Button Content="Swap sides" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
+                                                    Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                                    BorderThickness="0" FontSize="13" FontWeight="SemiBold"
+                                                    Command="{x:Bind ViewModel.SwapPanesCommand}"
+                                                    ToolTipService.ToolTip="Move the widgets to the other side of the page" />
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
+
+                        <!-- All sections hidden guidance -->
+                        <TextBlock Text="All sections are hidden. Use Sections to bring them back."
+                                   FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                   TextWrapping="Wrap" Visibility="{x:Bind ViewModel.AllSectionsHidden, Mode=OneWay}" />
+
+                        <!-- Phone preview card: gradient from the live Material You palette. -->
+                        <Border CornerRadius="28" MinHeight="170" Padding="22,18"
+                                Visibility="{x:Bind ViewModel.ShowPhone, Mode=OneWay}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop x:Name="GradientTopStop" Offset="0" />
+                                    <GradientStop x:Name="GradientBottomStop" Offset="1" />
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <StackPanel Spacing="2">
+                                    <TextBlock
+                                        Text="{x:Bind ViewModel.ModelName, Mode=OneWay}"
+                                        FontSize="18"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                                    <TextBlock
+                                        Text="{x:Bind ViewModel.ConnectionCaption, Mode=OneWay}"
+                                        FontSize="13"
+                                        Foreground="{ThemeResource OnPrimaryContainerBrush}"
+                                        Opacity="0.75" />
+                                    <TextBlock
+                                        Text="{x:Bind ViewModel.LinkAddress, Mode=OneWay}"
+                                        FontSize="11"
+                                        Foreground="{ThemeResource OnPrimaryContainerBrush}"
+                                        Opacity="0.55"
+                                        Visibility="{x:Bind ViewModel.HasLinkAddress, Mode=OneWay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="18">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE83F;" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                                        <TextBlock Text="{x:Bind ViewModel.BatteryText, Mode=OneWay}" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE701;" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                                        <TextBlock Text="{x:Bind ViewModel.SignalText, Mode=OneWay}" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Quick actions: tonal M3 pills, two rows + sound profile segmented. -->
+                        <Border Style="{StaticResource FrostedCard}" Padding="14"
+                                Visibility="{x:Bind ViewModel.ShowQuickActions, Mode=OneWay}">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button HorizontalAlignment="Stretch" Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}" BorderThickness="0" Padding="0,10" CornerRadius="16" Command="{x:Bind ViewModel.StartMirrorCommand}" IsEnabled="{x:Bind ViewModel.ScreenshotEnabled, Mode=OneWay}" ToolTipService.ToolTip="Mirror the phone's screen">
+                                        <StackPanel Spacing="3">
+                                            <FontIcon Glyph="&#xE7F4;" FontSize="15" />
+                                            <TextBlock Text="Mirror" FontSize="11" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Column="1" HorizontalAlignment="Stretch" Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}" BorderThickness="0" Padding="0,10" CornerRadius="16" Command="{x:Bind ViewModel.PullScreenshotCommand}" IsEnabled="{x:Bind ViewModel.ScreenshotEnabled, Mode=OneWay}" ToolTipService.ToolTip="Save a screenshot of the phone to Pictures\Linc">
+                                        <StackPanel Spacing="3">
+                                            <FontIcon Glyph="&#xE722;" FontSize="15" />
+                                            <TextBlock Text="Screen" FontSize="11" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Column="2" HorizontalAlignment="Stretch" Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}" BorderThickness="0" Padding="0,10" CornerRadius="16" Command="{x:Bind ViewModel.RingPhoneCommand}" IsEnabled="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" ToolTipService.ToolTip="Ring the phone at full volume (press again to stop)">
+                                        <StackPanel Spacing="3">
+                                            <FontIcon Glyph="&#xE995;" FontSize="15" />
+                                            <TextBlock Text="Ring" FontSize="11" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Column="3" HorizontalAlignment="Stretch" Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}" BorderThickness="0" Padding="0,10" CornerRadius="16" Command="{x:Bind ViewModel.ToggleDndCommand}" IsEnabled="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" ToolTipService.ToolTip="Toggle Do Not Disturb on the phone">
+                                        <StackPanel Spacing="3">
+                                            <FontIcon Glyph="&#xE708;" FontSize="15" />
+                                            <TextBlock Text="DND" FontSize="11" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <!-- Sound profile: ring / vibrate / silent (v8, same grant as DND). -->
+                                <Grid ColumnSpacing="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton HorizontalAlignment="Stretch" CornerRadius="16,4,4,16" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind ViewModel.IsSoundNormal, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="normal" Content="Ring" />
+                                    <ToggleButton Grid.Column="1" HorizontalAlignment="Stretch" CornerRadius="4" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind ViewModel.IsSoundVibrate, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="vibrate" Content="Vibrate" />
+                                    <ToggleButton Grid.Column="2" HorizontalAlignment="Stretch" CornerRadius="4,16,16,4" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind ViewModel.IsSoundSilent, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="silent" Content="Silent" />
+                                </Grid>
+
+                                <TextBlock Text="{x:Bind ViewModel.QuickActionMessage, Mode=OneWay}" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.HasQuickActionMessage, Mode=OneWay}" />
+
+                                <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind ViewModel.ShowAdbHint, Mode=OneWay}">
+                                    <FontIcon Glyph="&#xE946;" FontSize="13" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                    <TextBlock Text="{x:Bind ViewModel.AdbHintText}" FontSize="11" TextWrapping="Wrap" MaxWidth="300" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Media widget. -->
+                        <Border Style="{StaticResource FrostedCard}" Padding="16,14"
+                                Visibility="{x:Bind ViewModel.ShowMediaWidget, Mode=OneWay}">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="52" Height="52" CornerRadius="12" VerticalAlignment="Center" Background="{ThemeResource SecondaryContainerBrush}">
+                                        <Grid>
+                                            <FontIcon Glyph="&#xE8D6;" FontSize="18" Foreground="{ThemeResource OnSecondaryContainerBrush}" Visibility="{x:Bind ViewModel.HasNoMediaArt, Mode=OneWay}" />
+                                            <Border CornerRadius="12" Visibility="{x:Bind ViewModel.HasMediaArt, Mode=OneWay}">
+                                                <Image Source="{x:Bind ViewModel.MediaArt, Mode=OneWay}" Stretch="UniformToFill" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{x:Bind ViewModel.MediaTitle, Mode=OneWay}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{x:Bind ViewModel.MediaSubtitle, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <StackPanel Spacing="2" Visibility="{x:Bind ViewModel.HasSeek, Mode=OneWay}">
+                                    <Slider x:Name="SeekSlider" Minimum="0" Maximum="{x:Bind ViewModel.MediaDurationMs, Mode=OneWay}" Value="{x:Bind ViewModel.MediaPositionMs, Mode=OneWay}" IsThumbToolTipEnabled="False" />
+                                    <TextBlock Text="{x:Bind ViewModel.MediaTimeText, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.PreviousTrackCommand}" ToolTipService.ToolTip="Previous track">
+                                        <FontIcon Glyph="&#xE892;" FontSize="13" />
+                                    </Button>
+                                    <Button Width="44" Height="44" Padding="0" CornerRadius="22" Background="{ThemeResource PrimaryBrush}" BorderThickness="0" Command="{x:Bind ViewModel.PlayPauseCommand}" ToolTipService.ToolTip="Play / pause">
+                                        <FontIcon Glyph="{x:Bind ViewModel.PlayPauseGlyph, Mode=OneWay}" FontSize="15" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                    </Button>
+                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.NextTrackCommand}" ToolTipService.ToolTip="Next track">
+                                        <FontIcon Glyph="&#xE893;" FontSize="13" />
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Recent photos strip (v10): thumbnails over bulk, click pulls the full image. -->
+                        <Border Style="{StaticResource FrostedCard}" Padding="16,14"
+                                Visibility="{x:Bind ViewModel.ShowPhotosWidget, Mode=OneWay}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Recent photos" Style="{StaticResource TitleText}" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
+                                    <ItemsControl ItemsSource="{x:Bind ViewModel.Photos}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:PhotoVm">
+                                                <Button Width="72" Height="72" Padding="0" CornerRadius="12" BorderThickness="0" Background="{ThemeResource SurfaceContainerHighBrush}" Command="{x:Bind OpenCommand}" ToolTipService.ToolTip="Save the full photo to this PC">
+                                                    <Border CornerRadius="12">
+                                                        <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Stretch="UniformToFill" />
+                                                    </Border>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Files the phone shared, as they land on this PC. -->
+                        <Border Style="{StaticResource FrostedCard}" Padding="16,14"
+                                Visibility="{x:Bind ViewModel.ShowSharedWidget, Mode=OneWay}">
+                            <StackPanel Spacing="8">
+                                <Grid>
+                                    <TextBlock Text="Shared from phone" Style="{StaticResource TitleText}" />
+                                    <Button HorizontalAlignment="Right" Padding="8,2" CornerRadius="12" Background="Transparent" BorderThickness="0" Command="{x:Bind ViewModel.OpenSharedFolderCommand}" ToolTipService.ToolTip="Open the folder these are saved in">
+                                        <TextBlock Text="Open folder" FontSize="11" Foreground="{ThemeResource PrimaryBrush}" />
+                                    </Button>
+                                </Grid>
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.ReceivedShares}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SharedFileVm">
+                                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,3" Padding="8,6" CornerRadius="10" Background="{ThemeResource SurfaceContainerHighBrush}" BorderThickness="0" Command="{x:Bind OpenCommand}" ToolTipService.ToolTip="{x:Bind LocalPath}">
+                                                <Grid ColumnSpacing="10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon Glyph="&#xE8A5;" FontSize="15" VerticalAlignment="Center" Foreground="{ThemeResource PrimaryBrush}" />
+                                                    <StackPanel Grid.Column="1" Spacing="1">
+                                                        <TextBlock Text="{x:Bind Name}" FontSize="13" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                        <TextBlock Text="{x:Bind Caption}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Clipboard history (in-memory only). -->
+                        <Border Style="{StaticResource FrostedCard}" Padding="16,14"
+                                Visibility="{x:Bind ViewModel.ShowClipboard, Mode=OneWay}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Clipboard" Style="{StaticResource TitleText}" />
+                                <TextBlock Text="Clips synced between devices show up here." FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.HasNoClips, Mode=OneWay}" />
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Clips}" Visibility="{x:Bind ViewModel.HasClips, Mode=OneWay}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ClipVm">
+                                            <Grid ColumnSpacing="8" Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Spacing="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind Text}" FontSize="13" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                    <TextBlock Text="{x:Bind Caption}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Width="32" Height="32" Padding="0" CornerRadius="16" VerticalAlignment="Center" Background="{ThemeResource SecondaryContainerBrush}" BorderThickness="0" Visibility="{x:Bind IsUrl}" Command="{x:Bind ContinueOnPhoneCommand}" ToolTipService.ToolTip="Open this link on your phone">
+                                                    <FontIcon Glyph="&#xE8A7;" FontSize="13" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                                </Button>
+                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" CornerRadius="16" VerticalAlignment="Center" Background="{ThemeResource SecondaryContainerBrush}" BorderThickness="0" Command="{x:Bind RecopyCommand}" ToolTipService.ToolTip="Copy to this PC's clipboard">
+                                                    <FontIcon Glyph="&#xE8C8;" FontSize="13" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                                </Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- Draggable divider between the widgets and notifications panes. -->
+        <Border
+            x:Name="Splitter"
+            Grid.Row="1"
+            Grid.Column="1"
+            Width="14"
+            Background="Transparent"
+            ManipulationMode="TranslateX"
+            ManipulationDelta="OnSplitterDrag">
+            <Border Width="4" HorizontalAlignment="Center" VerticalAlignment="Center" Height="48" CornerRadius="2" Background="{ThemeResource OutlineVariantBrush}" />
+        </Border>
+
+        <!-- Right column (M6c-3): the tabbed panel on top, a draggable horizontal splitter, and the
+             Apps section below. BOTH are always on screen and each scrolls INSIDE itself — there is
+             deliberately no column-level ScrollViewer any more, because the owner rejected having to
+             scroll the column to reach Apps.
+
+             The grid rows are also what keeps TabsPane honest: a row gives it a bounded height, so
+             the notification / messages / calls ListViews still measure against a finite space and
+             keep their own internal scrolling. That is what the old ScrollViewer + code-behind
+             height-sync was faking; a Grid row does it structurally, so TabsPane must NOT carry an
+             explicit Height (it would fight the splitter). The pane order moves THIS container, so
+             tabs, splitter and Apps travel together when the sides are swapped. -->
+        <Grid x:Name="RightPane" Grid.Row="1" Grid.Column="2">
+            <Grid.RowDefinitions>
+                <!-- Default split ≈ 65/35 in the tabs panel's favour; a dragged size replaces the
+                     Apps row with a pixel height and is persisted per device. -->
+                <RowDefinition x:Name="TabsRow" Height="65*" />
+                <!-- M15b Part F: named so ApplyAppsHeight can zero it outright when Apps is
+                     switched off. Auto would collapse anyway once the splitter is Collapsed, but
+                     "removed" is a state this page must assert rather than infer. -->
+                <RowDefinition x:Name="AppsSplitterRow" Height="Auto" />
+                <RowDefinition x:Name="AppsRow" Height="35*" />
+            </Grid.RowDefinitions>
+
+        <!-- Tabbed panel: Notifications | Photos | Messages | Calls. -->
+        <Border x:Name="TabsPane" Style="{StaticResource ExpressiveCard}" Padding="20">
+            <Grid RowSpacing="14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Tab bar -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsNotificationsTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="notifications" Content="{x:Bind ViewModel.HeaderText, Mode=OneWay}" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsPhotosTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="photos" Content="Photos" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsMessagesTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="messages" Content="Messages" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsCallsTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="calls" Content="Calls" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsSharedTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="shared" Content="Shared" />
+                </StackPanel>
+
+                <!-- Tab content. Dimmed while showing the remembered copy (M02). -->
+                <Grid Grid.Row="1" Opacity="{x:Bind ViewModel.ContentOpacity, Mode=OneWay}">
+
+                    <!-- Shared tab: files both directions. -->
+                    <Grid Visibility="{x:Bind ViewModel.IsSharedTab, Mode=OneWay}" RowSpacing="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Border Style="{StaticResource FrostedCard}" Padding="16,14">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Send to phone" Style="{StaticResource TitleText}" />
+                                <TextBlock Style="{StaticResource BodyText}" FontSize="13" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Text="Pick files to push to your phone. They appear in Linc's Share tab there, ready to open." />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Click="OnSendToPhone" IsEnabled="{x:Bind ViewModel.IsNotSending, Mode=OneWay}" Padding="16,8" CornerRadius="20" Background="{ThemeResource PrimaryBrush}" BorderThickness="0">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE8E5;" FontSize="15" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                            <TextBlock Text="Choose files…" Foreground="{ThemeResource OnPrimaryBrush}" FontSize="13" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Command="{x:Bind ViewModel.OpenSharedFolderCommand}" Padding="16,8" CornerRadius="20" Background="{ThemeResource SecondaryContainerBrush}" BorderThickness="0">
+                                        <TextBlock Text="Open received folder" FontSize="13" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <ProgressRing IsActive="{x:Bind ViewModel.IsSending, Mode=OneWay}" Visibility="{x:Bind ViewModel.IsSending, Mode=OneWay}" Width="16" Height="16" Foreground="{ThemeResource PrimaryBrush}" />
+                                    <TextBlock Text="{x:Bind ViewModel.ShareStatus, Mode=OneWay}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                </StackPanel>
+                                <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ViewModel.IsSending, Mode=OneWay}" Foreground="{ThemeResource PrimaryBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Grid.Row="1">
+                            <StackPanel Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{x:Bind ViewModel.HasNoReceivedShares, Mode=OneWay}">
+                                <FontIcon Glyph="&#xE8A5;" FontSize="28" HorizontalAlignment="Center" Foreground="{ThemeResource OutlineBrush}" />
+                                <TextBlock Style="{StaticResource BodyText}" TextAlignment="Center" MaxWidth="380" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Text="Nothing shared from your phone yet. Use the phone's share sheet and pick Linc, or its Share tab." />
+                            </StackPanel>
+
+                            <ListView SelectionMode="None" ItemsSource="{x:Bind ViewModel.ReceivedShares}" Visibility="{x:Bind ViewModel.HasReceivedShares, Mode=OneWay}">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SharedFileVm">
+                                        <Border Style="{StaticResource FrostedCard}" Padding="14,12" Margin="0,0,0,8">
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon Glyph="&#xE8A5;" FontSize="18" VerticalAlignment="Center" Foreground="{ThemeResource PrimaryBrush}" />
+                                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind Name}" FontSize="13" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                    <TextBlock Text="{x:Bind Caption}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Padding="12,6" CornerRadius="16" VerticalAlignment="Center" Background="{ThemeResource SecondaryContainerBrush}" BorderThickness="0" Command="{x:Bind OpenCommand}">
+                                                    <TextBlock Text="Open" FontSize="13" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Grid>
+
+                    <!-- Notifications tab -->
+                    <Grid Visibility="{x:Bind ViewModel.IsNotificationsTab, Mode=OneWay}">
+                        <StackPanel Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{x:Bind ViewModel.HasNoItems, Mode=OneWay}">
+                            <FontIcon Glyph="&#xE7ED;" FontSize="28" HorizontalAlignment="Center" Foreground="{ThemeResource OutlineBrush}" />
+                            <TextBlock Style="{StaticResource BodyText}" TextAlignment="Center" MaxWidth="380" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Text="No phone notifications right now. If none ever appear, check that notification access is enabled in the Linc app on the phone." />
+                        </StackPanel>
+
+                        <ListView SelectionMode="None" ItemsSource="{x:Bind ViewModel.Items}" Visibility="{x:Bind ViewModel.HasItems, Mode=OneWay}">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:NotificationVm">
+                                    <StackPanel>
+                                        <Border Background="{ThemeResource SurfaceContainerBrush}" CornerRadius="18" Padding="14,12" Margin="0,4">
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Border Width="32" Height="32" CornerRadius="8" Margin="0,2,0,0" VerticalAlignment="Top" Background="{ThemeResource SurfaceContainerHighBrush}">
+                                                    <Grid>
+                                                        <FontIcon Glyph="&#xE8BD;" FontSize="13" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind HasNoIcon, Mode=OneWay}" />
+                                                        <Border CornerRadius="8" Visibility="{x:Bind HasIcon, Mode=OneWay}">
+                                                            <Image Source="{x:Bind Icon, Mode=OneWay}" Stretch="UniformToFill" />
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" Spacing="3">
+                                                    <TextBlock Text="{x:Bind Caption}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" FontSize="15" />
+                                                    <TextBlock Text="{x:Bind Text}" FontSize="13" TextWrapping="Wrap" MaxLines="3" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+
+                                                    <ItemsControl Margin="0,4,0,0" ItemsSource="{x:Bind Actions}" Visibility="{x:Bind HasActions}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <StackPanel Orientation="Horizontal" Spacing="8" />
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:NotificationActionVm">
+                                                                <Button Content="{x:Bind Title}" FontSize="13" Padding="14,5" BorderThickness="0" Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}" Command="{x:Bind FireCommand}" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+
+                                                    <Grid ColumnSpacing="8" Margin="0,4,0,0" Visibility="{x:Bind CanReply}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBox Style="{StaticResource ExpressiveTextBox}" Text="{x:Bind ReplyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Reply from this PC…" FontSize="13" />
+                                                        <Button Grid.Column="1" Width="34" Height="34" Padding="0" CornerRadius="17" VerticalAlignment="Center" Background="{ThemeResource PrimaryBrush}" BorderThickness="0" Command="{x:Bind SendReplyCommand}" ToolTipService.ToolTip="Send reply">
+                                                            <FontIcon Glyph="&#xE724;" FontSize="13" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                                        </Button>
+                                                    </Grid>
+                                                </StackPanel>
+
+                                                <Button Grid.Column="2" Width="30" Height="30" Padding="0" VerticalAlignment="Top" Background="Transparent" BorderThickness="0" Command="{x:Bind DismissCommand}" ToolTipService.ToolTip="Dismiss on both devices">
+                                                    <FontIcon Glyph="&#xE711;" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                        <!-- Separator between notifications. -->
+                                        <Border Height="1" Margin="14,3" Background="{ThemeResource OutlineVariantBrush}" Opacity="0.4" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+
+                    <!-- Photos tab -->
+                    <Grid Visibility="{x:Bind ViewModel.IsPhotosTab, Mode=OneWay}">
+                        <TextBlock Style="{StaticResource BodyText}" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" TextAlignment="Center" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.HasNoPhotos, Mode=OneWay}" Text="No recent photos. New camera shots appear here — the phone needs All-files access for Linc." />
+                        <GridView SelectionMode="None" ItemsSource="{x:Bind ViewModel.Photos}" Padding="0" Visibility="{x:Bind ViewModel.HasPhotos, Mode=OneWay}">
+                            <GridView.ItemContainerStyle>
+                                <Style TargetType="GridViewItem">
+                                    <Setter Property="Margin" Value="0,0,8,8" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="MinWidth" Value="0" />
+                                    <Setter Property="MinHeight" Value="0" />
+                                </Style>
+                            </GridView.ItemContainerStyle>
+                            <GridView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PhotoVm">
+                                    <Button Width="110" Height="110" Padding="0" CornerRadius="14" BorderThickness="0" Background="{ThemeResource SurfaceContainerHighBrush}" Command="{x:Bind OpenCommand}" ToolTipService.ToolTip="Save the full photo to this PC">
+                                        <Border CornerRadius="14">
+                                            <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Stretch="UniformToFill" />
+                                        </Border>
+                                    </Button>
+                                </DataTemplate>
+                            </GridView.ItemTemplate>
+                        </GridView>
+                    </Grid>
+
+                    <!-- Messages tab -->
+                    <Grid Visibility="{x:Bind ViewModel.IsMessagesTab, Mode=OneWay}">
+                        <TextBlock Style="{StaticResource BodyText}" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" TextAlignment="Center" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.MessagesOff, Mode=OneWay}" Text="Turn on the Messages lane on the Sync page to read and reply to texts here (needs the SMS permission on the phone)." />
+
+                        <Grid Visibility="{x:Bind ViewModel.MessagesOn, Mode=OneWay}" ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <ListView SelectionMode="Single" ItemsSource="{x:Bind ViewModel.Conversations}" SelectedItem="{x:Bind ViewModel.Selected, Mode=TwoWay}">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="10,8" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ConversationVm">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{x:Bind Address}" FontWeight="SemiBold" FontSize="13" />
+                                            <TextBlock Text="{x:Bind Snippet, Mode=OneWay}" FontSize="11" TextTrimming="CharacterEllipsis" MaxLines="1" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+
+                            <Grid Grid.Column="1" RowSpacing="10" BorderThickness="1,0,0,0" BorderBrush="{ThemeResource OutlineVariantBrush}" Padding="14,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <ListView SelectionMode="None" ItemsSource="{x:Bind ViewModel.Selected.Messages, Mode=OneWay}">
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Padding" Value="0" />
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:MessageVm">
+                                            <Grid Padding="0,3">
+                                                <Border MaxWidth="440" CornerRadius="14" Padding="12,8" HorizontalAlignment="{x:Bind Alignment}" Background="{x:Bind Bubble}">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{x:Bind Body}" TextWrapping="Wrap" FontSize="13" />
+                                                        <TextBlock Text="{x:Bind TimeText}" FontSize="11" Opacity="0.6" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+
+                                <Grid Grid.Row="1" ColumnSpacing="8" Visibility="{x:Bind ViewModel.CanReply, Mode=OneWay}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Style="{StaticResource ExpressiveTextBox}" Text="{x:Bind ViewModel.ReplyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Text back…" />
+                                    <Button Grid.Column="1" Style="{StaticResource FilledButton}" Padding="20,10" Content="Send" Command="{x:Bind ViewModel.SendReplyCommand}" />
+                                </Grid>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+
+                    <!-- Calls tab -->
+                    <Grid Visibility="{x:Bind ViewModel.IsCallsTab, Mode=OneWay}">
+                        <TextBlock Style="{StaticResource BodyText}" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" TextAlignment="Center" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.CallsOff, Mode=OneWay}" Text="Turn on the Calls lane on the Sync page to see your call log and dial from this PC (needs the Phone permission on the phone)." />
+
+                        <Grid Visibility="{x:Bind ViewModel.CallsOn, Mode=OneWay}" RowSpacing="12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Background="{ThemeResource TertiaryContainerBrush}" CornerRadius="16" Padding="16,12" Visibility="{x:Bind ViewModel.IncomingRinging, Mode=OneWay}">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{x:Bind ViewModel.IncomingText, Mode=OneWay}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{ThemeResource OnTertiaryContainerBrush}" />
+                                    <Button Grid.Column="1" Content="Decline" Background="{ThemeResource ErrorBrush}" Foreground="{ThemeResource OnPrimaryBrush}" BorderThickness="0" CornerRadius="20" Padding="18,8" Command="{x:Bind ViewModel.DeclineCommand}" />
+                                </Grid>
+                            </Border>
+
+                            <Grid Grid.Row="1" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Style="{StaticResource ExpressiveTextBox}" Text="{x:Bind ViewModel.DialNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Enter a number to call from your phone…" InputScope="TelephoneNumber" />
+                                <Button Grid.Column="1" Style="{StaticResource FilledButton}" Padding="20,10" Content="Call" Command="{x:Bind ViewModel.DialCommand}" />
+                            </Grid>
+
+                            <ListView Grid.Row="2" SelectionMode="None" ItemsSource="{x:Bind ViewModel.RecentCalls}">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="4,8" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:CallVm">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Glyph="{x:Bind Glyph}" FontSize="15" VerticalAlignment="Center" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock Text="{x:Bind Number}" FontWeight="SemiBold" FontSize="13" />
+                                                <TextBlock Text="{x:Bind Detail}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Width="34" Height="34" Padding="0" CornerRadius="17" Background="{ThemeResource SecondaryContainerBrush}" BorderThickness="0" Command="{x:Bind DialCommand}" ToolTipService.ToolTip="Call this number from your phone">
+                                                <FontIcon Glyph="&#xE717;" FontSize="13" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Grid>
+
+                </Grid>
+            </Grid>
+        </Border>
+
+                <!-- Draggable divider between the tabs panel and Apps (M6c-3). Deliberately the
+                     same visual weight and idiom as the vertical Splitter above, turned 90°. -->
+                <Border
+                    x:Name="AppsSplitter"
+                    Grid.Row="1"
+                    Height="14"
+                    Visibility="{x:Bind ViewModel.ShowApps, Mode=OneWay}"
+                    Background="Transparent"
+                    ManipulationMode="TranslateY"
+                    ManipulationDelta="OnAppsSplitterDrag"
+                    ManipulationCompleted="OnAppsSplitterDragCompleted">
+                    <Border Height="4" VerticalAlignment="Center" HorizontalAlignment="Center" Width="48" CornerRadius="2" Background="{ThemeResource OutlineVariantBrush}" />
+                </Border>
+
+                <!-- BEGIN Apps section (M6c-2). Its own section under the tabs panel, NOT a widget:
+                     an icon + name grid and nothing else — no version, no package id, no rows. Since
+                     M7a the tiles ARE interactive: clicking one opens that app in its own PC window
+                     (D-059). On a pre-v16 phone the section is DISABLED, not hidden, with a
+                     plain-language reason. -->
+                <Border Grid.Row="2" Style="{StaticResource ExpressiveCard}" Padding="20"
+                        Visibility="{x:Bind ViewModel.ShowApps, Mode=OneWay}">
+                    <!-- "Disabled" is an opacity here rather than IsEnabled: Border is not a
+                         Control, so the dimming is the affordance (same device as ContentOpacity).
+                         The launch command carries its own guards, so a click on a dimmed tile
+                         explains itself instead of doing nothing. -->
+                    <Grid RowSpacing="10" Opacity="{x:Bind ViewModel.AppsOpacity, Mode=OneWay}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <!-- Title row, plus M7b's open-window affordance: a count and "Close all",
+                             both present only while at least one window is open. Deliberately NOT
+                             a window manager — no per-window list, no thumbnails, no docking. -->
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Apps" Style="{StaticResource TitleText}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                       Text="{x:Bind ViewModel.OpenAppWindowsText, Mode=OneWay}"
+                                       Visibility="{x:Bind ViewModel.HasOpenAppWindows, Mode=OneWay}" />
+                            <Button Grid.Column="2" Content="Close all" FontSize="11" Padding="12,4"
+                                    CornerRadius="14" VerticalAlignment="Center"
+                                    Command="{x:Bind ViewModel.CloseAllAppWindowsCommand}"
+                                    Visibility="{x:Bind ViewModel.HasOpenAppWindows, Mode=OneWay}"
+                                    ToolTipService.ToolTip="Close every app window open on this PC" />
+                        </Grid>
+                        <StackPanel Grid.Row="1" Spacing="4">
+                            <TextBlock Text="{x:Bind ViewModel.AppsEmptyText, Mode=OneWay}" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.HasNoApps, Mode=OneWay}" />
+                            <!-- M7a: why a launch failed, or that a disconnect closed the windows.
+                                 Plain language only — never scrcpy's own output (2.6). -->
+                            <TextBlock Text="{x:Bind ViewModel.AppsMessage, Mode=OneWay}" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.HasAppsMessage, Mode=OneWay}" />
+                        </StackPanel>
+                        <!-- M6c-3: Apps scrolls INSIDE itself. The card no longer grows to fit the
+                             grid and no longer relies on a column-level ScrollViewer to be reached.
+                             ItemsRepeater + UniformGridLayout stays exactly as M6c-2 left it: a
+                             plain wrapping grid with no selection semantics (a GridView would bring
+                             some).
+
+                             M7b — VIRTUALIZATION. The ItemsRepeater stays the ScrollViewer's DIRECT
+                             content, and applaunchsim fails if that nesting changes. Measured, not
+                             assumed: tools\appgridprobe realizes ~75 of 500 tiles here. Note what
+                             it also measured — ItemsRepeater virtualizes off the effective viewport
+                             the framework propagates, NOT off how it is measured, so an intervening
+                             StackPanel does not by itself break realization the way it would for an
+                             ItemsControl. It would still break the card's scrolling and height, and
+                             the tile-realized handlers below are what make icon fetching lazy. -->
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                                      VerticalScrollMode="Auto" HorizontalScrollMode="Disabled"
+                                      HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+                        <ItemsRepeater x:Name="AppsRepeater" ItemsSource="{x:Bind ViewModel.Apps}"
+                                       ElementPrepared="OnAppTilePrepared"
+                                       ElementClearing="OnAppTileClearing"
+                                       Visibility="{x:Bind ViewModel.HasApps, Mode=OneWay}">
+                            <ItemsRepeater.Layout>
+                                <UniformGridLayout MinItemWidth="92" MinItemHeight="98"
+                                                   MinColumnSpacing="6" MinRowSpacing="10"
+                                                   ItemsStretch="Fill" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="vm:AppVm">
+                                    <!-- M7a: the tile is the click target. A Button (not an ItemClick)
+                                         because the grid has no selection semantics and must not grow
+                                         any — clicking a tile OPENS the app, it does not select it.
+                                         The command lives on the item because a DataTemplate's x:Bind
+                                         cannot reach the page's view model. -->
+                                    <Button Command="{x:Bind Launch}" CommandParameter="{x:Bind}"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                            Padding="4,6" BorderThickness="0" CornerRadius="12"
+                                            ToolTipService.ToolTip="{x:Bind Label}">
+                                        <!-- The hover affordance: transparent at rest, a filled surface
+                                             under the pointer, so the tile reads as clickable. -->
+                                        <Button.Resources>
+                                            <SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
+                                            <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="SurfaceContainerHighBrush" />
+                                            <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="SurfaceContainerBrush" />
+                                            <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+                                        </Button.Resources>
+                                        <StackPanel Spacing="8">
+                                            <Border Width="48" Height="48" CornerRadius="12" HorizontalAlignment="Center" Background="{ThemeResource SurfaceContainerHighBrush}">
+                                                <Grid>
+                                                    <!-- A missing icon is normal; the placeholder stands in. -->
+                                                    <FontIcon Glyph="&#xECAA;" FontSize="18" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind HasNoIcon, Mode=OneWay}" />
+                                                    <Border CornerRadius="12" Visibility="{x:Bind HasIcon, Mode=OneWay}">
+                                                        <Image Source="{x:Bind Icon, Mode=OneWay}" Stretch="UniformToFill" />
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                            <TextBlock Text="{x:Bind Label}" FontSize="11" TextAlignment="Center"
+                                                       HorizontalAlignment="Center" TextWrapping="Wrap"
+                                                       MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+                <!-- END Apps section -->
+
+        </Grid>
+
+        <!-- Zero-device empty state (M2b): the always-reachable front door. Overlays the whole page
+             when no phone has a tab (first run, or every tab closed) so pairing is never a dead end.
+             RowSpan="2" added alongside the M9d-1 banner row so this still covers the full grid,
+             not just the row the banner introduced. -->
+        <Border
+            Grid.Row="0"
+            Grid.RowSpan="2"
+            Grid.Column="0"
+            Grid.ColumnSpan="3"
+            Background="{ThemeResource SurfaceBrush}"
+            Visibility="{x:Bind ViewModel.HasNoVisibleDevice, Mode=OneWay}">
+            <Border
+                Style="{StaticResource ExpressiveCard}"
+                Padding="40,36"
+                MaxWidth="440"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+                <StackPanel Spacing="16" HorizontalAlignment="Center">
+                    <Border Width="64" Height="64" CornerRadius="32" HorizontalAlignment="Center" Background="{ThemeResource PrimaryContainerBrush}">
+                        <FontIcon Glyph="&#xE8EA;" FontSize="28" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                    </Border>
+                    <TextBlock Text="No phone paired yet" Style="{StaticResource HeadlineText}" TextAlignment="Center" HorizontalAlignment="Center" />
+                    <TextBlock
+                        Style="{StaticResource BodyText}"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                        Text="Connect your phone to see its notifications, messages, photos and more here. Linc walks you through it — no files to copy, no commands to type." />
+                    <Button
+                        Style="{StaticResource FilledButton}"
+                        HorizontalAlignment="Center"
+                        Click="OnPairPhone">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE710;" FontSize="15" Foreground="{ThemeResource OnPrimaryBrush}" />
+                            <TextBlock Text="Pair a phone" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</Page>

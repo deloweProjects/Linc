@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon foreground: the new Linc mark (M14) — white L on transparency,
+  black is the adaptive background layer. Rendered from ico.png and referenced
+  here as a bitmap so the adaptive icon stays density-independent.
+-->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/ic_launcher_foreground_mark"
+    android:gravity="center" />

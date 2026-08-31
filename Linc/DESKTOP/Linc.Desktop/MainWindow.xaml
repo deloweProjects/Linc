@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Linc.Desktop.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:tb="using:H.NotifyIcon"
+    xmlns:vm="using:Linc.Desktop.ViewModels"
+    xmlns:views="using:Linc.Desktop.Views"
+    Title="Linc">
+
+    <Grid Background="{ThemeResource SurfaceBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="44" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Custom title bar: the window chrome joins the app's design (M16 polish).
+             M03 adds the device tab strip here — one tab per known phone, Chrome-style (D-033). -->
+        <Grid x:Name="AppTitleBar" Padding="16,0" ColumnSpacing="10" Background="Transparent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Image
+                Source="ms-appx:///Assets/linc.png"
+                Width="18" Height="18"
+                VerticalAlignment="Center" />
+            <TextBlock
+                Grid.Column="1"
+                Text="Linc"
+                FontSize="13"
+                FontWeight="SemiBold"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource OnSurfaceBrush}" />
+
+            <!-- Shown once at least one phone is paired (M1); only a device-less desktop hides it. -->
+            <StackPanel
+                Grid.Column="2"
+                Orientation="Horizontal"
+                Spacing="4"
+                Margin="12,0,0,0"
+                VerticalAlignment="Stretch"
+                Visibility="{x:Bind Tabs.IsStripVisible, Mode=OneWay}">
+                <ItemsControl ItemsSource="{x:Bind Tabs.Tabs, Mode=OneWay}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="4" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DeviceTabViewModel">
+                            <Grid
+                                Height="32"
+                                VerticalAlignment="Center"
+                                CornerRadius="8"
+                                Padding="10,0,4,0"
+                                ColumnSpacing="8"
+                                ToolTipService.ToolTip="{x:Bind Presence, Mode=OneWay}"
+                                Background="{ThemeResource SurfaceContainerBrush}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <!-- Presence at a glance: accented when live, muted otherwise. -->
+                                <Grid VerticalAlignment="Center">
+                                    <Ellipse
+                                        Width="8" Height="8"
+                                        Fill="{ThemeResource PrimaryBrush}"
+                                        Visibility="{x:Bind IsLive, Mode=OneWay}" />
+                                    <Ellipse
+                                        Width="8" Height="8"
+                                        Fill="{ThemeResource OutlineBrush}"
+                                        Visibility="{x:Bind IsNotLive, Mode=OneWay}" />
+                                </Grid>
+                                <Button
+                                    Grid.Column="1"
+                                    Command="{x:Bind SelectCommand}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    MinWidth="0">
+                                    <TextBlock
+                                        Text="{x:Bind Model, Mode=OneWay}"
+                                        FontSize="13"
+                                        Foreground="{ThemeResource OnSurfaceBrush}" />
+                                </Button>
+                                <Button
+                                    Grid.Column="2"
+                                    Command="{x:Bind CloseCommand}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="4"
+                                    MinWidth="0"
+                                    ToolTipService.ToolTip="Close this tab (the phone stays paired)">
+                                    <FontIcon Glyph="&#xE8BB;" FontSize="11" />
+                                </Button>
+                                <!-- Which phone the pages are showing. -->
+                                <Border
+                                    Grid.ColumnSpan="3"
+                                    Height="2"
+                                    VerticalAlignment="Bottom"
+                                    Background="{ThemeResource PrimaryBrush}"
+                                    Visibility="{x:Bind IsActive, Mode=OneWay}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button
+                    Command="{x:Bind Tabs.AddDeviceCommand}"
+                    Height="32"
+                    MinWidth="32"
+                    Padding="0"
+                    CornerRadius="8"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    AutomationProperties.AutomationId="AddDeviceButton"
+                    AutomationProperties.Name="Pair another phone"
+                    ToolTipService.ToolTip="Pair another phone">
+                    <FontIcon Glyph="&#xE710;" FontSize="13" />
+                </Button>
+            </StackPanel>
+
+            <!-- Zero-device entry (M2b): when no phone is paired the strip above is hidden, so this
+                 lone "pair a phone" chip takes its place — the add-device door is always reachable. -->
+            <Button
+                Grid.Column="2"
+                Margin="12,0,0,0"
+                Height="32"
+                Padding="12,0"
+                CornerRadius="8"
+                VerticalAlignment="Center"
+                Background="{ThemeResource SurfaceContainerBrush}"
+                BorderThickness="0"
+                Click="OnPairPhone"
+                Visibility="{x:Bind Tabs.IsStripHidden, Mode=OneWay}"
+                AutomationProperties.AutomationId="PairPhoneButton"
+                AutomationProperties.Name="Pair a phone"
+                ToolTipService.ToolTip="Set up your phone">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE710;" FontSize="13" />
+                    <TextBlock Text="Pair a phone" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
+                </StackPanel>
+            </Button>
+
+            <!-- ONLY this empty strip is the window's drag region. The whole title-bar Grid used
+                 to be, and that made the device tabs unclickable: a drag region swallows mouse
+                 input before it reaches child controls (found by clicking a tab for real — UIA
+                 Invoke worked while a genuine click did nothing). -->
+            <Border x:Name="TitleBarDragArea" Grid.Column="3" Background="Transparent" />
+        </Grid>
+
+        <tb:TaskbarIcon
+            x:Name="TrayIcon"
+            ToolTipText="{x:Bind Shell.TrayText, Mode=OneWay}"
+            LeftClickCommand="{x:Bind ShowWindowCommand}"
+            NoLeftClickDelay="True">
+            <tb:TaskbarIcon.ContextFlyout>
+                <MenuFlyout>
+                    <MenuFlyoutItem Text="Open Linc" Command="{x:Bind ShowWindowCommand}" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Exit" Command="{x:Bind ExitCommand}" />
+                </MenuFlyout>
+            </tb:TaskbarIcon.ContextFlyout>
+        </tb:TaskbarIcon>
+
+        <!-- Global error banner, visible regardless of which page is open -->
+        <Border
+            Grid.Row="1"
+            Style="{StaticResource ExpressiveCard}"
+            Background="{ThemeResource ErrorContainerBrush}"
+            Margin="16,16,16,0"
+            Padding="16"
+            Visibility="{x:Bind Shell.HasError, Mode=OneWay}">
+            <TextBlock
+                Text="{x:Bind Shell.ErrorMessage, Mode=OneWay}"
+                Foreground="{ThemeResource OnErrorContainerBrush}"
+                FontSize="15"
+                TextWrapping="Wrap" />
+        </Border>
+
+        <!-- M17b B4: an OPTIONAL update. A dismissible card, same slot as the error banner so it
+             shows regardless of the open page. Visibility binds to a BOOL, never to a string. -->
+        <Border
+            Grid.Row="1"
+            Style="{StaticResource ExpressiveCard}"
+            Margin="16,16,16,0"
+            Padding="16"
+            Visibility="{x:Bind Shell.HasOptionalUpdate, Mode=OneWay}">
+            <StackPanel Spacing="8">
+                <TextBlock Text="An update is available" Style="{StaticResource TitleText}" />
+                <TextBlock Text="{x:Bind Shell.UpdateNotes, Mode=OneWay}" TextWrapping="Wrap" Opacity="0.8" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="Update" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind Shell.ApplyUpdateCommand}" />
+                    <Button Content="Skip this version" Command="{x:Bind Shell.SkipUpdateCommand}" />
+                </StackPanel>
+                <TextBlock
+                    Text="{x:Bind Shell.UpdateProblem, Mode=OneWay}"
+                    Foreground="{ThemeResource OnErrorContainerBrush}"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind Shell.HasUpdateProblem, Mode=OneWay}" />
+            </StackPanel>
+        </Border>
+
+        <NavigationView
+            Grid.Row="2"
+            x:Name="Nav"
+            PaneDisplayMode="Left"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="True"
+            SelectionChanged="OnNavSelectionChanged"
+            Loaded="OnNavLoaded">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Home" Tag="Home">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE80F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Device" Tag="Device">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8EA;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Files" Tag="Files">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8B7;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Sync" Tag="Sync">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE895;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Details" Tag="Details">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE9D9;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Logs" Tag="Logs">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE81C;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
+
+        <views:OnboardingView
+            Grid.RowSpan="3"
+            Visibility="{x:Bind Shell.IsOnboarding, Mode=OneWay}" />
+
+        <!-- M17b B4: a FORCED update. This blocks the app's FUNCTION, not the process — the title
+             bar, the close button and the tray menu are all still live, so the user is never
+             trapped in a window they cannot exit. There is deliberately no dismiss button. -->
+        <Grid
+            Grid.RowSpan="3"
+            Background="{ThemeResource SurfaceBrush}"
+            Visibility="{x:Bind Shell.IsUpdateBlocking, Mode=OneWay}">
+            <StackPanel
+                VerticalAlignment="Center"
+                HorizontalAlignment="Center"
+                MaxWidth="460"
+                Spacing="16">
+                <TextBlock Text="Linc needs to update" Style="{StaticResource TitleText}" HorizontalAlignment="Center" />
+                <TextBlock
+                    Text="This version of Linc is no longer supported, so it can't connect to your phone until it's updated."
+                    TextWrapping="Wrap"
+                    HorizontalAlignment="Center"
+                    Opacity="0.8" />
+                <TextBlock Text="{x:Bind Shell.UpdateNotes, Mode=OneWay}" TextWrapping="Wrap" HorizontalAlignment="Center" Opacity="0.7" />
+                <Button
+                    Content="Update"
+                    Style="{StaticResource AccentButtonStyle}"
+                    HorizontalAlignment="Center"
+                    Command="{x:Bind Shell.ApplyUpdateCommand}" />
+                <TextBlock
+                    Text="{x:Bind Shell.UpdateProblem, Mode=OneWay}"
+                    Foreground="{ThemeResource OnErrorContainerBrush}"
+                    TextWrapping="Wrap"
+                    HorizontalAlignment="Center"
+                    Visibility="{x:Bind Shell.HasUpdateProblem, Mode=OneWay}" />
+                <TextBlock
+                    Text="You can still close Linc from the title bar or the notification area."
+                    TextWrapping="Wrap"
+                    HorizontalAlignment="Center"
+                    Opacity="0.6"
+                    FontSize="13" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
+

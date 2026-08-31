@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-hotspotsim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The real role rule and the real address filter, compiled verbatim (D-036 pattern):
+         both are plain System.Net with no WinUI dependency, so they link into an ordinary
+         net8.0 console. This harness must never grow its own copy of either — the M5c-3
+         lesson (GUIDE.md §4.1) is that a harness re-implementing what it tests proves
+         nothing. The connect ORDERING in HotspotConnect.cs cannot be called from here
+         without an ADB server and a phone, so that one is a source-text check below. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotRole.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotAddress.cs" />
+    <!-- M13b: the v18 generation rule and the announcement admission gate. Both are pure
+         System.Text.Json.Nodes, and both are what the two negative proofs break. The SERVICE
+         that consumes them (HotspotLinkService.cs) needs the whole app, so its one property
+         that matters - that it asks the gate before it dials - is a source-text check below. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotAnnounce.cs" />
+    <!-- M13c: the backoff schedule, the race's claim rule and the stage timer, plus the real
+         onboarding grant plan and the never-stop-early loop that runs it. All pure; the ADB and
+         Settings.Global sides of the same features are source-text checks. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotHealth.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneSetupCommands.cs" />
+    <!-- M13f: the transport-ranking rule (a transport that has not answered must lose its rank),
+         the endpoint builder (never double-appends a port to an address that already IS an
+         endpoint), and the connect-side serial check. All pure; the consuming services are
+         source-text checks below. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\TransportRank.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotEndpoint.cs" />
+    <!-- M15a: the admission rules — the plain-language wording for a device ADB can see but
+         cannot use (A3), and the one-link-at-a-time switch decision (A5, D-037). Both are plain
+         strings and enums with no adb client and no WinUI, so they link here verbatim; the
+         services that consume them need the whole app and are source-text checks below. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceAdmission.cs" />
+  </ItemGroup>
+</Project>

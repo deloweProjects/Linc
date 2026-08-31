@@ -1,0 +1,1 @@
+Bundles scrcpy by Genymobile (Apache-2.0). Linc customizes only the window presentation at runtime (frameless: rounded corners, drop shadow, top-strip drag, 'Linc' title, Linc icon); the engine is untouched. SCRCPY/Default tracks upstream for future updates.

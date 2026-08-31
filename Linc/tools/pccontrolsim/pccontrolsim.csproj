@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-pccontrolsim</AssemblyName>
+    <RootNamespace>Linc.PcControlSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      v17 quick controls (M4b, D-042): compiled verbatim from Linc.Desktop, same posture as
+      apkinstallsim/ApkInstall.cs (D-036/D-037) — this is what makes section 2 below call the
+      REAL validator instead of modelling it (GUIDE §4.1).
+
+      PcControlValidator.cs has ZERO P/Invoke and no reference to PcControlService, so compiling
+      ONLY this file into an independent project means this harness's own assembly cannot reach
+      a real power/volume/brightness call BY CONSTRUCTION: the Win32/COM/WMI interop lives
+      entirely in PcControlService.cs, which is never compiled in here. Section 1 below proves
+      this at runtime too (zero P/Invoke methods in this assembly), not just by omission.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcControlValidator.cs" />
+
+    <!--
+      M12i Part B3: PcPowerCapabilities.CanSleep is the pure (s3Allowed, s0LowPower) -> canSleep
+      decision behind pc.state's canSleep field. Zero P/Invoke, same posture as
+      PcControlValidator.cs above, so section 6 below calls the REAL function instead of
+      modelling it (GUIDE §4.1) — and section 1's P/Invoke scan still passes because this file
+      has none either.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcPowerCapabilities.cs" />
+
+    <!--
+      M16 Part A: PcMediaRouting.PickTarget is the pure "which player does the phone see, and
+      therefore which one must pc.media.control reach?" decision behind PcMediaService. It has no
+      WinRT types and no P/Invoke — same posture as the two files above (D-036) — so section 7
+      calls the REAL rule with no media playing on this machine at all.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMediaRouting.cs" />
+  </ItemGroup>
+</Project>

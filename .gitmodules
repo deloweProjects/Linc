@@ -1,0 +1,3 @@
+[submodule "Linc/SCRCPY/Default"]
+	path = Linc/SCRCPY/Default
+	url = https://github.com/Genymobile/scrcpy.git

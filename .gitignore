@@ -1,0 +1,86 @@
+# ---------------------------------------------------------------------------
+# Linc — one .gitignore, at the repository root.
+#
+# Merged in M19 from the old Linc/.gitignore when the repo root moved up a
+# level (Linc/ became a folder inside the repo instead of being the repo).
+# Paths are therefore relative to the ROOT, not to Linc/.
+#
+# Rule of thumb: build output and machine-local state are ignored; everything
+# the product needs to build — including the vendored scrcpy binaries — is not.
+# ---------------------------------------------------------------------------
+
+# --- OS ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- IDEs / editors / local agent state ---
+.idea/
+.vs/
+.vscode/
+.continue/
+.claude/
+*.user
+*.suo
+
+# --- Secrets and machine-local config (never committed) ---
+.env
+.env.*
+!.env.example
+**/local.properties
+skills-lock.json
+
+# --- The nemo MCP worker (A4) ---
+# Not part of the product: it is tooling for the AI that helps build Linc, it
+# carries its own API configuration, and it has no business in a public repo.
+MCP/
+
+# --- Android / Gradle ---
+**/.gradle/
+**/build/
+**/captures/
+**/.kotlin/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# --- .NET / WinUI ---
+# Auto-generated VS "open folder" wrapper project (not part of the build)
+Linc/DESKTOP/Linc Desktop.sln
+Linc/DESKTOP/Linc Desktop.vcxproj
+Linc/DESKTOP/Linc Desktop.vcxproj.filters
+**/bin/
+**/obj/
+**/Generated Files/
+publish/
+*.binlog
+
+# --- scrcpy (vendored) ---
+# ONLY the meson build directories. The vendored scrcpy BINARIES the product
+# ships with (Linc/SCRCPY/Linc.scrcpy/bin/ - scrcpy.exe, scrcpy-server, SDL2 and
+# the ~98 mingw64 DLLs) are deliberately NOT ignored: the desktop app cannot
+# mirror without them, and they are the whole point of vendoring scrcpy.
+# The un-ignore below MUST come after the "**/bin/" rule above, which would
+# otherwise swallow them (it did, until this was caught in M19).
+Linc/SCRCPY/**/src/x/
+Linc/SCRCPY/**/x/
+!Linc/SCRCPY/Linc.scrcpy/bin/
+!Linc/SCRCPY/Linc.scrcpy/bin/**
+
+# --- Release output ---
+# The shipped artefacts (a 171 MB desktop zip and the APK) ship as GitHub
+# Release assets, never as tracked files — GitHub hard-rejects blobs >100 MB.
+# M19 moved the real prod/ out of the tree entirely; this is defensive.
+prod/
+prod.rar
+*.rar
+
+# --- Logs / temp ---
+*.log
+*.tmp
+
+# --- Local-only leftovers ---
+docs/task.txt
+v1.docs.old/
+commit-msg.txt

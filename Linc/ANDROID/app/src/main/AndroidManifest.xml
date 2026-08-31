@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- v9 Direct TLS transport: dial the desktop over LAN (D-022). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Android 14+ requires one "device interaction" permission alongside the
+         connectedDevice FGS type; CHANGE_NETWORK_STATE is normal (auto-granted). -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        M17b C: lets Linc ask Android to open its own package installer for a downloaded update.
+        It does NOT allow a silent install — Android still shows its confirmation, and the user
+        must additionally grant "install unknown apps" for Linc before the request is honoured.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Normal permission, no runtime prompt; used only to read Wi-Fi signal
+         strength/link speed for the Details page (never the SSID). -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Special grant, sideload builds only (D-021): lets the desktop show the phone's
+         wallpaper (as a tiny blurred thumbnail) behind the Home widgets. The user
+         gives it explicitly from the Settings screen; everything works without it. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <!-- Messages lane (Sync page), sideload builds only (D-016/D-025). Sending needs
+         only SEND_SMS — not default-SMS-app status. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Calls lane (Sync page), sideload builds only (D-016/D-026). No PC audio (D-017). -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <!-- BLE presence beacon (M04, D-034): advertise-only, so no scan permission and no
+         location — the phone never looks for anything over Bluetooth and no data ever rides
+         it. Everything degrades to a no-op without this grant. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADVERTISE"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <!-- v15 display control (M5c, D-055): lets the PC's orientation/brightness widgets write
+         Settings.System. This is an appop, not a runtime permission — declaring it grants
+         nothing; the user toggles it under Settings > Apps > Special app access > Modify
+         system settings, and DisplayControl.canWrite() re-checks before every write. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+
+    <!-- v18 / M13c: lets the companion arm wireless debugging itself
+         (Settings.Global "adb_wifi_enabled"), so a hotspot link comes up with no cable and no
+         trip into Developer options. This is a signature|privileged permission: DECLARING it
+         grants nothing at all, and a normal install leaves it ungranted. It only becomes held
+         when `pm grant` is run over an existing ADB session — which Linc's PC-driven onboarding
+         already has, right after it installs this APK, so the user never touches ADB (D-001).
+         A phone whose OEM refuses the grant simply keeps arming manual: AdbArming re-checks the
+         permission before every write and reports `denied` rather than throwing. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.Linc"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- PC Remote (M05): fullscreen landscape viewer for the PC's screen. Not exported;
+             opened from the Home "Mirror PC" card only. -->
+        <activity
+            android:name=".MirrorActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard" />
+
+        <!-- Tools (M4a): full-screen remote keyboard + trackpad. Not exported; opened from the
+             Home "Tools" card only. -->
+        <activity
+            android:name=".ToolsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard" />
+
+        <activity
+            android:name=".ShareReceiverActivity"
+            android:exported="true"
+            android:label="@string/share_label"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".service.SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Serves received-file URIs to a viewer app when the user taps Open in the Share tab (M19). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!--
+            Exported so the desktop can start the companion over ADB when it is not answering
+            (M01, D-035) — `am start-foreground-service` is refused for a non-exported component
+            ("Requires permission not exported from uid ..."), which is what forced a manual tap
+            after every install, reboot or crash.
+
+            Tradeoff: any app on the device can now start this service. That is a small delta —
+            starting it only brings up a foreground service with a visible notification, and the
+            socket it serves (`LocalServerSocket("linc")`) was already reachable by any app on the
+            device, since abstract sockets carry no permission check. Nothing here grants a caller
+            access to data it could not already request over that socket.
+        -->
+        <service
+            android:name=".service.CompanionService"
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice" />
+
+        <service
+            android:name=".service.LincNotificationListener"
+            android:exported="false"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>
