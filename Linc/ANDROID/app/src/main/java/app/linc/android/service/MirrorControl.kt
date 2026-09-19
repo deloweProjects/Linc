@@ -50,6 +50,18 @@ object MirrorControl {
         )
     }
 
+    /**
+     * Ask the PC to encode an IDR now (v19). Sent when the decoder has lost sync — after a
+     * dropped packet or a decoder restart — so the picture comes back in a frame or two
+     * instead of waiting out the PC's two-second GOP.
+     */
+    fun keyframe() {
+        CompanionOutbox.trySend(
+            Envelope(type = MessageType.PC_MIRROR_KEYFRAME, payload = buildJsonObject {}),
+            requiredVersion = 19,
+        )
+    }
+
     fun stop() {
         CompanionOutbox.trySend(
             Envelope(type = MessageType.PC_MIRROR_STOP, payload = buildJsonObject {}),

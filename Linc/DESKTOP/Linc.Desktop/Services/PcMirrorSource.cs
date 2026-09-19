@@ -36,6 +36,7 @@ public sealed class PcMirrorSource : IDisposable
     private Thread? _feederThread;
     private long _submitted;
     private bool _disposed;
+    private int _keyFrameWanted;
 
     /// <summary>Raised for each encoded access unit, on the pump thread.</summary>
     public event Action<EncodedFrame>? FrameEncoded;
@@ -45,6 +46,13 @@ public sealed class PcMirrorSource : IDisposable
     public int Height => _capture.Height;
 
     public string EncoderName => _encoder.EncoderName;
+
+    /// <summary>
+    /// Ask for the next submitted frame to be encoded as an IDR. Safe to call from any
+    /// thread and any number of times — the request is a flag the feeder consumes once,
+    /// so a burst of requests costs one keyframe, not a storm of them.
+    /// </summary>
+    public void RequestKeyFrame() => Interlocked.Exchange(ref _keyFrameWanted, 1);
 
     public PcMirrorSource(int displayIndex, int framesPerSecond, int bitrate, ILogService log)
     {
@@ -143,6 +151,10 @@ public sealed class PcMirrorSource : IDisposable
 
                 // Nothing has ever been captured yet — nothing to send.
                 if (!_capture.HasFrame) { nextSubmitDue = now + _frameIntervalMs; continue; }
+
+                // A pending keyframe request is applied here, on the thread that owns
+                // submission, so the ICodecAPI call can never race a ProcessInput.
+                if (Interlocked.Exchange(ref _keyFrameWanted, 0) == 1) _encoder.ForceKeyFrame();
 
                 // On an idle desktop this resends the last frame, which is what keeps the
                 // stream alive rather than silently stopping.

@@ -55,12 +55,18 @@ public sealed class PcMirrorService(
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private PcMirrorSource? _source;
+    private PcMirrorSender? _sender;
     private Stream? _channel;
     private CancellationTokenSource? _streaming;
     private IReadOnlyList<PcDisplay>? _displays;
     private PcDisplay? _activeDisplay;
     private bool _disposed;
     private bool _subscribed;
+
+    // What is currently streaming, so a repeated pc.mirror.start can be recognised as the
+    // phone's retry rather than a request for a different stream.
+    private (int Display, int Fps, int Bitrate)? _active;
+    private int _starting;
 
     public bool IsStreaming => _source is not null;
 
@@ -86,6 +92,12 @@ public sealed class PcMirrorService(
                 int fps = (int?)envelope.Payload["fps"] ?? 0;         // 0 = use the default
                 int bitrate = (int?)envelope.Payload["bitrate"] ?? 0; // (phone picks quality, v14)
                 _ = StartFromPhoneAsync(displayIndex, fps, bitrate);
+                break;
+
+            case MessageType.PcMirrorKeyframe:
+                // The phone lost sync (dropped packets, a decoder restart). Give it an IDR
+                // now rather than making it wait out the GOP. (v19)
+                _source?.RequestKeyFrame();
                 break;
 
             case MessageType.PcMirrorStop:
@@ -193,10 +205,41 @@ public sealed class PcMirrorService(
         }
     }
 
+    /// <summary>
+    /// Handle the phone's <c>pc.mirror.start</c>.
+    ///
+    /// <para><b>The phone retries, and it must be allowed to.</b> The Mirror screen re-asks
+    /// every few seconds until frames flow, because a link that was mid-reconnect would
+    /// otherwise leave it on "Loading…" forever. But starting a stream is not quick — the
+    /// channel dial-back alone is allowed eight seconds, and over Wi-Fi it often uses several
+    /// of them — so those retries arrive while the first start is still running. Treating each
+    /// one as a fresh request tore down a stream that was seconds from working and started
+    /// again from nothing, which over a slow link is a loop that never converges: the mirror
+    /// appears to hang, and the desktop builds and destroys an encoder every three seconds.</para>
+    ///
+    /// <para>So a start that arrives while another is in flight is ignored, and a start that
+    /// asks for exactly what is already streaming is ignored too. Only a genuine change of
+    /// display or quality restarts the stream.</para>
+    /// </summary>
     private async Task StartFromPhoneAsync(int displayIndex, int fps, int bitrate)
     {
+        if (Interlocked.CompareExchange(ref _starting, 1, 0) == 1)
+        {
+            log.Log(LogLevel.Info, "PC mirror: already starting, ignoring the phone's retry");
+            return;
+        }
+
         try
         {
+            if (_source is not null && _active == (displayIndex, fps, bitrate))
+            {
+                // Already giving the phone exactly this. Nudge a keyframe in case its
+                // decoder is the reason it asked again, and leave the stream alone.
+                log.Log(LogLevel.Info, "PC mirror: already streaming this display, sending a keyframe");
+                _source.RequestKeyFrame();
+                return;
+            }
+
             await StartAsync(displayIndex, fps, bitrate, CancellationToken.None);
         }
         catch (Exception ex)
@@ -204,6 +247,7 @@ public sealed class PcMirrorService(
             // The phone asked and cannot see this failure otherwise, so say why in the log.
             log.Log(LogLevel.Warn, $"Couldn't start mirroring this PC: {ex.Message}");
         }
+        finally { Interlocked.Exchange(ref _starting, 0); }
     }
 
     public IReadOnlyList<PcDisplay> Displays => _displays ??= PcScreenCapture.Enumerate();
@@ -227,22 +271,48 @@ public sealed class PcMirrorService(
             // Keeping the encoder in the MTA lets those calls run directly on the worker threads.
             var source = await Task.Run(
                 () => new PcMirrorSource(displayIndex, useFps, useBitrate, log), ct);
-            var channel = await connection.OpenPhoneDialledChannelAsync(VideoChannel, ct);
 
-            // Tell the phone what it is about to receive before any packets arrive.
-            var config = new JsonObject
+            Stream channel;
+            try
             {
-                ["codec"] = "h264",
-                ["width"] = source.Width,
-                ["height"] = source.Height,
-                ["displayId"] = displayIndex,
-            };
-            await Framing.WriteAsync(channel, config.ToJsonString(), ct);
+                channel = await connection.OpenPhoneDialledChannelAsync(VideoChannel, ct);
+
+                // Tell the phone what it is about to receive before any packets arrive.
+                var config = new JsonObject
+                {
+                    ["codec"] = "h264",
+                    ["width"] = source.Width,
+                    ["height"] = source.Height,
+                    ["displayId"] = displayIndex,
+                };
+                await Framing.WriteAsync(channel, config.ToJsonString(), ct);
+            }
+            catch
+            {
+                // The dial-back can time out or the phone can vanish mid-handshake — common
+                // enough on Wi-Fi. The capture and the hardware encoder are already built at
+                // this point, so they must be released here or every failed attempt leaks a
+                // GPU encoder session and the next attempt is slower than the last.
+                await Task.Run(source.Dispose);
+                throw;
+            }
 
             _source = source;
             _channel = channel;
             _activeDisplay = displayIndex < Displays.Count ? Displays[displayIndex] : null;
+            _active = (displayIndex, useFps, useBitrate);
             _streaming = new CancellationTokenSource();
+
+            // Frames leave through the sender's own thread; the encoder pump must never wait
+            // on the socket (see PcMirrorSender).
+            var sender = new PcMirrorSender(channel, source.RequestKeyFrame, log);
+            sender.Ended += reason =>
+            {
+                log.Log(LogLevel.Info, $"PC mirror stream ended: {reason}");
+                _ = Task.Run(StopAsync);
+            };
+            _sender = sender;
+
             source.FrameEncoded += OnFrameEncoded;
             await Task.Run(source.Start, ct); // start streaming on an MTA thread too (see above)
 
@@ -258,26 +328,13 @@ public sealed class PcMirrorService(
     }
 
     /// <summary>
-    /// Writes one encoded frame to the channel. Runs on the source's pump thread, so it must
-    /// not block for long and must never throw into it.
+    /// Hands one encoded frame to the sender. Runs on the source's pump thread, so it only
+    /// ever queues — it must not touch the socket (see <see cref="PcMirrorSender"/>).
     /// </summary>
     private void OnFrameEncoded(EncodedFrame frame)
     {
-        var channel = _channel;
-        var token = _streaming?.Token ?? CancellationToken.None;
-        if (channel is null || token.IsCancellationRequested) return;
-
-        try
-        {
-            VideoFraming.WritePacketAsync(channel, frame.Data, frame.TimestampUs,
-                config: false, keyframe: frame.Keyframe, token).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            // The phone hanging up is the ordinary end of a mirror session, not a fault.
-            log.Log(LogLevel.Info, $"PC mirror stream ended: {ex.Message}");
-            _ = Task.Run(StopAsync);
-        }
+        if (_streaming?.IsCancellationRequested != false) return;
+        _sender?.Enqueue(frame);
     }
 
     public async Task StopAsync()
@@ -296,6 +353,12 @@ public sealed class PcMirrorService(
         var source = _source;
         _source = null;
         _activeDisplay = null;
+        _active = null;
+
+        // Stop the writer before the channel it writes to goes away.
+        _sender?.Dispose();
+        _sender = null;
+
         await Task.Run(source.Dispose); // dispose the encoder off the UI thread (its MTA home)
 
         if (_channel is not null)

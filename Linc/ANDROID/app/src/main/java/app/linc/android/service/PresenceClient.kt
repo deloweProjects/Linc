@@ -5,6 +5,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import app.linc.android.protocol.Framing
 import app.linc.android.service.CompanionStateHolder.ServiceState
+import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import kotlinx.coroutines.CoroutineScope
@@ -158,7 +159,13 @@ class PresenceClient(
             try {
                 val output = DataOutputStream(socket.getOutputStream())
                 Framing.write(output, """{"channel":$channel,"sessionToken":"$token"}""")
-                server.serveDialedChannel(channel, DataInputStream(socket.getInputStream()), output)
+                // Buffered: the video channel reads a 12-byte header per frame, and an
+                // unbuffered DataInputStream turns that into a syscall per field.
+                server.serveDialedChannel(
+                    channel,
+                    DataInputStream(BufferedInputStream(socket.getInputStream(), CHANNEL_BUFFER_BYTES)),
+                    output,
+                )
             } catch (_: Exception) {
                 // Channel died; the desktop will re-open if it still needs it.
             } finally {
@@ -171,5 +178,6 @@ class PresenceClient(
     private companion object {
         const val SERVICE_TYPE = "_linc._tcp."
         const val DIAL_TIMEOUT_MS = 4_000
+        const val CHANNEL_BUFFER_BYTES = 64 * 1024
     }
 }

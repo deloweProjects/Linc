@@ -19,6 +19,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcVideoEncoder.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcInputService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSource.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSender.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
     <!-- For ILogService/LogLevel only; the harness supplies its own console implementation
          so no run ever writes to the app's real log. -->

@@ -222,6 +222,40 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
             $"keeps up with the target rate (was {source.Fps:F1} fps)");
     });
 
+    yield return ("a stalled link never blocks the encoder, and drops rather than lags", a =>
+    {
+        // The wireless failure this guards: when the socket stops draining, the old code
+        // blocked the encoder's pump thread inside the write, which stalled capture and then
+        // delivered the whole backlog late. PcMirrorSender must instead take every frame
+        // without blocking, discard what it cannot send, and ask for a keyframe so the phone
+        // can resynchronise on something current.
+        using var link = new StallingStream();
+        int keyframeRequests = 0;
+        using var sender = new PcMirrorSender(link, () => Interlocked.Increment(ref keyframeRequests),
+            new ConsoleLog());
+
+        var payload = new byte[64 * 1024];
+        var clock = Stopwatch.StartNew();
+        for (int i = 0; i < 200; i++)
+            sender.Enqueue(new EncodedFrame(payload, Keyframe: i == 0, TimestampUs: i * 33_333L));
+        long enqueueMs = clock.ElapsedMilliseconds;
+
+        Console.WriteLine($"    200 frames enqueued in {enqueueMs} ms against a stalled link");
+        Console.WriteLine($"    dropped {sender.DroppedFrames}, keyframe requests {keyframeRequests}");
+
+        a.True(enqueueMs < 1000,
+            $"enqueue never waits on the socket (took {enqueueMs} ms)");
+        a.True(sender.DroppedFrames > 0, "a backlog the link cannot carry is discarded");
+        a.True(keyframeRequests > 0, "dropping asks the encoder for a fresh keyframe");
+
+        // Once dropping starts, only a keyframe may be queued again -- anything else would
+        // decode to garbage on the phone.
+        link.Release();
+        sender.Enqueue(new EncodedFrame(payload, Keyframe: true, TimestampUs: 9_000_000L));
+        Thread.Sleep(300);
+        a.True(link.KeyframeSeen, "the stream resumes on the keyframe after the drop");
+    });
+
     yield return ("a static screen does not stall the stream", a =>
     {
         // Desktop Duplication only reports frames that changed, so on an idle desktop
@@ -349,4 +383,42 @@ static class Config
     public const int Fps = 30;
     public const int Bitrate = 8_000_000;
     public const int TargetFrames = 120;
+}
+
+/// <summary>
+/// A stream that accepts nothing until released -- a wireless link whose send buffer has
+/// filled. Writing to it blocks exactly the way a real socket does under back-pressure.
+/// </summary>
+sealed class StallingStream : Stream
+{
+    private readonly ManualResetEventSlim _released = new(false);
+    private readonly object _seen = new();
+    private bool _keyframeSeen;
+
+    public bool KeyframeSeen { get { lock (_seen) return _keyframeSeen; } }
+
+    public void Release() => _released.Set();
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        _released.Wait(TimeSpan.FromSeconds(10));
+        var header = VideoFraming.ReadHeader(buffer.AsSpan(offset, VideoFraming.HeaderBytes));
+        if (header.Keyframe) lock (_seen) _keyframeSeen = true;
+    }
+
+    public override void Flush() { }
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+
+    protected override void Dispose(bool disposing)
+    {
+        _released.Set();
+        base.Dispose(disposing);
+    }
 }

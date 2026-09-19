@@ -681,3 +681,30 @@ a session that dies mid-chain does not take the earlier findings with it.
 often enough that a later one routinely finds work already on disk, and **`git diff` measures against
 HEAD, not session start** — so an honest agent will report a predecessor's work as its own. Timestamps
 are the only thing that has ever settled these.
+
+## D-065: The reverse mirror drops frames rather than delivering them late
+
+**2026-09-20 (protocol v19).** The mirror was built and tuned over the USB cable, where the link is
+never the bottleneck, and it carried two assumptions that only a wireless link falsifies.
+
+**The first: that writing a frame is free.** Frames were written to the channel from the MFT pump
+thread — the single thread that drains the encoder's event queue. Over Wi-Fi a full send buffer blocks
+that write, so the encoder stops being serviced and capture stalls behind it; the picture freezes with
+nothing in any log, and when the link recovers the whole backlog is delivered and the view is now
+seconds behind the PC with no mechanism to catch up. **Frames now leave through a dedicated writer
+thread, and a backlog the link cannot carry is discarded, not queued.** A mirror is a live view, not a
+recording: a frame of a screen nobody is looking at any more is worth less than the bandwidth it costs.
+
+**The second: that no packet is ever lost.** H.264 is unforgiving about this — one missing frame
+corrupts every frame that references it — and the phone silently dropped packets whenever a decoder
+input buffer was not immediately free, with nothing anywhere asking for repair. **Loss is now explicit
+on both ends and both ends skip the same span:** whoever drops (the desktop shedding a backlog, the
+phone failing to feed) discards everything until the next IDR and asks for one (`pc.mirror.keyframe`,
+v19), so the picture resumes clean and current instead of smearing. The encoder's two-second GOP is the
+floor under that, and covers a v18 desktop that has no such message.
+
+**Rejected: adapting the bitrate to the link.** It is the textbook answer and it is a larger, stateful
+mechanism that needs real measurement to tune honestly — and it does not remove either bug above, both
+of which bite at any bitrate. The quality picker stays the user's lever for now. If the drop counter
+in the log turns out to be busy at Smooth on a healthy link, that is the evidence that would justify
+building it.
