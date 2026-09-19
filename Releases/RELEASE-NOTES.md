@@ -11,6 +11,24 @@ Verify what you download against [`CHECKSUMS.txt`](CHECKSUMS.txt) before running
 
 ---
 
+## 1.0.0-beta.1 — reissued 2026-09-20
+
+**The beta.1 assets were rebuilt and replaced in place.** Same version number, different binaries:
+this build carries the reverse-mirror wireless fixes (protocol v19, D-065) — the mirror no longer
+freezes or falls behind on a Wi-Fi link, recovers from lost packets instead of smearing, and no
+longer fights its own retries while starting. See the changelog for the full list.
+
+Replacing rather than reissuing as beta.2 was deliberate: the original assets had **zero downloads**,
+so nobody held the old files, and `UpdateDecision` parses `1.0.0-beta.1` and `1.0.0-beta.2`
+identically (both to `1.0.0`) — a beta.2 would have been invisible to every installed copy until the
+numeric version scheme queued in `Vibe/agent/tasks/M20.md` lands. `CHECKSUMS.txt` and
+`update.json` were updated in the same change; **the hashes published before 2026-09-20 no longer
+match anything** and any copy of them should be discarded.
+
+`latest` and `minimumSupported` are unchanged, so no installed copy is prompted.
+
+---
+
 ## 1.0.0-beta.1 — first public beta
 
 The first build of Linc that someone other than its author can install. Everything below has been

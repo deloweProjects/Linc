@@ -13,11 +13,11 @@ The hash you get must match the line below exactly. If it does not, the file is
 damaged or has been tampered with - do not run it.
 
 
-27DAF1FC0D4CFDF7498F355206D761E93A51DD203BADA1E3D3E4A14BDE633796  Linc-Desktop-1.0.0-beta.1.zip
-3B4960ED70CE80A3E7B88609E823A2468CB5C31C2DC348435D3705721192C139  Linc-Companion-1.0.0-beta.1.apk
+11E251A1DB9498F1B2DAFBCDB4D598AA34EF0DA7440D10957246129D6802FA65  Linc-Desktop-1.0.0-beta.1.zip
+1DE9609F32EFD3E252FDD7CC60BF2F201FC68989BD84506B4E307D5CD16A5DCA  Linc-Companion-1.0.0-beta.1.apk
 
 
 File sizes (bytes), as a second check:
 
-    Linc-Desktop-1.0.0-beta.1.zip     170988255
-    Linc-Companion-1.0.0-beta.1.apk   25928213
+    Linc-Desktop-1.0.0-beta.1.zip     170997273
+    Linc-Companion-1.0.0-beta.1.apk   25584537
