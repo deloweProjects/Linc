@@ -55,14 +55,8 @@ public static class VideoFraming
             BinaryPrimitives.ReadInt32BigEndian(source[8..]));
     }
 
-    /// <summary>Write one packet: header then payload.</summary>
-    public static async Task WritePacketAsync(Stream stream, byte[] payload,
-        long timestampUs, bool config, bool keyframe, CancellationToken ct)
-    {
-        var header = new byte[HeaderBytes];
-        WriteHeader(header, timestampUs, config, keyframe, payload.Length);
-        await stream.WriteAsync(header, ct);
-        await stream.WriteAsync(payload, ct);
-        await stream.FlushAsync(ct);
-    }
+    // There is deliberately no WritePacketAsync here any more. Packets are written by
+    // PcMirrorSender, which builds the header and payload into ONE buffer and one write: a
+    // separate 12-byte write per frame is a wasted TCP segment on a wireless link, and the
+    // sender must also decide what not to send, which a plain write helper cannot.
 }

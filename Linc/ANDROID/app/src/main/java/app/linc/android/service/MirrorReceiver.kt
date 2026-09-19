@@ -30,6 +30,14 @@ data class MirrorState(
  * (`releaseOutputBuffer(index, true)`), with no timestamp gating. The network already paces the
  * stream at the source's frame rate; the phone's job is only to keep up.
  *
+ * **A lossy link is handled, not ignored.** Over Wi-Fi packets are late and decoder input
+ * buffers do run dry, and H.264 makes that expensive: one missing frame corrupts every frame
+ * that references it. So a packet this decoder could not take is treated as lost — the phone
+ * asks the PC for a fresh IDR (`pc.mirror.keyframe`, v19) and drops everything until one
+ * arrives, rather than feeding the decoder frames it cannot resolve. A decoder that faults
+ * outright is rebuilt in place, because a faulted MediaCodec never recovers on its own and
+ * the mirror would otherwise stay black for the rest of the session.
+ *
  * **The Surface is attached before streaming starts** (the Mirror screen sends
  * `pc.mirror.start` only after its SurfaceView is ready), so the decoder can be configured with
  * a real Surface from the first packet and the opening keyframe is never missed.
@@ -68,21 +76,57 @@ object MirrorReceiver {
             return
         }
 
-        val codec = runCatching { startCodec(liveSurface, width, height) }.getOrElse { error ->
-            LogStore.log(LogLevel.WARN, "PC mirror: couldn't start the decoder: ${error.message}")
+        val started = runCatching { startCodec(liveSurface, width, height) }
+        val first = started.getOrNull()
+        if (first == null) {
+            LogStore.log(LogLevel.WARN,
+                "PC mirror: couldn't start the decoder: ${started.exceptionOrNull()?.message}")
             drain(input)
             return
         }
+        var codec: MediaCodec = first
 
         _state.value = MirrorState(streaming = true, width = width, height = height)
         LogStore.log(LogLevel.INFO, "PC mirror: showing the PC screen (${width}x$height)")
 
+        // A fresh stream always opens on a keyframe, so nothing is being waited for yet.
+        var awaitingKeyframe = false
+        var lastKeyframeRequest = 0L
         val bufferInfo = MediaCodec.BufferInfo()
         try {
             while (true) {
                 val frame = VideoFrame.read(input) ?: break
-                feed(codec, frame)
-                render(codec, bufferInfo)
+
+                // After a gap, every P-frame references pictures this decoder never saw.
+                // Feeding them produces the green smear that used to be the visible symptom
+                // of a weak Wi-Fi link, so they are discarded until the PC's next IDR.
+                if (awaitingKeyframe && !frame.keyframe) {
+                    lastKeyframeRequest = requestKeyframe(lastKeyframeRequest)
+                    continue
+                }
+                awaitingKeyframe = false
+
+                try {
+                    if (!feed(codec, frame)) {
+                        // The decoder could not take this frame in time — it is genuinely
+                        // lost, so resynchronise rather than pretending the stream is intact.
+                        awaitingKeyframe = true
+                        lastKeyframeRequest = requestKeyframe(lastKeyframeRequest)
+                        continue
+                    }
+                    render(codec, bufferInfo)
+                } catch (error: MediaCodec.CodecException) {
+                    // A decoder that faulted stays faulted; the only way back is a new one.
+                    // Without this the mirror went black for the rest of the session.
+                    LogStore.log(LogLevel.WARN, "PC mirror: decoder fault, restarting it (${error.message})")
+                    runCatching { codec.stop() }
+                    runCatching { codec.release() }
+                    val live = surface ?: break
+                    val restarted = runCatching { startCodec(live, width, height) }.getOrNull() ?: break
+                    codec = restarted
+                    awaitingKeyframe = true
+                    lastKeyframeRequest = requestKeyframe(0L)
+                }
             }
         } catch (_: Exception) {
             // Socket closed or decoder faulted — both are just "the mirror ended".
@@ -92,6 +136,19 @@ object MirrorReceiver {
             _state.value = MirrorState(streaming = false)
             LogStore.log(LogLevel.INFO, "PC mirror: stopped")
         }
+    }
+
+    /**
+     * Ask the PC for an IDR, at most once every [KEYFRAME_REQUEST_GAP_MS]. Returns the time
+     * of the last request. Rate-limiting matters: a bad second on the link can lose dozens of
+     * frames, and one request per lost frame would answer a congested link with a burst of
+     * the largest frames the encoder makes — the opposite of what it needs.
+     */
+    private fun requestKeyframe(lastRequestMs: Long): Long {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastRequestMs < KEYFRAME_REQUEST_GAP_MS) return lastRequestMs
+        MirrorControl.keyframe()
+        return now
     }
 
     private fun startCodec(surface: Surface, width: Int, height: Int): MediaCodec {
@@ -106,15 +163,25 @@ object MirrorReceiver {
         return codec
     }
 
-    /** Queue one packet's bytes to the decoder. Blocks briefly for a free input buffer. */
-    private fun feed(codec: MediaCodec, frame: VideoFrame) {
-        val index = codec.dequeueInputBuffer(TIMEOUT_US)
-        if (index < 0) return // no input buffer free right now; drop this packet, keep flowing
-        val buffer = codec.getInputBuffer(index) ?: return
+    /**
+     * Queue one packet's bytes to the decoder. Returns false when no input buffer came free
+     * in time, which means the packet is lost.
+     *
+     * **Waiting matters here.** This used to give up after a single non-blocking attempt and
+     * drop the packet silently, which on a healthy link is rare but on a stuttering one
+     * happens in runs — and a silently dropped P-frame corrupts everything that references
+     * it, with nothing anywhere asking for a keyframe to recover. So it waits properly, and
+     * a real failure is reported so the caller can resynchronise.
+     */
+    private fun feed(codec: MediaCodec, frame: VideoFrame): Boolean {
+        val index = codec.dequeueInputBuffer(FEED_TIMEOUT_US)
+        if (index < 0) return false
+        val buffer = codec.getInputBuffer(index) ?: return false
         buffer.clear()
         buffer.put(frame.data)
         val flags = if (frame.keyframe) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
         codec.queueInputBuffer(index, 0, frame.data.size, frame.timestampUs, flags)
+        return true
     }
 
     /** Release every ready output frame straight to the Surface, no clock pacing (D-023). */
@@ -136,6 +203,8 @@ object MirrorReceiver {
         try { while (VideoFrame.read(input) != null) { /* discard */ } } catch (_: Exception) {}
     }
 
-    private const val TIMEOUT_US = 10_000L
+    /** How long to wait for a decoder input buffer before calling the packet lost. */
+    private const val FEED_TIMEOUT_US = 100_000L
     private const val SURFACE_WAIT_MS = 4_000L
+    private const val KEYFRAME_REQUEST_GAP_MS = 500L
 }

@@ -195,6 +195,10 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             {
                 return; // listener stopped
             }
+            // Nagle would hold a small write back waiting for the previous ACK. Linc's
+            // traffic is control messages and live video, so that only ever costs latency —
+            // on Wi-Fi it is the difference between a smooth mirror and one that hitches.
+            try { client.NoDelay = true; } catch { }
             _ = HandleConnectionAsync(client, ct);
         }
     }

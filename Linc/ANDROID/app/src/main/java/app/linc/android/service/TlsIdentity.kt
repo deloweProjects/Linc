@@ -57,6 +57,11 @@ object TlsIdentity {
         val context = SSLContext.getInstance("TLS")
         context.init(keyManagers, arrayOf(trustPinned), null)
         val socket = context.socketFactory.createSocket() as SSLSocket
+        // Nagle batches small writes behind an unacknowledged one. Every Linc link is
+        // request/response or live video, so that batching only ever adds latency — and over
+        // Wi-Fi, paired with the peer's delayed ACK, it shows up as a mirror that stutters in
+        // ~40 ms steps on an otherwise idle network.
+        runCatching { socket.tcpNoDelay = true }
         socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
         socket.soTimeout = timeoutMs
         socket.startHandshake() // throws unless the desktop presented the pinned cert

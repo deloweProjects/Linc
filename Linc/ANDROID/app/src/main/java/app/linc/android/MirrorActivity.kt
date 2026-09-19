@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
  * `pc.input text`; backspace/enter/arrows go as Windows virtual-key codes. Raised
  * automatically on `pc.textfocus`, and manually via the keyboard button.
  *
- * The activity retries `pc.mirror.start` every few seconds until frames flow, so a link that
+ * The activity retries `pc.mirror.start` on a backoff until frames flow, so a link that
  * was mid-reconnect when the screen opened heals by itself instead of hanging on "loading".
  */
 class MirrorActivity : ComponentActivity() {
@@ -199,15 +199,24 @@ class MirrorActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            // Self-heal: if no stream within 3 s (link was reconnecting, desktop busy...),
-            // ask again rather than hanging on the overlay forever.
+            // Self-heal, with room for a slow start. Bringing the stream up is not instant:
+            // the PC builds a capture and a hardware encoder, then the phone dials a second
+            // TLS connection back for the video channel — over Wi-Fi that regularly takes
+            // longer than the 3 s this used to wait, so the retry landed on a start that was
+            // nearly done and the two fought each other forever. Ask again, but back off, so
+            // a slow link is given time to finish instead of being interrupted.
+            var wait = FIRST_RETRY_MS
             while (true) {
-                delay(3_000)
-                if (!MirrorReceiver.state.value.streaming && surface != null) {
-                    loadingText.text = if (MirrorControl.ready()) "Loading your PC…"
-                        else "Waiting for the PC connection…"
-                    startMirror()
+                delay(wait)
+                if (MirrorReceiver.state.value.streaming) {
+                    wait = FIRST_RETRY_MS   // healthy again; be quick if it drops later
+                    continue
                 }
+                if (surface == null) continue
+                loadingText.text = if (MirrorControl.ready()) "Loading your PC…"
+                    else "Waiting for the PC connection…"
+                startMirror()
+                wait = (wait * 2).coerceAtMost(MAX_RETRY_MS)
             }
         }
     }
@@ -363,6 +372,12 @@ class MirrorActivity : ComponentActivity() {
             addView(toolButton("Alt+Tab") { altTab() })
             addView(toolButton("✕ End") { finish() })
         }
+    }
+
+    private companion object {
+        /** First self-heal retry; doubles up to [MAX_RETRY_MS] while the stream stays down. */
+        const val FIRST_RETRY_MS = 5_000L
+        const val MAX_RETRY_MS = 20_000L
     }
 
     override fun onDestroy() {

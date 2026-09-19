@@ -9,6 +9,35 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-09-20 — the reverse mirror over Wi-Fi (protocol v19)
+
+- **The encoder no longer writes to the socket.** Frames used to be written from the MFT pump
+  thread, so a slow link blocked the one thread that drains the encoder's event queue: capture
+  stalled behind it, the picture froze, and when the link recovered a backlog of stale frames
+  arrived at once and the mirror stayed seconds behind. New `PcMirrorSender` owns a writer
+  thread and a small queue; `Enqueue` never blocks, and a backlog past 10 frames / 2.5 MB is
+  **discarded** with a keyframe requested, because a mirror is a live view and a late frame is
+  worth nothing.
+- **Recovery after loss, both ends (v19 `pc.mirror.keyframe`).** The phone asks the PC for an
+  IDR when its decoder loses sync and discards frames until one arrives, instead of feeding a
+  decoder pictures it cannot resolve; the encoder now also runs a **two-second GOP, CBR and one
+  reference frame** (`ICodecAPI`), which bounds recovery even against a v18 desktop.
+- **The phone's decoder no longer drops packets silently.** `MirrorReceiver.feed` gave up after
+  one non-blocking attempt; it now waits, reports a genuine loss so the stream resynchronises,
+  and **rebuilds a faulted MediaCodec** rather than leaving the mirror black for the session.
+- **No more start storm.** The Mirror screen re-asked every 3 s while a start — which takes
+  longer than that over Wi-Fi — was still running, and each retry tore the half-built stream
+  down. Retries now back off (5 s → 20 s) and the desktop ignores a start that duplicates what
+  it is already streaming or one already in flight.
+- **`TCP_NODELAY` on every Linc socket**, both ends. Nagle plus the peer's delayed ACK showed up
+  as a mirror hitching in ~40 ms steps on an idle network. Video packets are also written as one
+  buffer instead of header-then-payload, and the phone's dialled channels read through a
+  `BufferedInputStream`.
+- **A failed channel dial-back no longer leaks a hardware encoder session.** It is the common
+  Wi-Fi failure, and every attempt left the capture and encoder built, so each retry was slower
+  than the last.
+- `mirrorsim` gains a scenario driving `PcMirrorSender` against a stalled link: 11 scenarios green.
+
 ### Added — 2026-08-12 reconciliation (M9a → M14, written in one pass by the master)
 
 > _Planner note: this file drifted from 2026-07-31 to 2026-08-12 while `BRAIN.md`, `STATUS.md`,

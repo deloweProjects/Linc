@@ -36,6 +36,7 @@ public sealed class PcVideoEncoder : IDisposable
 {
     private readonly IMFTransform _transform;
     private readonly IMFMediaEventGenerator _events;
+    private readonly ICodecAPI? _codecApi;
     private readonly IMFDXGIDeviceManager _deviceManager;
     private readonly IntPtr _deviceManagerPtr;
     private readonly int _framesPerSecond;
@@ -68,8 +69,57 @@ public sealed class PcVideoEncoder : IDisposable
         SetOutputType(width, height, framesPerSecond, bitrate);
         SetInputType(width, height, framesPerSecond);
 
+        // Rate control and GOP length live on ICodecAPI, not on the media type.
+        _codecApi = _transform as ICodecAPI;
+        ConfigureRateControl(framesPerSecond, bitrate);
+
         Check(_transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, IntPtr.Zero), "BEGIN_STREAMING");
         Check(_transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, IntPtr.Zero), "START_OF_STREAM");
+    }
+
+    /// <summary>
+    /// Constant bit rate, a two-second GOP, one reference frame and low-latency mode.
+    ///
+    /// <para><b>Why each matters on a wireless link.</b> CBR keeps the stream inside the
+    /// bandwidth the phone asked for instead of spiking on a screen change and blowing the
+    /// link's budget. The GOP bounds recovery: a phone that lost bytes shows nothing usable
+    /// until the next IDR, so an encoder-default GOP (which can be many seconds, or a single
+    /// keyframe at the start) turns one dropped packet into a long smear — two seconds is the
+    /// worst case, and <see cref="ForceKeyFrame"/> normally beats it. One reference frame
+    /// means a lost frame can only damage the frame after it, not a whole pyramid.</para>
+    ///
+    /// <para>Every setting is best-effort: encoders are allowed to refuse any of them, and a
+    /// refusal is not a reason to fail the mirror.</para>
+    /// </summary>
+    private void ConfigureRateControl(int fps, int bitrate)
+    {
+        TrySet(CODECAPI_AVEncCommonRateControlMode, (uint)eAVEncCommonRateControlMode_CBR);
+        TrySet(CODECAPI_AVEncCommonMeanBitRate, (uint)bitrate);
+        TrySet(CODECAPI_AVEncCommonMaxBitRate, (uint)bitrate);
+        TrySet(CODECAPI_AVEncMPVGOPSize, (uint)Math.Max(fps * 2, 1));
+        TrySet(CODECAPI_AVEncVideoMaxNumRefFrame, 1u);
+        TrySet(CODECAPI_AVLowLatencyMode, true);
+    }
+
+    /// <summary>
+    /// Ask for the next encoded frame to be an IDR. Used when the stream has lost bytes or
+    /// frames were dropped to catch up, so the phone can resynchronise immediately rather
+    /// than waiting out the GOP. Best-effort by design — a refusal just means the phone
+    /// waits for the scheduled keyframe instead.
+    /// </summary>
+    public void ForceKeyFrame() => TrySet(CODECAPI_AVEncVideoForceKeyFrame, 1u);
+
+    private void TrySet(Guid api, object value)
+    {
+        var codecApi = _codecApi;
+        if (codecApi is null || _disposed) return;
+        try
+        {
+            var key = api;
+            if (codecApi.IsSupported(ref key) != 0) return;
+            codecApi.SetValue(ref key, ref value);
+        }
+        catch { /* the encoder is entitled to refuse; the mirror runs without it */ }
     }
 
     private void SetOutputType(int width, int height, int fps, int bitrate)

@@ -334,6 +334,54 @@ public static class Mf
         [PreserveSig] int DetachObject();
     }
 
+    // ---- ICodecAPI ---------------------------------------------------------
+    //
+    // The media type carries the *format*; the encoder's rate control, GOP length and
+    // "give me an IDR now" live on ICodecAPI instead, which every hardware H.264 MFT
+    // implements. Without these the encoder keeps its vendor defaults -- on this machine
+    // that meant a variable bit rate and a GOP long enough that a phone which lost a packet
+    // stayed corrupt for seconds, which is exactly what a lossy Wi-Fi link produces.
+
+    public static readonly Guid CODECAPI_AVEncCommonRateControlMode = new("1c0608e9-370c-4710-8a58-cb6181c42423");
+    public static readonly Guid CODECAPI_AVEncCommonMeanBitRate = new("f7222374-2144-4815-b550-a37f8e12ee52");
+    public static readonly Guid CODECAPI_AVEncCommonMaxBitRate = new("9651eae4-39b9-4ebf-85ef-d7f444ec7465");
+    public static readonly Guid CODECAPI_AVEncMPVGOPSize = new("95f31b26-95a4-41aa-9303-246a7fc6eef1");
+    public static readonly Guid CODECAPI_AVEncVideoForceKeyFrame = new("398c1b98-8353-475a-9ef2-8f265d260345");
+    public static readonly Guid CODECAPI_AVEncVideoMaxNumRefFrame = new("964829ed-94f9-43b4-b74d-ef40944b69a0");
+    public static readonly Guid CODECAPI_AVLowLatencyMode = new("9c27891a-ed7a-40e1-88e8-b22727a024ee");
+    public static readonly Guid CODECAPI_AVEncNumWorkerThreads = new("b0c8bf60-16f7-4951-a30b-1db1609293d6");
+
+    public const int eAVEncCommonRateControlMode_CBR = 0;
+
+    [ComImport, Guid("901db4c7-31ce-41a2-85dc-8fa0bf41b8da"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface ICodecAPI
+    {
+        [PreserveSig] int IsSupported(ref Guid api);
+        [PreserveSig] int IsModifiable(ref Guid api);
+        [PreserveSig] int GetParameterRange(ref Guid api,
+            [MarshalAs(UnmanagedType.Struct)] out object min,
+            [MarshalAs(UnmanagedType.Struct)] out object max,
+            [MarshalAs(UnmanagedType.Struct)] out object step);
+        [PreserveSig] int GetParameterValues(ref Guid api, out IntPtr values, out int count);
+        [PreserveSig] int GetDefaultValue(ref Guid api,
+            [MarshalAs(UnmanagedType.Struct)] out object value);
+        [PreserveSig] int GetValue(ref Guid api,
+            [MarshalAs(UnmanagedType.Struct)] out object value);
+        [PreserveSig] int SetValue(ref Guid api,
+            [MarshalAs(UnmanagedType.Struct)] ref object value);
+        // Remaining slots are never called, but must exist so the vtable lines up.
+        [PreserveSig] int RegisterForEvent(ref Guid api, IntPtr userData);
+        [PreserveSig] int UnregisterForEvent(ref Guid api);
+        [PreserveSig] int SetAllDefaults();
+        [PreserveSig] int SetValueWithNotify(ref Guid api,
+            [MarshalAs(UnmanagedType.Struct)] ref object value, out IntPtr changed, out int count);
+        [PreserveSig] int SetAllDefaultsWithNotify(out IntPtr changed, out int count);
+        [PreserveSig] int GetAllSettings(IntPtr stream);
+        [PreserveSig] int SetAllSettings(IntPtr stream);
+        [PreserveSig] int SetAllSettingsWithNotify(IntPtr stream, out IntPtr changed, out int count);
+    }
+
     // Async-MFT event types (IMFMediaEvent.GetType)
     public const int METransformNeedInput = 601;
     public const int METransformHaveOutput = 602;

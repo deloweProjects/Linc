@@ -74,6 +74,7 @@ public sealed class CompanionClient : IDisposable
         var tcp = new TcpClient();
         try
         {
+            tcp.NoDelay = true; // control and video are latency-bound; Nagle only delays them
             await tcp.ConnectAsync(IPAddress.Loopback, localPort, ct);
         }
         catch (SocketException ex)
@@ -122,6 +123,7 @@ public sealed class CompanionClient : IDisposable
         var tcp = new TcpClient();
         try
         {
+            tcp.NoDelay = true; // control and video are latency-bound; Nagle only delays them
             await tcp.ConnectAsync(IPAddress.Loopback, localPort, ct);
             var stream = tcp.GetStream();
             var header = new JsonObject { ["channel"] = channel, ["sessionToken"] = token };

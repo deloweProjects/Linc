@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 18
+const val PROTOCOL_VERSION = 19
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -81,6 +81,7 @@ object MessageType {
     const val PC_MIRROR_STOP = "pc.mirror.stop"      // either direction
     const val PC_DISPLAYS_GET = "pc.displays.get"    // phone → desktop
     const val PC_DISPLAYS = "pc.displays"            // desktop → phone
+    const val PC_MIRROR_KEYFRAME = "pc.mirror.keyframe" // phone → desktop: resend an IDR (v19)
     const val PC_INPUT = "pc.input"                  // phone → desktop
     const val PC_TEXT_FOCUS = "pc.textfocus"         // desktop → phone: a text field gained/lost focus
 

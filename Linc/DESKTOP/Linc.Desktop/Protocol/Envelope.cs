@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 18;
+    public const int Version = 19;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -87,6 +87,7 @@ public static class MessageType
     public const string PcDisplaysGet = "pc.displays.get";    // phone → desktop
     public const string PcDisplays = "pc.displays";           // desktop → phone
     public const string PcInput = "pc.input";                 // phone → desktop
+    public const string PcMirrorKeyframe = "pc.mirror.keyframe"; // phone → desktop: resend an IDR (v19)
     public const string PcTextFocus = "pc.textfocus";         // desktop → phone: a text field gained/lost focus
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
