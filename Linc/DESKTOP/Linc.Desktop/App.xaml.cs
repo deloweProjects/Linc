@@ -127,6 +127,8 @@ public partial class App : Application
             .AddSingleton<IHotspotPromotion, HotspotPromotion>()
             .AddSingleton<IHotspotLinkService, HotspotLinkService>()
             .AddSingleton<IShareService, ShareService>()
+            .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()
+            .AddSingleton<QuickShareViewModel>()
             .AddSingleton<HomeViewModel>()
             .AddSingleton<SyncViewModel>()
             .AddSingleton<FilesViewModel>()
@@ -162,13 +164,25 @@ public partial class App : Application
         try
         {
             _singleInstance = new System.Threading.Mutex(initiallyOwned: true, @"Local\LincDesktopSingleInstance", out var isFirst);
+            var quickSharePaths = QuickShare.QsShellIntegration.PathsFrom(Environment.GetCommandLineArgs());
             if (!isFirst)
             {
+                // Explorer's "Send with Quick Share" starts a second copy; hand its files to the
+                // running one, which opens its Share page with them ready to send.
+                if (quickSharePaths.Count > 0)
+                {
+                    QuickShare.QsShellIntegration.TryForward(quickSharePaths);
+                }
                 Exit(); // another Linc is already running; let it own the tray and the port
                 return;
             }
             try
             {
+                // Toast buttons (Quick Share's Accept/Decline) arrive here. Must be subscribed
+                // before Register(), or presses made while the app was starting are lost.
+                Microsoft.Windows.AppNotifications.AppNotificationManager.Default.NotificationInvoked += (_, invoked) =>
+                    Services.GetRequiredService<Linc.Desktop.QuickShare.IQuickShareService>()
+                        .HandleNotificationArguments(invoked.Arguments);
                 // Required once per process before toasts can be shown (unpackaged app).
                 Microsoft.Windows.AppNotifications.AppNotificationManager.Default.Register();
             }
@@ -192,9 +206,24 @@ public partial class App : Application
             // MainWindow.OnAppWindowClosing) — no second hiding mechanism.
             _window.Activate();
             var commandLineArgs = Environment.GetCommandLineArgs();
-            if (StartupRegistration.IsStartupLaunch(commandLineArgs))
+            if (StartupRegistration.IsStartupLaunch(commandLineArgs) && quickSharePaths.Count == 0)
             {
                 _window.AppWindow.Hide();
+            }
+            var quickShare = Services.GetRequiredService<QuickShare.IQuickShareService>();
+            var window = (MainWindow)_window;
+            QuickShare.QsShellIntegration.Listen(
+                paths =>
+                {
+                    quickShare.QueueFiles(paths);
+                    window.ShowSharePage();
+                },
+                message => Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, message),
+                CancellationToken.None);
+            if (quickSharePaths.Count > 0)
+            {
+                quickShare.QueueFiles(quickSharePaths);
+                window.ShowSharePage();
             }
 
             // M13a (§3.3): pre-warm the ADB server. Starting it costs 200-500 ms, and every

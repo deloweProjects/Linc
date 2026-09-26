@@ -1358,6 +1358,30 @@ Console.WriteLine("--- M15c source-text checks against production (A1/A2/A3 and 
     }
 }
 
+Console.WriteLine("--- 2026-09-26: a returning phone is recognised, never added as new");
+{
+    string[] known = ["2C141FDH20089M", "LZ0A35AEDC8000199"];
+    True(DeviceAdmission.RecogniseKnown("2c141fdh20089m", known) == "2C141FDH20089M",
+        "a USB serial matches its known record regardless of case");
+    True(DeviceAdmission.RecogniseKnown("adb-LZ0A35AEDC8000199-xYz12a", known, contains: true) == "LZ0A35AEDC8000199",
+        "an mDNS instance name is recognised by the serial it embeds");
+    True(DeviceAdmission.RecogniseKnown("adb-LZ0A35AEDC8000199-xYz12a", known) is null,
+        "...but only in contains mode - a USB serial must match exactly");
+    True(DeviceAdmission.RecogniseKnown("NEWPHONE123", known) is null && DeviceAdmission.RecogniseKnown("", known) is null,
+        "a never-seen phone (or nothing) is not recognised");
+    True(DeviceAdmission.MayAdoptKnownPhone(LinkActivity.Idle),
+        "a known phone is adopted when nothing is live");
+    True(!DeviceAdmission.MayAdoptKnownPhone(LinkActivity.Connected) &&
+         !DeviceAdmission.MayAdoptKnownPhone(LinkActivity.Connecting) &&
+         !DeviceAdmission.MayAdoptKnownPhone(LinkActivity.Paused),
+        "...and never over a live link, a connect in flight, or a user pause (D-037)");
+
+    var pins = DeviceAdmission.PinnedCertificates([Convert.ToBase64String([1, 2, 3]), null, "not base64!!", Convert.ToBase64String([9, 9])]);
+    True(pins.Count == 2, "missing and corrupt pins are skipped, the good ones kept");
+    True(DeviceAdmission.MatchesAny([9, 9], pins) && !DeviceAdmission.MatchesAny([9, 9, 9], pins),
+        "a certificate matches any known phone's pin, byte for byte");
+}
+
 Console.WriteLine();
 if (failures.Count == 0)
 {

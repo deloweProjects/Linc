@@ -18,6 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -179,6 +181,8 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
             )
         }
 
+        NfcTapCard()
+
         LincCard(title = stringResource(R.string.settings_mirror_header)) {
             Text(
                 quality.blurb,
@@ -282,6 +286,53 @@ private fun GrantRow(
                 onClick = onAction,
             ) {
                 Text(actionLabel)
+            }
+        }
+    }
+}
+
+/**
+ * Tap-to-connect: write a cheap NFC sticker once, put it by the PC, and tapping it connects Linc
+ * straight away. Hidden entirely on a phone with no NFC, rather than showing a dead button.
+ */
+@Composable
+private fun NfcTapCard() {
+    val activity = LocalContext.current as? android.app.Activity ?: return
+    if (!app.linc.android.service.NfcTap.isSupported(activity)) return
+    val state by app.linc.android.service.NfcTap.writeState.collectAsState()
+    DisposableEffect(Unit) {
+        onDispose { app.linc.android.service.NfcTap.cancelWrite(activity) }
+    }
+    LincCard(title = "Tap to connect (NFC)") {
+        Text(
+            when (val s = state) {
+                app.linc.android.service.NfcTap.WriteState.Idle ->
+                    "Stick a blank NFC tag (NTAG213 or bigger) by your PC. Write it once here, then tapping " +
+                        "your phone on it connects Linc instantly — no need to open the app."
+                app.linc.android.service.NfcTap.WriteState.Waiting ->
+                    "Hold the tag against the back of the phone…"
+                app.linc.android.service.NfcTap.WriteState.Written ->
+                    "Done. Put the tag by your PC and tap your phone on it to connect."
+                is app.linc.android.service.NfcTap.WriteState.Failed -> s.reason
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (state is app.linc.android.service.NfcTap.WriteState.Failed) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+            if (state == app.linc.android.service.NfcTap.WriteState.Waiting) {
+                OutlinedButton(
+                    modifier = Modifier.heightIn(min = Dimens.touchTarget),
+                    onClick = { app.linc.android.service.NfcTap.cancelWrite(activity) },
+                ) { Text("Cancel") }
+            } else {
+                OutlinedButton(
+                    modifier = Modifier.heightIn(min = Dimens.touchTarget),
+                    onClick = {
+                        app.linc.android.service.NfcTap.resetWriteState()
+                        app.linc.android.service.NfcTap.beginWrite(activity)
+                    },
+                ) { Text(if (state == app.linc.android.service.NfcTap.WriteState.Written) "Write another tag" else "Write a tag") }
             }
         }
     }

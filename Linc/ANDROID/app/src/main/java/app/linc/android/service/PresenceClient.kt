@@ -14,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Standing presence over Direct TLS (PIPELINE.md, D-014/D-022): while the companion
@@ -87,8 +88,27 @@ class PresenceClient(
                 } else {
                     idleDelaysMs = 3_000L
                 }
-                delay(idleDelaysMs)
+                // Sleep out the backoff, but wake at once on a strong "the PC is right here"
+                // signal (an NFC tap, the screen coming on) instead of waiting up to 30 s.
+                val poked = withTimeoutOrNull(idleDelaysMs) { ReconnectSignal.await() }
+                if (poked != null) {
+                    LogStore.log(LogLevel.INFO, "Looking for the PC now ($poked)")
+                    idleDelaysMs = 3_000L
+                    restartDiscovery()
+                }
             }
+        }
+    }
+
+    /** A fresh mDNS browse: after a network change the old one can sit on a stale answer. */
+    private fun restartDiscovery() {
+        if (discovering) {
+            runCatching { nsd.stopServiceDiscovery(discoveryListener) }
+            discovering = false
+        }
+        runCatching {
+            nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            discovering = true
         }
     }
 

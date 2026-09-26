@@ -211,7 +211,11 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
             }
             if (Step is OnboardingStep.DetectPair && _supervisor.State != LinkState.Connected)
             {
-                UsbStatusText = "Phone detected over USB — connecting…";
+                // A phone this PC has connected before is a returning phone, not a new one: say
+                // so, so nobody thinks Linc is about to add a second copy of it.
+                UsbStatusText = DeviceAdmission.RecogniseKnown(device.Serial, _registry.KnownDevices.Select(d => d.Serial)) is { } known
+                    ? $"Welcome back — {_registry.KnownDevices.First(d => d.Serial == known).Model} is already known to this PC. Reconnecting it (no new pairing needed)…"
+                    : "Phone detected over USB — connecting…";
             }
         });
     }

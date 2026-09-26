@@ -208,15 +208,18 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         SslStream? ssl = null;
         try
         {
-            var pinned = registry.PhoneCertBase64;
-            if (pinned is null)
+            // Every phone this PC knows is recognised, not just the active one: a known phone
+            // dialling in is a returning phone, and rejecting it silently made it look brand new
+            // (it had to come back over ADB and re-pair before Direct TLS worked again). Which
+            // phone it was is read back from the certificate by the supervisor.
+            var pinned = DeviceAdmission.PinnedCertificates(registry.KnownDevices.Select(d => d.PhoneCertBase64));
+            if (pinned.Count == 0)
             {
                 client.Dispose();
                 return; // not TLS-paired yet — nothing can authenticate
             }
-            var pinnedBytes = Convert.FromBase64String(pinned);
             ssl = new SslStream(client.GetStream(), leaveInnerStreamOpen: false,
-                (_, cert, _, _) => cert is not null && cert.GetRawCertData().AsSpan().SequenceEqual(pinnedBytes));
+                (_, cert, _, _) => cert is not null && DeviceAdmission.MatchesAny(cert.GetRawCertData(), pinned));
             using var handshakeTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             handshakeTimeout.CancelAfter(TimeSpan.FromSeconds(5));
             await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions

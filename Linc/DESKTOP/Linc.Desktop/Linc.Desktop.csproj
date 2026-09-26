@@ -93,6 +93,24 @@
     <PackageReference Include="Vortice.Direct3D11" Version="3.6.2" />
     <PackageReference Include="Vortice.DXGI" Version="3.6.2" />
     <PackageReference Include="Zeroconf" Version="3.7.16" />
+    <!-- Quick Share (Nearby Share) interop: the wire format is protobuf. The .proto files are
+         Google's own (Apache-2.0, see QuickShare/Proto/NOTICE.txt); Grpc.Tools only runs protoc
+         at build time and ships nothing. -->
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.67.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="QuickShare\Proto\*.proto" ProtoRoot="QuickShare\Proto" GrpcServices="None" />
+  </ItemGroup>
+
+  <!-- WinUI's XAML compiler runs its own pre-compile of @(Compile) (MarkupCompilePass1 /
+       XamlPreCompile) BEFORE BeforeCompile, which is where Grpc.Tools normally adds the
+       generated C#. Generate first so that pass sees the Quick Share types too. -->
+  <Target Name="LincProtobufBeforeXaml" BeforeTargets="MarkupCompilePass1"
+          DependsOnTargets="Protobuf_Compile" />
 
 </Project>

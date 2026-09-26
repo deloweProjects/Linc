@@ -17,6 +17,7 @@ public sealed partial class MainWindow : Window
     public DeviceTabsViewModel Tabs { get; }
     public RelayCommand ShowWindowCommand { get; }
     public RelayCommand ExitCommand { get; }
+    public RelayCommand ShowShareCommand { get; }
 
     public MainWindow()
     {
@@ -30,11 +31,16 @@ public sealed partial class MainWindow : Window
         // the one XamlRoot that outlives whichever page is on screen, so the dialog can show
         // regardless of which page a background reconnect happens to interrupt.
         Shell.InstallConfirmationRequested += device => _ = OnInstallConfirmationRequestedAsync(device);
+        // Quick Share offers can arrive on any page (or with the window hidden, where the toast
+        // carries the Accept/Decline buttons instead). Same reasoning as the install gate above.
+        App.Services.GetRequiredService<QuickShare.IQuickShareService>().IncomingOffer += offer =>
+            DispatcherQueue.TryEnqueue(() => _ = OnQuickShareOfferAsync(offer));
         ShowWindowCommand = new RelayCommand(() =>
         {
             AppWindow.Show();
             Activate();
         });
+        ShowShareCommand = new RelayCommand(ShowSharePage);
         ExitCommand = new RelayCommand(() =>
         {
             TrayIcon.Dispose();
@@ -107,6 +113,86 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// The in-window Accept/Decline for a Quick Share offer, showing the PIN so the person can
+    /// check it matches the phone. Answering on the toast closes this; answering here removes
+    /// the toast (the service does that once the decision lands).
+    /// </summary>
+    private async Task OnQuickShareOfferAsync(QuickShare.QsIncomingOffer offer)
+    {
+        if (!AppWindow.IsVisible || Content?.XamlRoot is null)
+        {
+            return; // the toast is the prompt while Linc sits in the tray
+        }
+        var items = string.Join(Environment.NewLine, offer.Items.Take(6)) +
+            (offer.Items.Count > 6 ? $"{Environment.NewLine}…and {offer.Items.Count - 6} more" : "");
+        var dialog = new ContentDialog
+        {
+            Title = $"{offer.SenderName} wants to share with you",
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = items, TextWrapping = TextWrapping.Wrap },
+                    new TextBlock
+                    {
+                        Text = $"PIN {offer.Pin}",
+                        FontSize = 28,
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    },
+                    new TextBlock
+                    {
+                        Text = offer.FromKnownPhone
+                            ? "This looks like one of your phones. Check the PIN matches the one on its screen."
+                            : "Only accept if the PIN matches the one on the sender's screen.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.8,
+                    },
+                },
+            },
+            PrimaryButtonText = "Accept",
+            CloseButtonText = "Decline",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        _ = offer.Decided.ContinueWith(_ => DispatcherQueue.TryEnqueue(dialog.Hide), TaskScheduler.Default);
+        try
+        {
+            var result = await dialog.ShowAsync();
+            if (offer.Decided.IsCompleted)
+            {
+                return; // answered on the toast; the dialog was only closed to match
+            }
+            if (result == ContentDialogResult.Primary)
+            {
+                offer.Accept();
+            }
+            else
+            {
+                offer.Decline();
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        {
+            // Another dialog is already open (WinUI allows one at a time); the toast still asks.
+            App.Services.GetRequiredService<ILogService>().Log(LogLevel.Info,
+                $"Quick Share prompt shown as a notification only: {ex.Message}");
+        }
+    }
+
+    /// <summary>Bring the window up on the Share page (tray item, Explorer hand-off).</summary>
+    public void ShowSharePage() => DispatcherQueue.TryEnqueue(() =>
+    {
+        AppWindow.Show();
+        Activate();
+        var item = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == "Share");
+        if (item is not null)
+        {
+            Nav.SelectedItem = item; // OnNavSelectionChanged does the navigation
+        }
+    });
+
     // The lone "pair a phone" button that stands in for the tab strip when no phone is paired
     // (M2b zero-device entry). Same destination as the strip's "+" and Home's CTA.
     private void OnPairPhone(object sender, RoutedEventArgs e) => Shell.IsOnboarding = true;
@@ -130,6 +216,7 @@ public sealed partial class MainWindow : Window
             "Home" => typeof(HomePage),
             "Device" => typeof(DevicePage),
             "Files" => typeof(FilesPage),
+            "Share" => typeof(QuickSharePage),
             "Sync" => typeof(SyncPage),
             "Details" => typeof(DetailsPage),
             "Logs" => typeof(LogsPage),

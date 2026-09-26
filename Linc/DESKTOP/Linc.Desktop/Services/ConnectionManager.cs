@@ -281,6 +281,17 @@ public sealed class ConnectionManager(
         // Over USB, the ADB serial is typically this same value directly.
         var serialNo = await GetPropAsync(device, "ro.serialno", "", ct);
 
+        // Make THIS phone the active record before anything below writes per-device state. The
+        // TLS exchange saves the phone's certificate to the active device, and the supervisor
+        // used to switch the active device only after the whole connect returned — so connecting
+        // a second phone pinned its certificate onto the first phone's record, and the first
+        // phone then looked "reinstalled" (logged 9 times before this fix). SavePairedDevice
+        // dedupes on the serial, so a returning phone updates its record instead of adding one.
+        if (!string.IsNullOrEmpty(serialNo))
+        {
+            registry.SavePairedDevice(serialNo, model);
+        }
+
         // Install the companion and grant its permissions if this phone has never had it
         // (M01, D-035). No-ops in a few milliseconds once the package is present.
         await setup.EnsureReadyAsync(device, ct);

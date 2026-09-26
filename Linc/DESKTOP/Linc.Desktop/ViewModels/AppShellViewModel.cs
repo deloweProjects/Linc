@@ -31,6 +31,7 @@ public partial class AppShellViewModel : ObservableObject
         IPcControlService pcControl,
         IHotspotLinkService hotspotLink,
         IShareService share,
+        Linc.Desktop.QuickShare.IQuickShareService quickShare,
         IDeviceCacheService cache,
         OutboxService outbox,
         HomeViewModel home,
@@ -50,6 +51,9 @@ public partial class AppShellViewModel : ObservableObject
         // phone's control connection comes up, so this has to be listening from launch — the
         // same reasoning as the two above, and more so, since nobody navigates to it at all.
         hotspotLink.Attach();
+        // Quick Share: nearby phones (with or without Linc) find this PC from launch, like
+        // Google's own Windows app — nobody should have to open a page to become visible.
+        quickShare.Start();
 
         // Keep the offline copy current so a disconnect never blanks the UI (M02, D-032).
         supervisor.StatusUpdated += status =>

@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Linc.Desktop.Views.QuickSharePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Linc.Desktop.ViewModels">
+
+    <ScrollViewer>
+        <StackPanel Padding="32" Spacing="16" MaxWidth="980" HorizontalAlignment="Stretch">
+
+            <StackPanel Spacing="4">
+                <TextBlock Text="Share" Style="{StaticResource HeadlineText}" />
+                <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap" Opacity="0.8"
+                           Text="Quick Share with any Android phone nearby. No Linc app or cable needed; you just need the same Wi-Fi network." />
+            </StackPanel>
+
+            <!-- Visibility -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20">
+                <Grid ColumnSpacing="16" RowSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Receive with Quick Share" Style="{StaticResource TitleText}" />
+                        <TextBlock Text="{x:Bind ViewModel.VisibilityText, Mode=OneWay}"
+                                   Style="{StaticResource BodyText}" TextWrapping="Wrap" Opacity="0.8" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="Visible" OffContent="Hidden"
+                                  IsOn="{x:Bind ViewModel.ReceiveEnabled, Mode=TwoWay}" />
+                    <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
+                        <TextBox Header="Name phones see" Width="260"
+                                 Text="{x:Bind ViewModel.DeviceName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Content="Save name" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.SaveNameCommand}" />
+                        <Button VerticalAlignment="Bottom" Command="{x:Bind ViewModel.OpenReceivedFolderCommand}"
+                                ToolTipService.ToolTip="{x:Bind ViewModel.ReceivedFolder}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE838;" FontSize="14" />
+                                <TextBlock Text="Received files" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Files handed over from Explorer's "Send with Quick Share" -->
+            <InfoBar IsOpen="{x:Bind ViewModel.HasQueuedFiles, Mode=OneWay}" IsClosable="False" Severity="Informational"
+                     Title="Quick Share" Message="{x:Bind ViewModel.QueuedText, Mode=OneWay}">
+                <InfoBar.ActionButton>
+                    <Button Content="Send" Style="{StaticResource FilledButton}"
+                            IsEnabled="{x:Bind ViewModel.CanSendQueued, Mode=OneWay}"
+                            Command="{x:Bind ViewModel.SendQueuedCommand}" />
+                </InfoBar.ActionButton>
+                <InfoBar.Content>
+                    <Button Content="Clear" Margin="0,0,0,12" Command="{x:Bind ViewModel.ClearQueuedCommand}" />
+                </InfoBar.Content>
+            </InfoBar>
+
+            <!-- Send -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Send to a nearby device" Style="{StaticResource TitleText}" />
+                            <TextBlock Text="{x:Bind ViewModel.NearbyHint, Mode=OneWay}" Style="{StaticResource BodyText}"
+                                       TextWrapping="Wrap" Opacity="0.8" />
+                        </StackPanel>
+                        <Button Grid.Column="1" VerticalAlignment="Center" Command="{x:Bind ViewModel.ScanCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ProgressRing IsActive="{x:Bind ViewModel.IsScanning, Mode=OneWay}" Width="16" Height="16" />
+                                <TextBlock Text="Scan" />
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="2" VerticalAlignment="Center" Style="{StaticResource FilledButton}"
+                                IsEnabled="{x:Bind ViewModel.CanSend, Mode=OneWay}" Click="OnSendClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE724;" FontSize="14" />
+                                <TextBlock Text="Choose files…" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <GridView ItemsSource="{x:Bind ViewModel.Nearby}" SelectionMode="Single"
+                              SelectedItem="{x:Bind ViewModel.SelectedDevice, Mode=TwoWay}"
+                              AllowDrop="True" DragOver="OnDeviceDragOver" Drop="OnDeviceDrop">
+                        <GridView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:QsNearbyVm">
+                                <StackPanel Width="140" Padding="8" Spacing="6">
+                                    <FontIcon Glyph="{x:Bind Glyph}" FontSize="32" />
+                                    <TextBlock Text="{x:Bind Name}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionText}" HorizontalAlignment="Center" Opacity="0.7" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox PlaceholderText="Text or a link to send to the selected device"
+                                 Text="{x:Bind ViewModel.TextToSend, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Column="1" Content="Paste" Command="{x:Bind ViewModel.PasteClipboardCommand}"
+                                ToolTipService.ToolTip="Paste what's on this PC's clipboard" />
+                        <Button Grid.Column="2" Content="Send text" IsEnabled="{x:Bind ViewModel.CanSendText, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.SendTextCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Options -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Options" Style="{StaticResource TitleText}" />
+                    <ToggleSwitch Header="Accept from my connected phone without asking"
+                                  IsOn="{x:Bind ViewModel.AutoAcceptOwnPhone, Mode=TwoWay}" />
+                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Opacity="0.8"
+                               Text="Only when Linc is connected to that phone over Wi-Fi and the Quick Share comes from the same network address with the same name. A name alone is never trusted, and a USB link can't be checked this way." />
+                    <ToggleSwitch Header="Show &quot;Send with Quick Share&quot; when right-clicking files in Explorer"
+                                  IsOn="{x:Bind ViewModel.ExplorerMenuEnabled, Mode=TwoWay}" />
+                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Opacity="0.8"
+                               Text="On Windows 11 it appears under Show more options. Only for your account; turning this off removes it." />
+                    <TextBlock Text="{x:Bind ViewModel.ShellError, Mode=OneWay}" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Transfers -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20"
+                    Visibility="{x:Bind ViewModel.HasTransfers, Mode=OneWay}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Transfers" Style="{StaticResource TitleText}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Transfers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:QsTransferVm">
+                                <Grid ColumnSpacing="12" Padding="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Glyph="{x:Bind Glyph}" FontSize="20" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{x:Bind Headline}" Style="{StaticResource CaptionText}" Opacity="0.7" />
+                                        <TextBlock Text="{x:Bind StatusText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                                        <ProgressBar Value="{x:Bind Progress}" Visibility="{x:Bind ShowProgress}" />
+                                        <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ShowWaiting}" />
+                                        <TextBlock Text="{x:Bind ReceivedText}" Visibility="{x:Bind HasText}" TextWrapping="Wrap"
+                                                   IsTextSelectionEnabled="True" Opacity="0.9" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <Button Content="Open" Visibility="{x:Bind CanOpen}" Command="{x:Bind OpenCommand}" />
+                                        <Button Content="Open link" Visibility="{x:Bind HasLink}" Command="{x:Bind OpenLinkCommand}" />
+                                        <Button Content="Copy" Visibility="{x:Bind HasText}" Command="{x:Bind CopyTextCommand}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -578,6 +578,13 @@ public sealed class HotspotLinkService(
                     _consecutiveFailures = 0;
                     LinkedEndpoint = result.Endpoint;
                     log.Log(LogLevel.Info, $"Reconnected wireless debugging at {result.Endpoint}.");
+                    continue;
+                }
+                if (HotspotBackoff.ShouldRetire(_consecutiveFailures))
+                {
+                    await RetireAsync(endpoint,
+                        $"{_consecutiveFailures} re-resolves in a row failed — the phone has most likely moved networks");
+                    return;
                 }
             }
         }
@@ -588,6 +595,45 @@ public sealed class HotspotLinkService(
         catch (Exception ex) when (ex is LincException or IOException)
         {
             log.Log(LogLevel.Warn, $"The wireless debugging health loop stopped: {ex.Message}");
+            // A loop that dies must not leave LinkedEndpoint naming a link nobody is watching —
+            // the race would stay settled and a same-endpoint announcement would be ignored.
+            await RetireAsync(endpoint, "its health loop stopped");
+        }
+    }
+
+    /// <summary>
+    /// Give up a standby endpoint that has stopped answering and reopen the race, then ask the
+    /// phone to re-announce (<c>adb.arm</c> only turns wireless debugging on if it is off, so it
+    /// never restarts a working adbd). The announcement names the phone's CURRENT address, which
+    /// is the one thing redialling the old one can never learn.
+    /// </summary>
+    private async Task RetireAsync(string endpoint, string why)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            if (!HotspotRedial.SameEndpoint(LinkedEndpoint, endpoint))
+            {
+                return; // a newer link already replaced it; that one is not ours to tear down
+            }
+            LinkedEndpoint = null;
+            _race = new HotspotRaceState();
+            _consecutiveFailures = 0;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        log.Log(LogLevel.Warn,
+            $"Stopped redialling wireless debugging at {endpoint} ({why}); asking the phone where it is now.");
+        try
+        {
+            await connector.DisconnectAsync(endpoint, CancellationToken.None);
+            await RequestArmAsync(HotspotArmFallback.Prefer, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is LincException or IOException)
+        {
+            log.Log(LogLevel.Warn, $"Couldn't ask the phone to re-announce wireless debugging: {ex.Message}");
         }
     }
 
