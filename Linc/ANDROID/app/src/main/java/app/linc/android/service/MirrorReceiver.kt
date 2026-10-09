@@ -50,6 +50,16 @@ object MirrorReceiver {
     /** True while a text field is focused on the PC (v14 `pc.textfocus`) — drives the soft keyboard. */
     val textFocus = MutableStateFlow(false)
 
+    /**
+     * Frames shown and bytes received since the process started. The connection bar
+     * differences these once a second for the phone-side frame rate, and treats a count that
+     * stops moving while "streaming" as a stall worth showing.
+     */
+    @Volatile var framesShown = 0L
+        private set
+    @Volatile var bytesReceived = 0L
+        private set
+
     @Volatile private var surface: Surface? = null
     @Volatile private var surfaceReady = CountDownLatch(1)
 
@@ -86,6 +96,7 @@ object MirrorReceiver {
         }
         var codec: MediaCodec = first
 
+        MirrorSession.reset()
         _state.value = MirrorState(streaming = true, width = width, height = height)
         LogStore.log(LogLevel.INFO, "PC mirror: showing the PC screen (${width}x$height)")
 
@@ -96,6 +107,7 @@ object MirrorReceiver {
         try {
             while (true) {
                 val frame = VideoFrame.read(input) ?: break
+                bytesReceived += frame.data.size + 12
 
                 // After a gap, every P-frame references pictures this decoder never saw.
                 // Feeding them produces the green smear that used to be the visible symptom
@@ -190,6 +202,7 @@ object MirrorReceiver {
             val index = codec.dequeueOutputBuffer(info, 0)
             if (index < 0) break
             codec.releaseOutputBuffer(index, true)
+            framesShown++
         }
     }
 

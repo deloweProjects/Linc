@@ -48,7 +48,15 @@ public sealed class PcInputService : IPcInputService
                 Pointer(kind, payload, target, @virtual);
                 break;
             case "scroll":
-                Scroll((int?)payload["dy"] ?? 0, (int?)payload["dx"] ?? 0);
+                // v20 "precise": dx/dy are raw wheel units (120 = one notch), so a two-finger
+                // drag scrolls smoothly instead of in notch-sized jumps.
+                if ((bool?)payload["precise"] == true)
+                {
+                    int dy = (int?)payload["dy"] ?? 0, dx = (int?)payload["dx"] ?? 0;
+                    if (dy != 0) SendWheel(MOUSEEVENTF_WHEEL, dy);
+                    if (dx != 0) SendWheel(MOUSEEVENTF_HWHEEL, dx);
+                }
+                else Scroll((int?)payload["dy"] ?? 0, (int?)payload["dx"] ?? 0);
                 break;
             case "key":
                 Key((int?)payload["keyCode"] ?? 0, down: (bool?)payload["down"] ?? true);
@@ -78,10 +86,32 @@ public sealed class PcInputService : IPcInputService
                 absolute: true);
         }
 
-        // A down/up carries a click at the same coordinates.
-        if (kind == "down") SendMouse(0, 0, MOUSEEVENTF_LEFTDOWN, absolute: false);
-        else if (kind == "up") SendMouse(0, 0, MOUSEEVENTF_LEFTUP, absolute: false);
+        // A down/up carries a click at the same coordinates — left unless the phone says
+        // otherwise (v20 "button": press-and-hold / two-finger tap is a right click).
+        if (kind is "down" or "up")
+            SendMouse(0, 0, ButtonFlag((string?)payload["button"], down: kind == "down"), absolute: false);
     }
+
+    /// <summary>The SendInput flag for a button press or release. Unknown names are a left click.</summary>
+    public static uint ButtonFlag(string? button, bool down) => button switch
+    {
+        "right" => down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP,
+        "middle" => down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP,
+        _ => down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP,
+    };
+
+    /// <summary>
+    /// Keys that live on the extended (E0-prefixed) part of the keyboard. Sent without the flag
+    /// they arrive as their numpad twins — an arrow becomes numpad 4 to apps that read scan
+    /// codes, and Delete becomes numpad-decimal — so the phone's extra-keys row needs it.
+    /// </summary>
+    public static bool IsExtendedKey(int virtualKey) => virtualKey is
+        0x21 or 0x22 or 0x23 or 0x24 or          // PgUp, PgDn, End, Home
+        0x25 or 0x26 or 0x27 or 0x28 or          // arrows
+        0x2D or 0x2E or                          // Insert, Delete
+        0x5B or 0x5C or 0x5D or                  // Win keys, Apps (context menu)
+        0xA3 or 0xA5 or                          // right Ctrl, right Alt
+        0x6F or 0x90 or 0x2C;                    // numpad divide, Num Lock, Print Screen
 
     /// <summary>
     /// Map a video-normalised point (0..65535 against the mirrored display) to the
@@ -117,7 +147,8 @@ public sealed class PcInputService : IPcInputService
                 ki = new KEYBDINPUT
                 {
                     wVk = (ushort)virtualKey,
-                    dwFlags = down ? 0 : KEYEVENTF_KEYUP,
+                    wScan = (ushort)MapVirtualKey((uint)virtualKey, 0 /* MAPVK_VK_TO_VSC */),
+                    dwFlags = (down ? 0 : KEYEVENTF_KEYUP) | (IsExtendedKey(virtualKey) ? KEYEVENTF_EXTENDEDKEY : 0),
                 },
             },
         };
@@ -173,9 +204,13 @@ public sealed class PcInputService : IPcInputService
     private const uint INPUT_MOUSE = 0, INPUT_KEYBOARD = 1;
     private const uint MOUSEEVENTF_MOVE = 0x0001;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004;
+    private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008, MOUSEEVENTF_RIGHTUP = 0x0010;
+    private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020, MOUSEEVENTF_MIDDLEUP = 0x0040;
     private const uint MOUSEEVENTF_WHEEL = 0x0800, MOUSEEVENTF_HWHEEL = 0x1000;
     private const uint MOUSEEVENTF_ABSOLUTE = 0x8000, MOUSEEVENTF_VIRTUALDESK = 0x4000;
-    private const uint KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_UNICODE = 0x0004;
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001, KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_UNICODE = 0x0004;
+
+    [DllImport("user32.dll")] private static extern uint MapVirtualKey(uint code, uint mapType);
     private const int WheelDelta = 120;
 
     [StructLayout(LayoutKind.Sequential)]

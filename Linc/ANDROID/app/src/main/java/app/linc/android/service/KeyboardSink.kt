@@ -12,17 +12,31 @@ import android.widget.EditText
  */
 object KeyboardSink {
 
+    /**
+     * Typed text goes as Unicode — unless a sticky modifier is latched (v20 extra-keys row),
+     * when each character that has a key is sent as a chord instead, so Ctrl then "c" is Ctrl+C.
+     */
+    private fun sendText(text: String) {
+        if (!ModifierKeys.any()) {
+            MirrorControl.text(text)
+            return
+        }
+        for (c in text) {
+            val vk = ModifierKeys.virtualKeyFor(c)
+            if (vk != null) ModifierKeys.chord(vk, MirrorControl::key) else MirrorControl.text(c.toString())
+        }
+    }
+
     fun wire(editText: EditText) {
         editText.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             when (val mapped = KeyboardMapping.map(keyCode, event.unicodeChar)) {
                 is KeyboardMapping.Mapped.VirtualKey -> {
-                    MirrorControl.key(mapped.code, true)
-                    MirrorControl.key(mapped.code, false)
+                    ModifierKeys.chord(mapped.code, MirrorControl::key)
                     true
                 }
                 is KeyboardMapping.Mapped.Text -> {
-                    MirrorControl.text(mapped.text)
+                    sendText(mapped.text)
                     true
                 }
                 null -> false
@@ -38,11 +52,10 @@ object KeyboardSink {
                 // Deletions -> backspaces; additions -> text. Covers soft keyboards that
                 // commit text without key events (the common case on Gboard).
                 repeat((previous.length - now.length).coerceAtLeast(0)) {
-                    MirrorControl.key(KeyboardMapping.VK_BACK, true)
-                    MirrorControl.key(KeyboardMapping.VK_BACK, false)
+                    ModifierKeys.chord(KeyboardMapping.VK_BACK, MirrorControl::key)
                 }
                 if (now.length > previous.length) {
-                    MirrorControl.text(now.substring(previous.length))
+                    sendText(now.substring(previous.length))
                 }
             }
             override fun afterTextChanged(s: Editable) {

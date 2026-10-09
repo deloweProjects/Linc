@@ -35,8 +35,10 @@ public sealed class PcMirrorSource : IDisposable
     private Thread? _pumpThread;
     private Thread? _feederThread;
     private long _submitted;
+    private readonly System.Diagnostics.Stopwatch _streamClock = new();
     private bool _disposed;
     private int _keyFrameWanted;
+    private int _bitrateWanted;   // 0 = no change pending
 
     /// <summary>Raised for each encoded access unit, on the pump thread.</summary>
     public event Action<EncodedFrame>? FrameEncoded;
@@ -53,6 +55,28 @@ public sealed class PcMirrorSource : IDisposable
     /// so a burst of requests costs one keyframe, not a storm of them.
     /// </summary>
     public void RequestKeyFrame() => Interlocked.Exchange(ref _keyFrameWanted, 1);
+
+    /// <summary>
+    /// Ask the encoder to move to a new target bit rate. Like <see cref="RequestKeyFrame"/>
+    /// this only records the request; the feeder applies it between submissions, so it never
+    /// races a ProcessInput. Only the latest request matters.
+    /// </summary>
+    public void RequestBitrate(int bitrate) => Interlocked.Exchange(ref _bitrateWanted, bitrate);
+
+    /// <summary>
+    /// Asked before each frame is encoded: may another frame go out now? When it answers false
+    /// the frame is simply not captured into the encoder, and the stream's frame rate falls to
+    /// what the link can carry.
+    ///
+    /// <para><b>This is the right place to shed load, not after encoding.</b> Discarding an
+    /// encoded frame breaks the H.264 reference chain, so the stream then has to wait for an
+    /// IDR — the largest frame there is — and on a slow link sending that IDR is itself what
+    /// makes the next backlog. mirrorsim measured that loop directly: a drop-only sender on a
+    /// 2.5 Mb/s link kept dropping ~18 frames a second even after the bit rate had been cut far
+    /// below the link. A frame that was never encoded references nothing and is referenced by
+    /// nothing, so skipping it costs a little smoothness and nothing else.</para>
+    /// </summary>
+    public Func<bool>? AcceptFrame { get; set; }
 
     public PcMirrorSource(int displayIndex, int framesPerSecond, int bitrate, ILogService log)
     {
@@ -81,6 +105,7 @@ public sealed class PcMirrorSource : IDisposable
 
     public void Start()
     {
+        _streamClock.Start();
         _pumpThread = new Thread(Pump) { IsBackground = true, Name = "linc-mirror-pump" };
         _feederThread = new Thread(Feed) { IsBackground = true, Name = "linc-mirror-feed" };
         _pumpThread.Start();
@@ -149,16 +174,40 @@ public sealed class PcMirrorSource : IDisposable
                     now = Environment.TickCount64;
                 }
 
-                // Nothing has ever been captured yet — nothing to send.
-                if (!_capture.HasFrame) { nextSubmitDue = now + _frameIntervalMs; continue; }
+                // Nothing has ever been captured yet — nothing to send. Hand the encoder's input
+                // slot back, or it is lost and the stream eventually starves of slots.
+                if (!_capture.HasFrame)
+                {
+                    _inputSlots.Release();
+                    nextSubmitDue = now + _frameIntervalMs;
+                    continue;
+                }
+
+                // The link is still busy with earlier frames: skip this one rather than add to
+                // the backlog (see AcceptFrame). The slot goes back for the next attempt.
+                if (AcceptFrame is { } accept && !accept())
+                {
+                    _inputSlots.Release();
+                    nextSubmitDue = Math.Max(nextSubmitDue + _frameIntervalMs, now);
+                    continue;
+                }
 
                 // A pending keyframe request is applied here, on the thread that owns
                 // submission, so the ICodecAPI call can never race a ProcessInput.
+                int bitrate = Interlocked.Exchange(ref _bitrateWanted, 0);
+                if (bitrate > 0 && !_encoder.SetBitrate(bitrate))
+                    _log.Log(LogLevel.Warn, $"PC mirror: the encoder refused a bit rate change to {bitrate / 1000} kb/s");
                 if (Interlocked.Exchange(ref _keyFrameWanted, 0) == 1) _encoder.ForceKeyFrame();
 
                 // On an idle desktop this resends the last frame, which is what keeps the
                 // stream alive rather than silently stopping.
-                _encoder.Submit(_capture.Last, _submitted++);
+                //
+                // The timestamp is wall-clock, not frame-count: with frames skipped for the link,
+                // a frame-count clock would tell the encoder's rate control that time passes at
+                // 30 fps when it does not, and every frame would be sized for a rate that is not
+                // happening. On the wall clock, "N kb/s" means N kb per real second.
+                _encoder.Submit(_capture.Last, _streamClock.Elapsed.Ticks);
+                _submitted++;
 
                 // Advance the deadline by exactly one interval; if we have fallen behind,
                 // resynchronise to now rather than trying to catch up in a burst.

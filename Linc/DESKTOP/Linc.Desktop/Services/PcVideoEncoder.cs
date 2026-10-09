@@ -78,28 +78,42 @@ public sealed class PcVideoEncoder : IDisposable
     }
 
     /// <summary>
-    /// Constant bit rate, a two-second GOP, one reference frame and low-latency mode.
+    /// Peak-constrained VBR with a quality floor, a two-second GOP, one reference frame and
+    /// low-latency mode.
     ///
-    /// <para><b>Why each matters on a wireless link.</b> CBR keeps the stream inside the
-    /// bandwidth the phone asked for instead of spiking on a screen change and blowing the
-    /// link's budget. The GOP bounds recovery: a phone that lost bytes shows nothing usable
-    /// until the next IDR, so an encoder-default GOP (which can be many seconds, or a single
-    /// keyframe at the start) turns one dropped packet into a long smear — two seconds is the
-    /// worst case, and <see cref="ForceKeyFrame"/> normally beats it. One reference frame
-    /// means a lost frame can only damage the frame after it, not a whole pyramid.</para>
+    /// <para><b>Not CBR — measured (D-066).</b> Constant bit rate on this class of encoder means
+    /// <i>padding</i>: an idle desktop at an 8 Mb/s target measured 7.2 Mb/s on the wire, about
+    /// half of it filler NALs (type 12) and the rest P-frames bloated to use the budget. The
+    /// encoder's own default was identical. So a mirror of a screen nobody was touching kept a
+    /// Wi-Fi link saturated full-time, and every real change queued behind the padding. VBR sends
+    /// what the picture needs, capped at the target; the target itself is what the sender's
+    /// congestion control moves.</para>
+    ///
+    /// <para><b>The QP floor</b> stops VBR spending the headroom on "refining" an image that has
+    /// not changed, pass after pass, toward a quality no phone screen can show: with it an idle
+    /// screen measured 0.55 Mb/s instead of 3.35. QP 20 is sharp for desktop text — 26 saved
+    /// another 0.17 Mb/s and started to soften it.</para>
+    ///
+    /// <para>The GOP bounds recovery: a phone that lost sync shows nothing usable until the
+    /// next IDR, so two seconds is the worst case and <see cref="ForceKeyFrame"/> normally beats
+    /// it. One reference frame means a lost frame can only damage the frame after it.</para>
     ///
     /// <para>Every setting is best-effort: encoders are allowed to refuse any of them, and a
     /// refusal is not a reason to fail the mirror.</para>
     /// </summary>
     private void ConfigureRateControl(int fps, int bitrate)
     {
-        TrySet(CODECAPI_AVEncCommonRateControlMode, (uint)eAVEncCommonRateControlMode_CBR);
+        TrySet(CODECAPI_AVEncCommonRateControlMode, (uint)eAVEncCommonRateControlMode_PeakConstrainedVBR);
         TrySet(CODECAPI_AVEncCommonMeanBitRate, (uint)bitrate);
         TrySet(CODECAPI_AVEncCommonMaxBitRate, (uint)bitrate);
+        TrySet(CODECAPI_AVEncVideoMinQP, MinQp);
         TrySet(CODECAPI_AVEncMPVGOPSize, (uint)Math.Max(fps * 2, 1));
         TrySet(CODECAPI_AVEncVideoMaxNumRefFrame, 1u);
         TrySet(CODECAPI_AVLowLatencyMode, true);
     }
+
+    /// <summary>The quality floor — see <see cref="ConfigureRateControl"/>.</summary>
+    private const uint MinQp = 20;
 
     /// <summary>
     /// Ask for the next encoded frame to be an IDR. Used when the stream has lost bytes or
@@ -109,17 +123,29 @@ public sealed class PcVideoEncoder : IDisposable
     /// </summary>
     public void ForceKeyFrame() => TrySet(CODECAPI_AVEncVideoForceKeyFrame, 1u);
 
-    private void TrySet(Guid api, object value)
+    /// <summary>
+    /// Change the target bit rate while streaming — the lever the sender's congestion control
+    /// pulls when the link cannot carry what was asked for. Returns false when the encoder
+    /// refused, so the caller knows the stream is still running at the old rate.
+    /// </summary>
+    public bool SetBitrate(int bitrate)
+    {
+        bool mean = TrySet(CODECAPI_AVEncCommonMeanBitRate, (uint)bitrate);
+        TrySet(CODECAPI_AVEncCommonMaxBitRate, (uint)bitrate);
+        return mean;
+    }
+
+    private bool TrySet(Guid api, object value)
     {
         var codecApi = _codecApi;
-        if (codecApi is null || _disposed) return;
+        if (codecApi is null || _disposed) return false;
         try
         {
             var key = api;
-            if (codecApi.IsSupported(ref key) != 0) return;
-            codecApi.SetValue(ref key, ref value);
+            if (codecApi.IsSupported(ref key) != 0) return false;
+            return codecApi.SetValue(ref key, ref value) == 0;
         }
-        catch { /* the encoder is entitled to refuse; the mirror runs without it */ }
+        catch { return false; /* the encoder is entitled to refuse; the mirror runs without it */ }
     }
 
     private void SetOutputType(int width, int height, int fps, int bitrate)
@@ -196,15 +222,18 @@ public sealed class PcVideoEncoder : IDisposable
         return eventType;
     }
 
-    /// <summary>Hand a captured texture to the encoder. <paramref name="frameIndex"/> drives PTS.</summary>
-    public void Submit(ID3D11Texture2D texture, long frameIndex)
+    /// <summary>
+    /// Hand a captured texture to the encoder. <paramref name="sampleTime"/> is its
+    /// presentation time in 100 ns units (Media Foundation's clock), from the stream's wall clock.
+    /// </summary>
+    public void Submit(ID3D11Texture2D texture, long sampleTime)
     {
         var iid = typeof(ID3D11Texture2D).GUID;
         Check(MFCreateDXGISurfaceBuffer(ref iid, texture.NativePointer, 0, false,
             out IMFMediaBuffer buffer), "MFCreateDXGISurfaceBuffer");
         Check(MFCreateSample(out IMFSample sample), "MFCreateSample");
         Check(sample.AddBuffer(buffer), "AddBuffer");
-        Check(sample.SetSampleTime(frameIndex * 10_000_000L / _framesPerSecond), "SetSampleTime");
+        Check(sample.SetSampleTime(sampleTime), "SetSampleTime");
         Check(sample.SetSampleDuration(10_000_000L / _framesPerSecond), "SetSampleDuration");
         Check(_transform.ProcessInput(0, sample, 0), "ProcessInput");
         Marshal.ReleaseComObject(sample);
@@ -272,6 +301,10 @@ public sealed class PcVideoEncoder : IDisposable
         // Shutdown ordering matters and a throw here would mask the real error, so each
         // step is best-effort.
         try { _transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
+        // Wakes a pump thread parked in GetEvent (it gets MF_E_SHUTDOWN and throws). Without
+        // this, Dispose left that thread blocked for good — harmless-looking at the end of a
+        // session, fatal when the encoder is rebuilt mid-stream (D-069).
+        try { if (_transform is IMFShutdown shutdown) shutdown.Shutdown(); } catch { }
         try { if (_deviceManagerPtr != IntPtr.Zero) Marshal.Release(_deviceManagerPtr); } catch { }
         try { Marshal.ReleaseComObject(_transform); } catch { }
         try { Marshal.ReleaseComObject(_deviceManager); } catch { }

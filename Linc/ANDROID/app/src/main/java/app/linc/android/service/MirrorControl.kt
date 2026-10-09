@@ -69,8 +69,13 @@ object MirrorControl {
         )
     }
 
-    /** Absolute pointer move to a point normalised 0..65535 against the mirrored video. */
-    fun pointer(kind: String, x: Int, y: Int, mode: String) {
+    /**
+     * Absolute pointer move to a point normalised 0..65535 against the mirrored video. A
+     * down/up carries [button] ("left", "right", "middle"); a non-left button needs a v20
+     * desktop — an older one would turn a right click into a left one, so it is not sent.
+     */
+    fun pointer(kind: String, x: Int, y: Int, mode: String, button: String = "left") {
+        if (button != "left" && !CompanionOutbox.canSend(20)) return
         CompanionOutbox.trySend(
             Envelope(
                 type = MessageType.PC_INPUT,
@@ -79,9 +84,60 @@ object MirrorControl {
                     put("x", x)
                     put("y", y)
                     put("mode", mode)
+                    if (button != "left") put("button", button)
                 },
             ),
             requiredVersion = 14,
+        )
+    }
+
+    /** True when the desktop speaks v20: cursor, stats, right click, smooth scroll, audio. */
+    fun v20(): Boolean = CompanionOutbox.canSend(20)
+
+    /** Smooth scroll in raw wheel units (120 = one notch), v20; older desktops get notches. */
+    fun scrollPrecise(dx: Int, dy: Int) {
+        if (!v20()) {
+            if (dy / 120 != 0 || dx / 120 != 0) scroll(dx / 120, dy / 120)
+            return
+        }
+        CompanionOutbox.trySend(
+            Envelope(
+                type = MessageType.PC_INPUT,
+                payload = buildJsonObject {
+                    put("kind", "scroll")
+                    put("dx", dx)
+                    put("dy", dy)
+                    put("precise", true)
+                },
+            ),
+            requiredVersion = 20,
+        )
+    }
+
+    /** Round-trip probe for the connection bar; the PC echoes it as `pc.mirror.pong` (v20). */
+    fun ping(nowMs: Long) {
+        CompanionOutbox.trySend(
+            Envelope(type = MessageType.PC_MIRROR_PING, payload = buildJsonObject { put("t", nowMs) }),
+            requiredVersion = 20,
+        )
+    }
+
+    /** Ask for the PC's display list (answered with `pc.displays`). */
+    fun requestDisplays() {
+        CompanionOutbox.trySend(
+            Envelope(type = MessageType.PC_DISPLAYS_GET, payload = buildJsonObject {}),
+            requiredVersion = 14,
+        )
+    }
+
+    /** Start/stop playing the PC's sound on the phone (v20, channel 6). */
+    fun audio(on: Boolean) {
+        CompanionOutbox.trySend(
+            Envelope(
+                type = if (on) MessageType.PC_AUDIO_START else MessageType.PC_AUDIO_STOP,
+                payload = buildJsonObject {},
+            ),
+            requiredVersion = 20,
         )
     }
 

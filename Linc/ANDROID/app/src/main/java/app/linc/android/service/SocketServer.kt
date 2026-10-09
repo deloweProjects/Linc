@@ -163,7 +163,18 @@ class SocketServer(
             CHANNEL_BULK -> bulkLoop(input, output)
             CHANNEL_FILES -> fileServe(input, output)
             CHANNEL_VIDEO -> videoReceive(input)
+            CHANNEL_AUDIO -> audioReceive(input)
+            CHANNEL_MIC -> PcVoiceAccess.stream(output)
         }
+    }
+
+    /** Channel 6 (pc-audio, v20): like pc-video, the desktop serves; config frame, then AAC. */
+    private fun audioReceive(input: DataInputStream) {
+        val configJson = Framing.read(input) ?: return
+        val config = ProtocolJson.parseToJsonElement(configJson).jsonObject
+        val rate = (config["sampleRate"] as? JsonPrimitive)?.intOrNull ?: return
+        val channels = (config["channels"] as? JsonPrimitive)?.intOrNull ?: 2
+        AudioReceiver.receive(input, rate, channels)
     }
 
     /**
@@ -506,6 +517,12 @@ class SocketServer(
                         val focused = (message.payload["focused"] as? JsonPrimitive)?.booleanOrNull ?: false
                         MirrorReceiver.textFocus.value = focused
                     }
+                    // v20 PC Remote side-channels (D-067): pointer, link health, ping echo, displays.
+                    MessageType.PC_MIRROR_CURSOR -> if (negotiated >= 20) MirrorSession.onCursor(message.payload)
+                    MessageType.PC_MIRROR_STATS -> if (negotiated >= 20) MirrorSession.onStats(message.payload)
+                    MessageType.PC_MIRROR_PONG -> if (negotiated >= 20) MirrorSession.onPong(message.payload)
+                    MessageType.PC_DISPLAYS -> if (negotiated >= 14) MirrorSession.onDisplays(message.payload)
+                    MessageType.PC_VOICEACCESS_STATE -> if (negotiated >= 21) PcVoiceAccess.onState(message.payload)
                     // v15: the PC sets the phone's screen orientation (D-055). Bad payload →
                     // internal; WRITE_SETTINGS not granted → not-granted (a plain-language route
                     // to the Settings screen — same wording style as v7 dnd.set).
@@ -686,5 +703,7 @@ class SocketServer(
         const val CHANNEL_FILES = 2
         const val CHANNEL_BULK = 3
         const val CHANNEL_VIDEO = 5
+        const val CHANNEL_AUDIO = 6
+        const val CHANNEL_MIC = 7
     }
 }

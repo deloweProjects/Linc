@@ -4,6 +4,9 @@
 
     <!-- v9 Direct TLS transport: dial the desktop over LAN (D-022). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- PC Remote (D-069): voice typing on the floating keyboard, and the phone as the PC's
+         microphone for Windows Voice Access. Asked for at first use, never up front. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- Android 14+ requires one "device interaction" permission alongside the
@@ -19,6 +22,10 @@
     <!-- Normal permission, no runtime prompt; used only to read Wi-Fi signal
          strength/link speed for the Details page (never the SSID). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Normal permission, no runtime prompt. Needed to acquire the low-latency Wi-Fi lock the
+         PC Remote screen holds while it is visible, which stops the radio's power-save mode
+         from sleeping between beacons and delaying the mirror's packets (D-066). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Special grant, sideload builds only (D-021): lets the desktop show the phone's
          wallpaper (as a tiny blurred thumbnail) behind the Home widgets. The user
          gives it explicitly from the Settings screen; everything works without it. -->

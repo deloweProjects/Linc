@@ -262,6 +262,18 @@ public static class Mf
         [PreserveSig] int RemoveAllElements();
     }
 
+    /// <summary>
+    /// Implemented by async MFTs. <c>Shutdown</c> is the only thing that releases a thread
+    /// blocked in <c>GetEvent</c>: merely releasing the transform leaves it waiting forever.
+    /// </summary>
+    [ComImport, Guid("97ec2ea4-0e42-4937-97ac-9d6d328824e1"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IMFShutdown
+    {
+        [PreserveSig] int Shutdown();
+        [PreserveSig] int GetShutdownStatus(out int status);
+    }
+
     [ComImport, Guid("bf94c121-5b05-4e6f-8000-ba598961414d"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMFTransform
@@ -351,7 +363,10 @@ public static class Mf
     public static readonly Guid CODECAPI_AVLowLatencyMode = new("9c27891a-ed7a-40e1-88e8-b22727a024ee");
     public static readonly Guid CODECAPI_AVEncNumWorkerThreads = new("b0c8bf60-16f7-4951-a30b-1db1609293d6");
 
+    public static readonly Guid CODECAPI_AVEncVideoMinQP = new("0ee22c6a-a37c-4568-b5f1-9d4c2b3ab886");
+
     public const int eAVEncCommonRateControlMode_CBR = 0;
+    public const int eAVEncCommonRateControlMode_PeakConstrainedVBR = 1;
 
     [ComImport, Guid("901db4c7-31ce-41a2-85dc-8fa0bf41b8da"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

@@ -14,13 +14,17 @@ using Linc.Desktop.Services;
 // exactly what the measurement is about (D-036).
 //
 // Read-only with respect to the machine: it captures the screen and touches nothing else --
-// no settings.json, no phone.
+// no settings.json, no phone. The rate-control scenarios briefly show a window of scrolling
+// noise on display 0 (Motion.cs), because rate control cannot be measured on an idle screen.
 
 Mf.Check(Mf.MFStartup(0x00020070, 0), "MFStartup");
 
+// `dotnet run -- <text>` runs only the scenarios whose name contains <text>.
+var only = args.FirstOrDefault();
 var failures = new List<string>();
 foreach (var (name, body) in Scenarios())
 {
+    if (only is not null && !name.Contains(only, StringComparison.OrdinalIgnoreCase)) continue;
     Console.WriteLine($"--- {name}");
     try { body(new Asserter(name, failures)); }
     catch (Exception ex) { failures.Add($"{name}: threw {ex.GetType().Name}: {ex.Message}"); }
@@ -30,7 +34,7 @@ Console.WriteLine();
 int exitCode;
 if (failures.Count == 0)
 {
-    Console.WriteLine($"mirrorsim: all {Scenarios().Count()} scenarios green");
+    Console.WriteLine($"mirrorsim: all {Scenarios().Count(x => only is null || x.Item1.Contains(only, StringComparison.OrdinalIgnoreCase))} scenarios green");
     exitCode = 0;
 }
 else
@@ -222,6 +226,85 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
             $"keeps up with the target rate (was {source.Fps:F1} fps)");
     });
 
+    yield return ("an idle screen costs almost nothing on the link", a =>
+    {
+        // A static desktop has nothing to say, and a mirror spends most of its life on one.
+        // Rate control that pads to the target (CBR filler, NAL type 12) instead sends the full
+        // bit rate of nothing, all the time -- on Wi-Fi that is the link saturated by a screen
+        // that isn't changing, and every real change then arrives behind it.
+        var (frames, source) = Run(60);
+        var byType = new Dictionary<int, long>();
+        long total = 0;
+        foreach (var f in frames)
+        {
+            total += f.Data.Length;
+            var nals = ParseNals(f.Data);
+            for (int i = 0; i < nals.Count; i++)
+            {
+                int end = i + 1 < nals.Count ? nals[i + 1].Offset : f.Data.Length;
+                byType[nals[i].Type] = byType.GetValueOrDefault(nals[i].Type) + (end - nals[i].Offset);
+            }
+        }
+        double mbps = total * 8 / (source.ElapsedMs / 1000.0) / 1e6;
+        Console.WriteLine($"    {mbps:F2} Mb/s for an idle screen at a {Config.Bitrate / 1e6} Mb/s ceiling");
+        Console.WriteLine("    bytes by NAL type: " +
+            string.Join(", ", byType.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}={kv.Value:N0}")));
+        a.True(byType.GetValueOrDefault(12) == 0, "no filler data (NAL 12) padding the stream");
+        a.True(mbps < Config.Bitrate / 1e6 * 0.15,
+            $"an idle screen uses a small fraction of the ceiling (was {mbps:F2} Mb/s; CBR measured 7.2)");
+    });
+
+    yield return ("a fresh encoder obeys the bit rate it starts with", a =>
+    {
+        // The rebuild path (D-069) relies on this: a new encoder made at the target rate.
+        foreach (int target in Environment.GetEnvironmentVariable("MIRRORSIM_TARGET") is { } t ? new[] { int.Parse(t) } : new[] { 1_500_000, 4_000_000 })
+        {
+            long bytes = 0;
+            using var motion = Motion.Start(block: int.Parse(Environment.GetEnvironmentVariable("MIRRORSIM_BLOCK") ?? "32"));
+            using var source = new PcMirrorSource(0, Config.Fps, target, new ConsoleLog());
+            source.FrameEncoded += f => Interlocked.Add(ref bytes, f.Data.Length);
+            source.Start();
+            Thread.Sleep(1500);
+            Interlocked.Exchange(ref bytes, 0);
+            Thread.Sleep(2000);
+            double bps = Interlocked.Read(ref bytes) * 8 / 2.0;
+            Console.WriteLine($"    started at {target / 1e6} Mb/s under motion -> {bps / 1e6:F2} Mb/s");
+            a.True(bps < target * 1.3, $"output near the {target / 1e6} Mb/s it was built for ({bps / 1e6:F2} Mb/s)");
+        }
+    });
+
+    yield return ("the encoder obeys a bit rate change mid-stream", a =>
+    {
+        // Congestion control is only real if this is: the sender lowers the bit rate when the
+        // link cannot keep up, and a hardware MFT is allowed to ignore that. Measure the bytes
+        // actually produced before and after, rather than trusting the HRESULT.
+        const int High = 8_000_000, Low = 1_500_000;
+        long bytes = 0;
+        using var motion = Motion.Start(block: 8);        // content that wants more than either target (see Motion)
+        using var source = new PcMirrorSource(0, Config.Fps, High, new ConsoleLog());
+        source.FrameEncoded += f => Interlocked.Add(ref bytes, f.Data.Length);
+        source.Start();
+
+        Thread.Sleep(1000);                       // settle
+        Interlocked.Exchange(ref bytes, 0);
+        Thread.Sleep(2000);
+        double before = Interlocked.Read(ref bytes) * 8 / 2.0;
+
+        source.RequestBitrate(Low);
+        Thread.Sleep(1000);                       // let the rate controller converge
+        Interlocked.Exchange(ref bytes, 0);
+        Thread.Sleep(2000);
+        double after = Interlocked.Read(ref bytes) * 8 / 2.0;
+
+        Console.WriteLine($"    {before / 1e6:F2} Mb/s at {High / 1e6} Mb/s target -> {after / 1e6:F2} Mb/s at {Low / 1e6} Mb/s target");
+        a.True(before > High * 0.6,
+            $"under motion the stream actually uses the high target ({before / 1e6:F2} Mb/s)");
+        a.True(after < before * 0.5,
+            $"output fell with the target ({before / 1e6:F2} -> {after / 1e6:F2} Mb/s)");
+        a.True(after < Low * 1.6,
+            $"output near the new target (was {after / 1e6:F2} Mb/s, target {Low / 1e6} Mb/s)");
+    });
+
     yield return ("a stalled link never blocks the encoder, and drops rather than lags", a =>
     {
         // The wireless failure this guards: when the socket stops draining, the old code
@@ -232,7 +315,7 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         using var link = new StallingStream();
         int keyframeRequests = 0;
         using var sender = new PcMirrorSender(link, () => Interlocked.Increment(ref keyframeRequests),
-            new ConsoleLog());
+            _ => { }, 8_000_000, new ConsoleLog());
 
         var payload = new byte[64 * 1024];
         var clock = Stopwatch.StartNew();
@@ -256,6 +339,49 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         a.True(link.KeyframeSeen, "the stream resumes on the keyframe after the drop");
     });
 
+    yield return ("on a link slower than the stream, the bit rate converges and drops stop", a =>
+    {
+        // The session log that motivated D-066: a link carrying less than the stream's bit
+        // rate made the drop-only sender loop -- 11 frames dropped every ~0.37 s for seventeen
+        // seconds at a stretch. Here the REAL encoder runs at 8 Mb/s into a link throttled to
+        // 2.5 Mb/s, and the sender must pull the encoder under the link and stop dropping.
+        const int Asked = 8_000_000, LinkBps = 2_500_000;
+        using var motion = Motion.Start();       // or an idle screen never congests the link at all
+        using var link = new ThrottledStream(LinkBps);
+        using var source = new PcMirrorSource(0, Config.Fps, Asked, new ConsoleLog());
+        using var sender = new PcMirrorSender(link, source.RequestKeyFrame, source.RequestBitrate,
+            Asked, new ConsoleLog());
+        source.AcceptFrame = sender.AcceptFrame;
+        source.FrameEncoded += sender.Enqueue;
+        source.Start();
+
+        Thread.Sleep(10_000);                     // let the controller find the link
+        long droppedBefore = sender.DroppedFrames;
+        long bytesBefore = link.Bytes;
+        var window = Stopwatch.StartNew();
+        // Then watch the steady state. AIMD never sits still -- it probes just past the link
+        // and backs off -- so the target is sampled across the window, not read once.
+        var targets = new List<int>();
+        while (window.ElapsedMilliseconds < 5_000) { targets.Add(sender.CurrentBitrate); Thread.Sleep(100); }
+        double meanTarget = targets.Average();
+        long steadyDrops = sender.DroppedFrames - droppedBefore;
+        double delivered = (link.Bytes - bytesBefore) * 8 / window.Elapsed.TotalSeconds;
+
+        Console.WriteLine($"    link {LinkBps / 1e6} Mb/s, asked {Asked / 1e6} Mb/s -> steady target " +
+                          $"{meanTarget / 1e6:F2} Mb/s (range {targets.Min() / 1e6:F2}..{targets.Max() / 1e6:F2})");
+        Console.WriteLine($"    first 10 s: {droppedBefore} frames dropped; steady 5 s: {steadyDrops} dropped, " +
+                          $"{delivered / 1e6:F2} Mb/s delivered");
+
+        a.True(meanTarget < LinkBps * 1.2,
+            $"bit rate driven down to the link, from {Asked / 1e6} Mb/s (steady mean {meanTarget / 1e6:F2} Mb/s)");
+        a.True(meanTarget > LinkBps * 0.5,
+            $"...but not collapsed toward the floor (steady mean {meanTarget / 1e6:F2} Mb/s; the first controller hit 0.60)");
+        a.Equal(0L, steadyDrops,
+            "no encoded frame is dropped once converged -- load is shed by skipping before encode");
+        a.True(delivered > LinkBps * 0.5,
+            $"the link is actually used (delivered {delivered / 1e6:F2} of {LinkBps / 1e6} Mb/s)");
+    });
+
     yield return ("a static screen does not stall the stream", a =>
     {
         // Desktop Duplication only reports frames that changed, so on an idle desktop
@@ -264,6 +390,113 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         var (frames, source) = Run(45);
         Console.WriteLine($"    {frames.Count} frames over {source.ElapsedMs} ms with no forced activity");
         a.Equal(45, frames.Count, "stream keeps producing frames regardless of screen activity");
+    });
+
+    yield return ("v20 cursor: the live pointer is captured with a usable image", a =>
+    {
+        // The phone draws the pointer itself (D-067), so a shape that comes back blank or with
+        // its hotspot outside the image would leave the mirror with no visible cursor again.
+        var display = PcScreenCapture.Enumerate()[0];
+        CursorSample? sample = null;
+        using (var stop = new CancellationTokenSource(400))
+            PcCursorWatcher.Run(display, s => { sample ??= s; stop.Cancel(); }, stop.Token);
+        a.True(sample is not null, "the watcher reports the pointer on its first tick");
+        if (sample is null) return;
+        Console.WriteLine($"    pointer at {sample.X},{sample.Y} visible={sample.Visible} id={sample.ShapeId}");
+        if (!sample.Visible) { Console.WriteLine("    (pointer hidden right now; shape checks skipped)"); return; }
+        var shape = sample.Shape;
+        a.True(shape is not null, "the first sample carries the cursor's shape");
+        if (shape is null) return;
+        int opaque = shape.Argb.Count(p => ((uint)p >> 24) != 0);
+        Console.WriteLine($"    shape {shape.Width}x{shape.Height}, hotspot {shape.HotX},{shape.HotY}, {opaque} opaque px");
+        a.True(opaque > 10, "the cursor image is not blank");
+        a.True(shape.HotX >= 0 && shape.HotX < shape.Width && shape.HotY >= 0 && shape.HotY < shape.Height,
+            "the hotspot lies inside the image");
+        var payload = PcCursorWatcher.ToPayload(sample);
+        var bgra = Convert.FromBase64String((string)payload["shape"]!["bgra"]!);
+        a.Equal(shape.Width * shape.Height * 4, bgra.Length, "the wire image is exactly w*h*4 bytes");
+    });
+
+    yield return ("v20 cursor: the standard arrow and I-beam render to real images", a =>
+    {
+        // Independent of whether the pointer is showing right now: load the system cursors.
+        foreach (var (id, name) in new[] { (32512, "arrow"), (32513, "I-beam"), (32649, "hand") })
+        {
+            var shape = PcCursorWatcher.Capture(Native.LoadCursor(IntPtr.Zero, id));
+            a.True(shape is not null, $"{name}: captured");
+            if (shape is null) continue;
+            int opaque = shape.Argb.Count(p => ((uint)p >> 24) != 0);
+            Console.WriteLine($"    {name}: {shape.Width}x{shape.Height}, hotspot {shape.HotX},{shape.HotY}, {opaque} opaque px");
+            a.True(opaque > 10 && opaque < shape.Width * shape.Height, $"{name}: has a visible, non-rectangular image");
+        }
+    });
+
+    yield return ("v20 cursor: a monochrome I-beam stays visible on any background", a =>
+    {
+        // 3x3: centre column is "invert screen" (AND=1, XOR=1), the rest transparent (AND=1, XOR=0).
+        const int On = unchecked((int)0xFFFFFFFF), Off = unchecked((int)0xFF000000);
+        int[] and = [On, On, On, On, On, On, On, On, On];
+        int[] xor = [Off, On, Off, Off, On, Off, Off, On, Off];
+        var px = PcCursorWatcher.DecodeMonochrome([.. and, .. xor], 3, 3);
+        a.Equal(On, px[4], "an inverting pixel is drawn white");
+        a.Equal(unchecked((int)0xFF000000), px[3], "...with a black outline beside it");
+        a.True(px.All(p => p != 0), "no pixel of a 3-wide I-beam is left fully transparent");
+    });
+
+    yield return ("v20 input: right/middle buttons and extended keys", a =>
+    {
+        a.Equal(0x0008u, PcInputService.ButtonFlag("right", down: true), "right down");
+        a.Equal(0x0010u, PcInputService.ButtonFlag("right", down: false), "right up");
+        a.Equal(0x0020u, PcInputService.ButtonFlag("middle", down: true), "middle down");
+        a.Equal(0x0002u, PcInputService.ButtonFlag(null, down: true), "an old phone (no button) still left-clicks");
+        a.True(PcInputService.IsExtendedKey(0x25) && PcInputService.IsExtendedKey(0x2E) && PcInputService.IsExtendedKey(0x5B),
+            "arrows, Delete and Win are extended keys");
+        a.True(!PcInputService.IsExtendedKey(0x41) && !PcInputService.IsExtendedKey(0x0D), "letters and Enter are not");
+    });
+
+    yield return ("v21 phone mic: 16 kHz speech is upsampled cleanly and cables are recognised", a =>
+    {
+        short[] ramp = [0, 16384, 32767];
+        var up = PcMicAudio.Upsample(ramp, 16_000, 48_000);
+        a.Equal(9, up.Length, "16 kHz -> 48 kHz triples the sample count");
+        a.True(Math.Abs(up[0]) < 1e-6 && Math.Abs(up[3] - 0.5f) < 0.001f, "samples land where the input had them");
+        a.True(up[1] > up[0] && up[2] > up[1] && up[2] < up[3], "and in between is a straight line, not steps");
+        a.True(PcMicAudio.IsCableInput("CABLE Input (VB-Audio Virtual Cable)"), "VB-CABLE's playback side is found");
+        a.True(PcMicAudio.IsCableOutput("CABLE Output (VB-Audio Virtual Cable)"), "...and its recording side");
+        a.True(!PcMicAudio.IsCableInput("Speaker (Realtek(R) Audio)") && !PcMicAudio.IsCableOutput("Microphone Array (AMD Audio Device)"),
+            "real speakers and microphones are never mistaken for a cable");
+    });
+
+    yield return ("v20 audio: PC sound is captured and AAC-encoded live", a =>
+    {
+        int rate;
+        try { rate = PcAudioStreamer.ProbeSampleRate(); }
+        catch (Exception ex) { Console.WriteLine($"    no usable output device ({ex.Message}); skipped"); return; }
+        Console.WriteLine($"    default output mixes at {rate} Hz");
+
+        // Loopback is silent unless something plays, so play a quiet tone for the duration.
+        var tone = Native.QuietToneWav(rate, seconds: 2);
+        Native.PlaySound(tone, IntPtr.Zero, Native.SND_MEMORY | Native.SND_ASYNC);
+        var link = new MemoryStream();
+        var streamer = PcAudioStreamer.Start(link, rate, new ConsoleLog());
+        Thread.Sleep(1500);
+        streamer.Dispose();
+        Native.PlaySound(null, IntPtr.Zero, 0);
+
+        var bytes = link.ToArray();
+        int packets = 0, offset = 0, smallest = int.MaxValue, largest = 0;
+        while (offset + VideoFraming.HeaderBytes <= bytes.Length)
+        {
+            var h = VideoFraming.ReadHeader(bytes.AsSpan(offset));
+            if (offset + VideoFraming.HeaderBytes + h.Length > bytes.Length) break;
+            offset += VideoFraming.HeaderBytes + h.Length;
+            packets++; smallest = Math.Min(smallest, h.Length); largest = Math.Max(largest, h.Length);
+        }
+        double kbps = bytes.Length * 8 / 1.5 / 1000;
+        Console.WriteLine($"    {packets} AAC packets ({smallest}..{largest} bytes), {kbps:F0} kb/s on the wire");
+        a.True(packets >= 30, "about 47 frames a second come out while sound plays (>= 30 in 1.5 s)");
+        a.Equal(bytes.Length, offset, "the channel is a clean sequence of framed packets");
+        a.True(kbps < 200, "the stream stays near its 128 kb/s budget");
     });
 }
 
@@ -339,6 +572,30 @@ sealed record RunStats(string Encoder, int Width, int Height,
 
 static class Native
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr LoadCursor(IntPtr instance, int id);
+    public const uint SND_ASYNC = 0x1, SND_MEMORY = 0x4;
+    [System.Runtime.InteropServices.DllImport("winmm.dll")]
+    public static extern bool PlaySound(byte[]? sound, IntPtr module, uint flags);
+
+    /// <summary>A 440 Hz stereo tone at 5% volume, as an in-memory WAV.</summary>
+    public static byte[] QuietToneWav(int rate, int seconds)
+    {
+        int frames = rate * seconds, dataBytes = frames * 4;
+        var ms = new MemoryStream();
+        var w = new BinaryWriter(ms);
+        w.Write("RIFF"u8); w.Write(36 + dataBytes); w.Write("WAVE"u8);
+        w.Write("fmt "u8); w.Write(16); w.Write((short)1); w.Write((short)2); w.Write(rate);
+        w.Write(rate * 4); w.Write((short)4); w.Write((short)16);
+        w.Write("data"u8); w.Write(dataBytes);
+        for (int i = 0; i < frames; i++)
+        {
+            short v = (short)(Math.Sin(2 * Math.PI * 440 * i / rate) * 1600);
+            w.Write(v); w.Write(v);
+        }
+        return ms.ToArray();
+    }
+
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     public static extern IntPtr GetDC(IntPtr hwnd);
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -421,4 +678,30 @@ sealed class StallingStream : Stream
         _released.Set();
         base.Dispose(disposing);
     }
+}
+
+/// <summary>
+/// A link with a fixed capacity: each write takes as long as its bytes would take at
+/// <c>bitsPerSecond</c>. Stands in for a Wi-Fi link slower than the stream.
+/// </summary>
+sealed class ThrottledStream(int bitsPerSecond) : Stream
+{
+    private long _bytes;
+    public long Bytes => Interlocked.Read(ref _bytes);
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        Thread.Sleep(TimeSpan.FromSeconds(count * 8.0 / bitsPerSecond));
+        Interlocked.Add(ref _bytes, count);
+    }
+
+    public override void Flush() { }
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
 }

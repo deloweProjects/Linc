@@ -247,6 +247,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
                     var token = (string?)header["sessionToken"] ?? "";
                     if (_channelWaiters.TryRemove((channel, token), out var waiter))
                     {
+                        if (channel is VideoChannel or AudioChannel) LimitSendBuffer(client);
                         waiter.TrySetResult(ssl);
                         return; // ownership handed to the waiter
                     }
@@ -265,6 +266,32 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             ssl?.Dispose();
             client.Dispose();
         }
+    }
+
+    /// <summary>The pc-video channel (5) — the one connection whose send buffer is kept small.</summary>
+    private const int VideoChannel = 5;
+
+    /// <summary>The pc-audio channel (6, v20): live sound is worth even less late than video.</summary>
+    private const int AudioChannel = 6;
+
+    /// <summary>
+    /// Cap the kernel send buffer on the pc-video connection.
+    ///
+    /// <para>Left alone, Windows auto-tunes a TCP send buffer up to megabytes on a busy
+    /// connection. For a file that is throughput; for a live mirror it is a hidden queue the
+    /// app cannot see or drop: on a Wi-Fi link that carries 3 Mb/s, a 2 MB buffer is five
+    /// seconds of picture already committed to being late. Worse, while that buffer is
+    /// absorbing the backlog every write returns instantly, so the sender's congestion control
+    /// sees a healthy link right up until it is seconds behind.</para>
+    ///
+    /// <para>64 KB still leaves far more than a LAN's bandwidth-delay product (64 KB over a
+    /// 20 ms round trip is ~26 Mb/s, three times the highest quality the phone can ask for), so
+    /// throughput is unaffected — but a slow link now shows up within a frame or two as a write
+    /// that blocks, which is the signal <see cref="PcMirrorSender"/> acts on.</para>
+    /// </summary>
+    private static void LimitSendBuffer(TcpClient client)
+    {
+        try { client.Client.SendBufferSize = 64 * 1024; } catch { /* keep the default */ }
     }
 
     /// <summary>Reads one JSON frame if it arrives within 3 s; null means "control connection".</summary>

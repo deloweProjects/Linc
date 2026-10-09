@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 19;
+    public const int Version = 21;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -89,6 +89,15 @@ public static class MessageType
     public const string PcInput = "pc.input";                 // phone → desktop
     public const string PcMirrorKeyframe = "pc.mirror.keyframe"; // phone → desktop: resend an IDR (v19)
     public const string PcTextFocus = "pc.textfocus";         // desktop → phone: a text field gained/lost focus
+    public const string PcMirrorCursor = "pc.mirror.cursor";  // desktop → phone: pointer position/shape (v20)
+    public const string PcMirrorStats = "pc.mirror.stats";    // desktop → phone: link health, 1/s (v20)
+    public const string PcMirrorPing = "pc.mirror.ping";      // phone → desktop: round-trip probe (v20)
+    public const string PcMirrorPong = "pc.mirror.pong";      // desktop → phone: echo of the ping (v20)
+    public const string PcAudioStart = "pc.audio.start";      // phone → desktop: stream PC sound on channel 6 (v20)
+    public const string PcAudioStop = "pc.audio.stop";        // phone → desktop (v20)
+    public const string PcVoiceAccessSet = "pc.voiceaccess.set";     // phone → desktop: start/stop Voice Access (v21)
+    public const string PcVoiceAccessGet = "pc.voiceaccess.get";     // phone → desktop: ask for its state (v21)
+    public const string PcVoiceAccessState = "pc.voiceaccess.state"; // desktop → phone (v21)
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies

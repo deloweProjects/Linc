@@ -9,6 +9,38 @@ first.
 
 ## [Unreleased]
 
+### Added — 2026-10-10 — Voice Access, Material 3 Expressive bubble, floating keyboard (protocol v21, D-069, D-070)
+
+- **Voice Access** (Tools, and the bubble): start Windows Voice Access from the phone and talk to the PC
+  through the phone's microphone (needs the free VB-CABLE on the PC; without it the PC's own mic is used).
+- The status bubble is **Material 3 Expressive**: a cookie-shaped button whose Wi-Fi icon shows the
+  connection, springing to the nearer edge; the panel has stats, connected Touch|Mouse and
+  Floating|Phone keyboard groups, and tonal toggles for sound, Voice Access, display, quality, fit,
+  Task view and Desktop.
+- **Floating PC keyboard** (drag, resize, sticky modifiers, Fn layer, multi-touch, key repeat) with
+  **voice typing** (🎤). "Pop up on text fields" can be switched off.
+- Removed before release: the "Remote PC (private)" curtain mode (D-068, withdrawn).
+- Fixed: every mirror session left a thread blocked inside the encoder (no `IMFShutdown` on dispose).
+- `mirrorsim`: compressible motion pattern; fresh-encoder and phone-mic scenarios. Android: 188 tests.
+
+### Added — 2026-10-09 — PC Remote, Windows-App style (protocol v20, D-067)
+
+- **The PC's mouse pointer now shows on the phone**, drawn by the phone so it moves the moment your
+  finger does (the mirror had no pointer at all before — Desktop Duplication never captures it).
+- **Touch and Mouse modes.** Mouse mode is a trackpad with acceleration; in both, press-and-hold or a
+  two-finger tap is a right click, two fingers scroll smoothly, pinch zooms; zoomed in Mouse mode the
+  view follows the pointer.
+- **Connection bar:** quality dot, round trip, Mb/s, fps, plus pointer mode, keyboard, extra keys,
+  sound, display picker, quality picker, fit and end. Stalls are healed (keyframe at 2 s, restart at
+  8 s); a dropped link shows "Reconnecting…" over the last frame instead of going black.
+- **Extra-keys row:** sticky Ctrl/Alt/Shift/Win (also apply to the phone keyboard), Esc, Tab, arrows,
+  Home/End/PgUp/PgDn/Del, Alt+Tab, Show desktop, Task Manager, Snip, F1–F12. Arrows and friends are
+  sent as true extended keys.
+- **PC sound on the phone** (pc-audio channel 6, AAC-LC 128 kb/s), on by default, toggle in the bar.
+- `mirrorsim`: 5 new scenarios (live pointer, system cursor shapes, monochrome I-beam decode,
+  buttons/extended keys, audio capture + AAC encode); `mirrorsim -- <text>` runs a subset. Android:
+  `PcRemoteV20Test`, 23 tests.
+
 ### Added — 2026-09-26 — Quick Share, returning-phone recognition, NFC tap-to-connect
 
 No Linc protocol change (still v19). Quick Share is Google's Nearby Share wire format, spoken
@@ -64,6 +96,24 @@ owner hardware check.**
   discovery scan straight away; a failed upgrade to a better transport falls back to what is still up
   instead of stranding the link in Searching.
 
+
+### Fixed — 2026-09-25 — the reverse mirror over Wi-Fi, round 2 (D-066)
+
+The 2026-09-20 fix dropped frames to stay live, but a real session showed it looping: 184 drops in
+18 bursts, 11 frames every ~0.37 s, because nothing reduced what the encoder sent.
+
+- **The encoder no longer pads.** Its default (and our CBR) sent **7.2 Mb/s for an idle screen**, half
+  of it filler NALs, saturating Wi-Fi full-time. Now peak-constrained VBR with a QP floor of 20: idle
+  costs **0.55 Mb/s**.
+- **Congestion control.** The sender now adapts the encoder's bit rate to the link (AIMD on skip ratio
+  and send delay; the AMD MFT honours live changes) and **skips frames before encoding** instead of
+  dropping encoded ones, so no reference chain breaks and no IDR is needed. Simulated 2.5 Mb/s link:
+  0 drops, 2.09 Mb/s delivered. IDRs rationed to 1/s.
+- **No hidden buffering.** pc-video socket send buffer capped at 64 KB so congestion is visible within
+  a frame or two; the phone holds a low-latency Wi-Fi lock while PC Remote is on screen.
+- Frame PTS is wall-clock. A capture-loop path that could leak an encoder input slot is closed.
+- `mirrorsim`: 14 scenarios (idle cost, live bit-rate change, convergence on a throttled link) with a
+  noise window for motion.
 
 ### Fixed — 2026-09-20 — the reverse mirror over Wi-Fi (protocol v19)
 
