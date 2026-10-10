@@ -15,9 +15,14 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.7 ("1.0.0-beta.7") — 2026-10-10
+## 1.0.0.8 ("1.0.0-beta.8") — 2026-10-10
 
-(1.0.0.3 to 1.0.0.6 were local test builds and were never released.) Install both apps (protocol v23).
+(1.0.0.3 to 1.0.0.7 were local test builds and were never released.) Install both apps (protocol v23).
+
+- **Mirror PC on Intel graphics**: encoders that won't take the screen's pixels directly get a picture
+  converted on the GPU; a failed start no longer blocks every retry.
+- **Staying connected**: Home tells you when Android may stop Linc in the background, with one tap to
+  allow it (and the phone maker's own auto-start screen on itel, Tecno, Infinix, Xiaomi, Oppo, Vivo).
 
 - **Mirror PC on PCs with two graphics chips** (e.g. Intel + NVIDIA laptops): Linc now tries every
   hardware video encoder, the screen's own chip first, instead of giving up after the first.

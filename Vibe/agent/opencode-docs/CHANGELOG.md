@@ -9,6 +9,14 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-10 — Mirror PC on Intel graphics; the phone stays connected (1.0.0.8, D-077)
+
+- Mirror PC feeds encoders that won't take the screen's pixels directly (Intel Quick Sync) a
+  GPU-converted NV12 picture, and a failed start no longer blocks every retry.
+- Home warns while Linc may be stopped in the background, with Allow and the phone maker's own
+  auto-start screen; the log says plainly when Android cut the connection.
+- The phone stops redialling the PC every 3 s when the PC is already connected another way.
+
 ### Fixed — 2026-10-10 — Mirror PC on hybrid-graphics PCs; icon downloads over Wi-Fi (1.0.0.7, D-076)
 
 - Mirror PC tries every hardware video encoder, the screen's own graphics chip first, and cleans up

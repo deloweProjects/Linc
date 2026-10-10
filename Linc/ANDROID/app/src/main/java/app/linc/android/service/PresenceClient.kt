@@ -140,9 +140,17 @@ class PresenceClient(
             val since = android.os.SystemClock.elapsedRealtime()
             val why = server.serveExternal(socket) // blocks until the desktop disconnects
             activeEndpoint = null
-            LogStore.log(LogLevel.WARN, "Direct connection to the PC ended after " +
-                "${(android.os.SystemClock.elapsedRealtime() - since) / 1000} s (${why ?: "closed"})")
-            return true
+            val lasted = android.os.SystemClock.elapsedRealtime() - since
+            LogStore.log(LogLevel.WARN, "Direct connection to the PC ended after ${lasted / 1000} s (${why ?: "closed"})")
+            if (why?.contains("connection abort", ignoreCase = true) == true && !ConnectionWatch.isBatteryExempt(context)) {
+                // ECONNABORTED: Android destroyed the socket itself — what it does to an app it
+                // has cut off in the background. The fix is the exemption, so say so plainly.
+                LogStore.log(LogLevel.WARN, "Android cut Linc off from the network in the background. Allow " +
+                    "\"Stay connected in the background\" (Home or Settings) so it stops doing that.")
+            }
+            // The PC turning a dial away at once (it's already linked over ADB, or busy) is not a
+            // connection: count it as a miss so the redial backs off instead of every 3 s.
+            return lasted >= 3_000
         }
         return false
     }

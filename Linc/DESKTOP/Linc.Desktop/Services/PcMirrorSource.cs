@@ -78,19 +78,31 @@ public sealed class PcMirrorSource : IDisposable
     /// </summary>
     public Func<bool>? AcceptFrame { get; set; }
 
+    /// <summary>Test harness only: force the NV12 input path on any encoder (D-077).</summary>
+    public static bool PreferNv12 { get; set; }
+
     public PcMirrorSource(int displayIndex, int framesPerSecond, int bitrate, ILogService log)
     {
         _log = log;
         _frameIntervalMs = 1000 / framesPerSecond;
         _capture = new PcScreenCapture(displayIndex);
+        try
+        {
+            // The encoder needs the frame size up front, and only an acquired frame can be trusted
+            // for that (see PcScreenCapture), so prime the capture before constructing it.
+            if (!PrimeCapture())
+                throw new LincException("Couldn't read this PC's screen to start mirroring.");
 
-        // The encoder needs the frame size up front, and only an acquired frame can be trusted
-        // for that (see PcScreenCapture), so prime the capture before constructing it.
-        if (!PrimeCapture())
-            throw new LincException("Couldn't read this PC's screen to start mirroring.");
-
-        _encoder = new PcVideoEncoder(_capture.Device, _capture.Width, _capture.Height,
-            framesPerSecond, bitrate);
+            _encoder = new PcVideoEncoder(_capture.Device, _capture.Width, _capture.Height,
+                framesPerSecond, bitrate, PreferNv12);
+        }
+        catch
+        {
+            // Let go of the screen: a capture left behind by a failed start held the display's
+            // duplication, and every retry then failed with E_INVALIDARG (D-077).
+            _capture.Dispose();
+            throw;
+        }
         _log.Log(LogLevel.Info,
             $"PC mirror: {_capture.Width}x{_capture.Height} @ {framesPerSecond} fps via {_encoder.EncoderName}");
     }

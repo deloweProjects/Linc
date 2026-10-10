@@ -172,6 +172,30 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         a.True(sps > 1 && pps > 1, "SPS/PPS repeat rather than appearing only once");
     });
 
+    yield return ("D-077 NV12 input: the GPU-converted path encodes the same picture", a =>
+    {
+        // Intel Quick Sync refused ARGB32 on a friend's PC; the fallback converts to NV12 on the
+        // GPU. Forced here on whatever encoder this PC has, and compared with the direct path.
+        var (direct, _) = Run(Config.TargetFrames);
+        PcMirrorSource.PreferNv12 = true;
+        try
+        {
+            var (frames, source) = Run(Config.TargetFrames);
+            Console.WriteLine($"    encoder: {source.Encoder}");
+            a.True(source.Encoder.Contains("NV12"), "the NV12 path was really used");
+            a.Equal(Config.TargetFrames, frames.Count, "every requested frame arrived");
+            var nals = ParseNals(frames.SelectMany(f => f.Data).ToArray());
+            a.True(nals.Any(n => n.Type == 7) && nals.Any(n => n.Type == 8) && nals.Any(n => n.Type == 5),
+                "SPS, PPS and an IDR — decodable from the start");
+            a.True(nals.Count(n => n.Type == 1) > 0, "P slices follow, so the picture is moving through");
+            long viaNv12 = frames.Sum(f => (long)f.Data.Length), viaArgb = direct.Sum(f => (long)f.Data.Length);
+            Console.WriteLine($"    bytes: ARGB32 path {viaArgb:N0}, NV12 path {viaNv12:N0}");
+            a.True(viaNv12 > viaArgb / 4 && viaNv12 < viaArgb * 4,
+                "about as many bytes as the direct path — the same picture, not a blank one");
+        }
+        finally { PcMirrorSource.PreferNv12 = false; }
+    });
+
     yield return ("keyframe flag matches the bitstream", a =>
     {
         var (frames, _) = Run(Config.TargetFrames);

@@ -29,15 +29,15 @@
     "",
     "Keys beginning with an underscore are ignored by both parsers."
   ],
-  "latest": "1.0.0.7",
+  "latest": "1.0.0.8",
   "minimumSupported": "1.0.0-beta.1",
-  "notes": "Linc 1.0.0-beta.7 — Voice Access hears your phone, a Phone/PC mic choice, the phone as the PC microphone for any app, and tablet mode.",
+  "notes": "Linc 1.0.0-beta.8 — Voice Access hears your phone, a Phone/PC mic choice, the phone as the PC microphone for any app, and tablet mode.",
   "desktop": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.7/Linc-Desktop-1.0.0.7-2026-10-10.zip",
-    "sha256": "6B07B5D64E0DB184900D6030967514C1B98F9E7DFE8B730FF28A9DC5486FDE83"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.8/Linc-Desktop-1.0.0.8-2026-10-10.zip",
+    "sha256": "89091CA6F0C50A513806E6471F512B781921B51A1B9657D7D8DA32732E50E943"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.7/Linc-Companion-1.0.0.7-2026-10-10.apk",
-    "sha256": "F5E2DB9DB692C3199D471976E66C5BE8F732D40A7C05682B92F46993EDDD6D10"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.8/Linc-Companion-1.0.0.8-2026-10-10.apk",
+    "sha256": "E14F4581A56DE1024A05495A3A3EA538F7964D47DCBB5675223E39636F224D6D"
   }
 }

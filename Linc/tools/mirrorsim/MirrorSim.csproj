@@ -20,6 +20,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MediaFoundation.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcScreenCapture.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcVideoEncoder.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcNv12Converter.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcInputService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSource.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSender.cs" />

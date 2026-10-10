@@ -1120,3 +1120,32 @@ Build-checked only (no harness compiles the TLS transport).
 
 The ~80 s drop itself is not explained by the PC log; the phone's Copy log (D-073: exit reasons,
 battery exemption, Doze, Wi-Fi events) is what can.
+
+## D-077: NV12 input for encoders that refuse ARGB32; the capture is released on a failed start; the phone insists on staying alive
+
+**2026-10-10.** The friend's logs on 1.0.0.7 (PC: Intel UHD Graphics, two Intel Quick Sync H.264 MFTs,
+neither reporting an adapter LUID; phone: itel S685LN, Android 15).
+
+**Mirror PC.** Both Quick Sync encoders failed identically at `START_OF_STREAM` with MF_E_SHUTDOWN,
+so D-076's ordering was not the issue: the encoder shut itself down during setup. The capture device
+already has `VideoSupport`; the remaining difference from AMD is the input format — Linc fed BGRA as
+ARGB32, which AMD's encoder takes and Intel's apparently does not. Now every encoder is offered
+ARGB32 first and then **NV12**, converted from the captured BGRA on the GPU by the D3D11 video
+processor (`PcNv12Converter`, a three-texture ring like the capture's). The failure message also
+drains the encoder's event queue and reports the status of its `MEError`, so if Intel still refuses,
+the next log says why. `mirrorsim` "D-077 NV12 input" forces the NV12 path on this PC's AMD encoder:
+decodable stream, 413 KB vs 427 KB for the direct path on the same picture. Not run on Intel here.
+
+The `E_INVALIDARG` on every retry: `PcMirrorSource` built the screen capture, then the encoder, and
+when the encoder threw it never disposed the capture — whose Desktop Duplication then blocked every
+later attempt. The capture is now disposed when the start fails.
+
+**The drops.** The phone log shows the direct link aborted 46–84 s after each connect with
+`SocketException: Software caused connection abort` (ECONNABORTED: Android destroying the app's
+sockets, as it does to an app cut off in the background) and `Battery optimisation exempt: false`.
+Home now shows a "Linc keeps losing the PC?" card until the exemption is granted, with **Allow**
+(Android's prompt) and, on phones whose maker adds its own manager (itel/Tecno/Infinix, Xiaomi,
+Oppo/Realme/OnePlus, Vivo), **Auto-start** opening that screen (falls back to app details). An
+ECONNABORTED end is followed in the log by the plain-language reason. And a direct dial the PC turns
+away at once (it was already linked over ADB) now counts as a miss, so the phone backs off to 30 s
+instead of redialling every 3 s.

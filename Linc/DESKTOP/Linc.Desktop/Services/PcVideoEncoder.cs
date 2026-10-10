@@ -42,6 +42,8 @@ public sealed class PcVideoEncoder : IDisposable
     private readonly ICodecAPI? _codecApi;
     private readonly IMFDXGIDeviceManager _deviceManager = null!;
     private readonly IntPtr _deviceManagerPtr;
+    /// <summary>Set when this encoder only took NV12: captured frames are converted first.</summary>
+    private PcNv12Converter? _nv12;
     private readonly int _framesPerSecond;
     private bool _disposed;
 
@@ -55,19 +57,28 @@ public sealed class PcVideoEncoder : IDisposable
     /// PC as START_OF_STREAM MF_E_SHUTDOWN, after which the half-built encoder, never released,
     /// held the hardware session and every retry failed with E_INVALIDARG (2026-10-10). So every
     /// candidate is tried, and each one that fails is shut down and released before the next.
+    ///
+    /// <para><b>Input format (D-077).</b> Each encoder is offered the captured BGRA frames as ARGB32
+    /// first — no conversion at all — and, if it refuses, NV12 made on the GPU by
+    /// <see cref="PcNv12Converter"/>. Intel Quick Sync shut itself down at START_OF_STREAM (most likely refusing ARGB32);
+    /// NV12 is the one input every hardware H.264 encoder takes. <paramref name="preferNv12"/>
+    /// forces the NV12 path (the test harness uses it to prove the conversion on any GPU).</para>
     /// </summary>
-    public PcVideoEncoder(ID3D11Device device, int width, int height, int framesPerSecond, int bitrate)
+    public PcVideoEncoder(ID3D11Device device, int width, int height, int framesPerSecond, int bitrate, bool preferNv12 = false)
     {
         _framesPerSecond = framesPerSecond;
         var failures = new List<string>();
         var candidates = HardwareEncoders(AdapterLuid(device));
+        Guid[] formats = preferNv12 ? [MFVideoFormat_NV12] : [MFVideoFormat_ARGB32, MFVideoFormat_NV12];
         try
         {
             if (candidates.Count == 0)
                 throw new LincException(
                     "This PC has no hardware H.264 video encoder, so it can't stream its screen to your phone.");
             foreach (var candidate in candidates)
+            foreach (var format in formats)
             {
+                bool nv12 = format == MFVideoFormat_NV12;
                 IMFTransform? transform = null;
                 IMFDXGIDeviceManager? manager = null;
                 IntPtr managerPtr = IntPtr.Zero;
@@ -99,18 +110,22 @@ public sealed class PcVideoEncoder : IDisposable
 
                     // Encoders require the output type before the input type.
                     SetOutputType(width, height, framesPerSecond, bitrate);
-                    SetInputType(width, height, framesPerSecond);
+                    SetInputType(width, height, framesPerSecond, format);
                     // Rate control and GOP length live on ICodecAPI, not on the media type.
                     ConfigureRateControl(framesPerSecond, bitrate);
 
                     Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, IntPtr.Zero), "BEGIN_STREAMING");
                     Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, IntPtr.Zero), "START_OF_STREAM");
-                    EncoderName = failures.Count == 0 ? candidate.Name : $"{candidate.Name} (after: {string.Join("; ", failures)})";
+                    if (nv12) _nv12 = new PcNv12Converter(device, width, height, framesPerSecond);
+                    string label = $"{candidate.Name}{(nv12 ? ", NV12" : "")}";
+                    EncoderName = failures.Count == 0 ? label : $"{label} (after: {string.Join("; ", failures)})";
                     return;
                 }
                 catch (Exception ex)
                 {
-                    failures.Add($"{candidate.Name} — {ex.Message}");
+                    failures.Add($"{candidate.Name} ({(nv12 ? "NV12" : "ARGB32")}) — {ex.Message}{ReportedError(transform)}");
+                    try { _nv12?.Dispose(); } catch { }
+                    _nv12 = null;
                     // Give the hardware session back before trying the next encoder.
                     if (transform is not null)
                     {
@@ -130,6 +145,31 @@ public sealed class PcVideoEncoder : IDisposable
         {
             foreach (var candidate in candidates) { try { Marshal.ReleaseComObject(candidate.Activate); } catch { } }
         }
+    }
+
+    /// <summary>
+    /// What the encoder itself said went wrong: an async MFT that gives up queues an MEError event
+    /// with the real status before answering everything with MF_E_SHUTDOWN. Empty if none.
+    /// </summary>
+    private static string ReportedError(IMFTransform? transform)
+    {
+        if (transform is not IMFMediaEventGenerator events) return "";
+        try
+        {
+            for (int i = 0; i < 16; i++)
+            {
+                if (events.GetEvent(1 /* MF_EVENT_FLAG_NO_WAIT */, out IMFMediaEvent e) != 0) break;
+                try
+                {
+                    e.GetTypeInfo(out int type);
+                    e.GetStatus(out int status);
+                    if (type == 1 /* MEError */ || status < 0) return $" (the encoder reported 0x{status:X8})";
+                }
+                finally { Marshal.ReleaseComObject(e); }
+            }
+        }
+        catch { }
+        return "";
     }
 
     /// <summary>The LUID of the graphics adapter a D3D device runs on.</summary>
@@ -296,14 +336,14 @@ public sealed class PcVideoEncoder : IDisposable
         Marshal.ReleaseComObject(type);
     }
 
-    private void SetInputType(int width, int height, int fps)
+    private void SetInputType(int width, int height, int fps, Guid subtype)
     {
-        // ARGB32 is byte-identical to the captured B8G8R8A8 texture, so this is the
-        // no-conversion path. Hardware MFTs accept it even though some refuse to enumerate it.
+        // ARGB32 is byte-identical to the captured B8G8R8A8 texture, so that is the no-conversion
+        // path; NV12 comes from PcNv12Converter for encoders that won't take ARGB32.
         Check(MFCreateMediaType(out IMFMediaType type), "MFCreateMediaType(input)");
         var key = MF_MT_MAJOR_TYPE; var value = MFMediaType_Video;
         type.SetGUID(ref key, ref value);
-        key = MF_MT_SUBTYPE; value = MFVideoFormat_ARGB32; type.SetGUID(ref key, ref value);
+        key = MF_MT_SUBTYPE; value = subtype; type.SetGUID(ref key, ref value);
         key = MF_MT_FRAME_SIZE; type.SetUINT64(ref key, Pack(width, height));
         key = MF_MT_FRAME_RATE; type.SetUINT64(ref key, Pack(fps, 1));
         key = MF_MT_PIXEL_ASPECT_RATIO; type.SetUINT64(ref key, Pack(1, 1));
@@ -327,6 +367,7 @@ public sealed class PcVideoEncoder : IDisposable
     /// </summary>
     public void Submit(ID3D11Texture2D texture, long sampleTime)
     {
+        if (_nv12 is { } converter) texture = converter.Convert(texture);
         var iid = typeof(ID3D11Texture2D).GUID;
         Check(MFCreateDXGISurfaceBuffer(ref iid, texture.NativePointer, 0, false,
             out IMFMediaBuffer buffer), "MFCreateDXGISurfaceBuffer");
@@ -407,5 +448,6 @@ public sealed class PcVideoEncoder : IDisposable
         try { if (_deviceManagerPtr != IntPtr.Zero) Marshal.Release(_deviceManagerPtr); } catch { }
         try { Marshal.ReleaseComObject(_transform); } catch { }
         try { Marshal.ReleaseComObject(_deviceManager); } catch { }
+        try { _nv12?.Dispose(); } catch { }
     }
 }

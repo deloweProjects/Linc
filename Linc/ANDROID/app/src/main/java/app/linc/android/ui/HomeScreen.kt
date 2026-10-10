@@ -82,6 +82,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import app.linc.android.R
+import app.linc.android.service.ConnectionWatch
 import app.linc.android.ui.theme.Dimens
 import app.linc.android.service.ClipboardHistoryStore
 import app.linc.android.service.CompanionStateHolder
@@ -93,6 +94,38 @@ import app.linc.android.service.QuickShareLauncher
 import app.linc.android.service.ShareSender
 import app.linc.android.service.ShareStore
 
+/**
+ * Shown on Home while Linc isn't allowed to run in the background — the reason a phone "connects
+ * and drops" over Wi-Fi (D-077: a friend's itel had its sockets aborted ~80 s after every connect).
+ * Can't be missed, and goes away once allowed.
+ */
+@Composable
+private fun BackgroundWarning() {
+    val context = LocalContext.current
+    var exempt by remember { mutableStateOf(ConnectionWatch.isBatteryExempt(context)) }
+    LaunchedEffect(Unit) {
+        while (true) { exempt = ConnectionWatch.isBatteryExempt(context); kotlinx.coroutines.delay(2_000) }
+    }
+    if (exempt) return
+    LincCard(title = "Linc keeps losing the PC?") {
+        Column(verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
+            Text(
+                "Android stops Linc in the background, so the Wi-Fi link to the PC drops when the screen is off. " +
+                    "Allow it to stay connected." +
+                    if (ConnectionWatch.hasMakerBackgroundManager) " This phone also has its own manager — turn Linc on in its auto-start list too." else "",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                Button(onClick = { ConnectionWatch.requestBatteryExemption(context) }) { Text("Allow") }
+                if (ConnectionWatch.hasMakerBackgroundManager) {
+                    OutlinedButton(onClick = { ConnectionWatch.openMakerBackgroundSettings(context) }) { Text("Auto-start") }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun HomeScreen() {
     val context = LocalContext.current
@@ -101,6 +134,7 @@ fun HomeScreen() {
     val connection by CompanionStateHolder.state.collectAsState()
 
     LincScreen(title = stringResource(R.string.nav_home)) {
+        BackgroundWarning()
         ConnectionWidget(connection)
         PcMediaWidget(pcMedia)
         ClipboardWidget(clips.map { it.text to it.fromPhone }) { text ->

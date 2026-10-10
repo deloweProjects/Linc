@@ -95,6 +95,55 @@ class ConnectionWatch(private val context: Context) {
         fun isBatteryExempt(context: Context): Boolean =
             context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
 
+        /**
+         * Phone makers whose own battery managers stop background apps beyond what Android does,
+         * and the screen where the user lets Linc run. Tried in order; the first that exists opens.
+         */
+        private val makerScreens: Map<String, List<Pair<String, String>>> = mapOf(
+            // itel, Tecno, Infinix (Transsion HiOS / XOS): Phone Master's auto-start list.
+            "transsion" to listOf(
+                "com.transsion.phonemaster" to "com.cyin.himgr.autostart.AutoStartActivity",
+                "com.transsion.phonemanager" to "com.itel.autobootmanager.activity.AutoBootMgrActivity",
+            ),
+            "xiaomi" to listOf("com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity"),
+            "oppo" to listOf("com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity"),
+            "vivo" to listOf("com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"),
+        )
+
+        private fun makerKey(): String? {
+            val m = Build.MANUFACTURER.lowercase()
+            return when {
+                m in setOf("itel", "tecno", "infinix", "transsion") -> "transsion"
+                m in setOf("xiaomi", "redmi", "poco") -> "xiaomi"
+                m in setOf("oppo", "realme", "oneplus") -> "oppo"
+                m == "vivo" || m == "iqoo" -> "vivo"
+                else -> null
+            }
+        }
+
+        /** True on phones whose maker adds its own background killer on top of Android's. */
+        val hasMakerBackgroundManager: Boolean get() = makerKey() != null
+
+        /**
+         * The maker's own "allow in background / auto-start" screen, if this phone has one.
+         * Returns false if none could be opened (then app details is the fallback).
+         */
+        fun openMakerBackgroundSettings(context: Context): Boolean {
+            val screens = makerKey()?.let { makerScreens[it] } ?: emptyList()
+            for ((pkg, cls) in screens) {
+                val opened = runCatching {
+                    context.startActivity(Intent().setClassName(pkg, cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }.isSuccess
+                if (opened) return true
+            }
+            return runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.isSuccess
+        }
+
         /** Android's own "let Linc run in the background" prompt. */
         @SuppressLint("BatteryLife") // sideloaded companion whose whole job is a standing link
         fun requestBatteryExemption(context: Context) {
