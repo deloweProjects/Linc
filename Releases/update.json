@@ -29,15 +29,15 @@
     "",
     "Keys beginning with an underscore are ignored by both parsers."
   ],
-  "latest": "1.0.0.3",
+  "latest": "1.0.0.4",
   "minimumSupported": "1.0.0-beta.1",
-  "notes": "Linc 1.0.0-beta.3 — tablet mode in the PC Remote bubble, a properly sized app icon, and Material You colours throughout.",
+  "notes": "Linc 1.0.0-beta.4 — tablet mode in the PC Remote bubble, a properly sized app icon, and Material You colours throughout.",
   "desktop": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.3/Linc-Desktop-1.0.0.3-2026-10-10.zip",
-    "sha256": "39D5D9866D126D44DF241CE58D0AC6E08E2FD4910315A87C4ADBA389A8DB9F1D"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.4/Linc-Desktop-1.0.0.4-2026-10-10.zip",
+    "sha256": "0B451652A46D858D0EA099C1145B23DBB530A249053B3FB5D143136097B70444"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.3/Linc-Companion-1.0.0.3-2026-10-10.apk",
-    "sha256": "764E0097A22BF167EDFC2A9031F1B0F70885E8EB079CB6845AC2098DC2475257"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.4/Linc-Companion-1.0.0.4-2026-10-10.apk",
+    "sha256": "05DE49DF37B9038C5F29B1B814C7C2D9A8349F6C9D5C9409BE3B4F43D22B17EF"
   }
 }

@@ -46,6 +46,8 @@ public sealed partial class MainWindow : Window
             // Never leave the phone's virtual cable as the PC's default microphone (D-071).
             var log = App.Services.GetRequiredService<ILogService>();
             Task.Run(() => PcVoiceAccess.RestorePendingDefaultMic(log)).Wait(TimeSpan.FromSeconds(3));
+            // ...nor the display scaled up by Tablet mode (D-074).
+            Task.Run(() => PcTabletMode.RestorePending(log)).Wait(TimeSpan.FromSeconds(3));
             TrayIcon.Dispose();
             Application.Current.Exit();
         });

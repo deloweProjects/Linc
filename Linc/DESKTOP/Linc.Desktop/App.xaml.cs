@@ -203,6 +203,8 @@ public partial class App : Application
             // the default microphone; put the user's own back. COM, so off the UI thread.
             var restoreLog = Services.GetRequiredService<ILogService>();
             _ = Task.Run(() => PcVoiceAccess.RestorePendingDefaultMic(restoreLog));
+            // D-074: likewise a Tablet mode left on: put back the display scale and Explorer spacing.
+            _ = Task.Run(() => PcTabletMode.RestorePending(restoreLog));
             // M9e: view models are constructed synchronously as part of Activate() — always call
             // it, even on a silent startup launch, or AppShellViewModel never starts and the app
             // sits in the tray connected to nothing. A startup launch just hides the window right

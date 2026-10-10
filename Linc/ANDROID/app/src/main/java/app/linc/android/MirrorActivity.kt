@@ -296,6 +296,12 @@ class MirrorActivity : ComponentActivity() {
         }
 
         override fun voiceAccess() {
+            if (!PcVoiceAccess.ready() || !PcVoiceAccess.state.value.available) {
+                toast(if (!PcVoiceAccess.ready()) "Voice Access needs a newer Linc on the PC."
+                      else "This PC doesn't have Windows Voice Access (Windows 11 22H2 or later).")
+                touched()
+                return
+            }
             val on = !PcVoiceAccess.state.value.on
             val phoneMic = MirrorSettings.voicePhoneMic(this@MirrorActivity)
             if (on && phoneMic && !PcVoiceAccess.hasMicPermission(this@MirrorActivity)) {
@@ -309,11 +315,7 @@ class MirrorActivity : ComponentActivity() {
             touched()
         }
 
-        /**
-         * Windows tablet mode (v22, D-074). On Windows 11 every switch is a machine-wide setting,
-         * so Windows asks for permission on the PC — said up front, since the prompt is on the
-         * secure desktop and never shows in the mirror.
-         */
+        /** Tablet mode (v22, D-074): the PC scales itself up for fingers; put back when you leave. */
         override fun tabletMode() {
             // Shown even to an older PC, so the button isn't mysteriously missing — it says why.
             if (!PcTabletMode.ready()) {
@@ -321,9 +323,7 @@ class MirrorActivity : ComponentActivity() {
                 touched()
                 return
             }
-            val s = PcTabletMode.state.value
-            PcTabletMode.set(!s.on)
-            if (s.windows == "11") toast("Approve the Windows prompt on the PC to switch tablet mode.")
+            PcTabletMode.set(!PcTabletMode.state.value.on)
             touched()
         }
 
@@ -373,7 +373,9 @@ class MirrorActivity : ComponentActivity() {
         ui.autoKeyboard = MirrorSettings.autoKeyboard(this)
         ui.soundAvailable = MirrorControl.v20()
         ui.soundOn = MirrorSettings.audio(this)
-        ui.voiceAccessAvailable = PcVoiceAccess.ready() && PcVoiceAccess.state.value.available
+        // Always shown, in fixed places: a button that appeared a moment after each reconnect used
+        // to shift the panel under the finger, so a tap meant for Tablet mode hit Voice Access.
+        ui.voiceAccessAvailable = true
         ui.voiceAccessOn = PcVoiceAccess.state.value.on
         ui.tabletAvailable = true
         ui.tabletOn = PcTabletMode.state.value.on
@@ -461,8 +463,8 @@ class MirrorActivity : ComponentActivity() {
                 refreshUi()
                 if (first) { first = false; return@collectLatest }
                 state.error?.let { toast("Tablet mode: $it") }
-                if (state.error == null && state.on && state.windows == "11" && !state.touch) {
-                    toast("Tablet mode is on. This PC has no touch screen, so Windows may keep its usual layout.")
+                if (state.error == null && state.on && state.scale != null) {
+                    toast("Tablet mode on: the PC is at ${state.scale} % so everything is finger-sized.")
                 }
             }
         }
@@ -883,6 +885,8 @@ class MirrorActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Tablet mode is for PC Remote: leaving puts the PC's own scale back (D-074).
+        if (PcTabletMode.ready() && PcTabletMode.state.value.on) PcTabletMode.set(false)
         handler.removeCallbacksAndMessages(null)
         ModifierKeys.clear()
         MirrorControl.audio(false)

@@ -1012,6 +1012,24 @@ The state shown is what Windows has — on this laptop that starts as "on", sinc
 The button is always in the panel: the owner first tested against a still-running 1.0.0.2 desktop (v21)
 and saw no button at all, so with an older PC it now explains instead of hiding.
 
+**Revised the same day — Tablet mode is Linc's own touch-friendly mode.** Tested, the posture flag
+did what was feared: each switch's UAC prompt ran on the secure desktop, Desktop Duplication lost
+access (`DXGI_ERROR_ACCESS_LOST`) and the mirror restarted; the phone warned "no touch screen" every
+time; and the owner said the point was to make a *non*-touch PC finger-friendly. A Voice Access
+button that appeared a moment after each reconnect also shifted the panel, so a tap meant for Tablet
+mode hit Voice Access (the PC log shows no Linc-initiated start).
+
+So Tablet mode no longer touches the posture flag (this PC was left at 1 — laptop — by the test;
+originally 0, which makes no difference on a PC without a digitizer). Instead, with no admin and no
+prompt, it raises the **mirrored display's scale two steps** (125 % → 175 % here, capped at the
+display's maximum) through DisplayConfig's per-source DPI get/set (types -3/-4, undocumented but
+what Settings → Display → Scale uses, applied live) and turns on **File Explorer touch spacing**
+(`UseCompactMode` 0). The originals go to `%LOCALAPPDATA%\Linc\tabletmode-restore.json` first and
+are put back when it is switched off, when the phone leaves PC Remote, on Exit, and on the next start
+after a crash. The panel's buttons are keyed and always present (Tablet mode first), so nothing
+moves under a finger; Voice Access explains itself when the PC can't do it. `pc.tabletmode.state` is
+now `{on, scale?, windows, error?}`.
+
 The icon's L was then shrunk further at the owner's request ("still a lil big"): 20 x 38 dp on the
 108 dp canvas, centred, well inside the 66 dp safe zone for every mask shape.
 

@@ -15,13 +15,15 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.3 ("1.0.0-beta.3") — 2026-10-10
+## 1.0.0.4 ("1.0.0-beta.4") — 2026-10-10
+
+(1.0.0.3 was a local test build and was never released.)
 
 Install both apps (protocol v22).
 
-- **Tablet mode** in the PC Remote bubble. On Windows 11 it switches the PC's tablet posture — Windows
-  asks for permission on the PC each time, and it only changes the layout on touch-screen PCs. On
-  Windows 10 it is the real tablet mode.
+- **Tablet mode** in the PC Remote bubble makes a PC without a touch screen finger-friendly: everything
+  on the mirrored screen gets bigger (two scale steps, e.g. 125 % → 175 %) and File Explorer gets touch
+  spacing. No Windows prompt; it is all put back when you switch it off or leave PC Remote.
 - **The app icon is the right size** (it was drawn too big and cropped) and follows themed icons.
 - **Material You everywhere**: the bubble and panel take the phone's wallpaper colours, and the app
   follows dark mode.

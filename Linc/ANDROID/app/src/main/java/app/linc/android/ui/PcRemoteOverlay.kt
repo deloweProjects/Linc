@@ -48,6 +48,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -309,10 +310,14 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
             // Everything else.
             Section("PC")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (state.soundAvailable) Toggle(state.soundOn, if (state.soundOn) LincSymbols.VolumeUp else LincSymbols.VolumeOff,
-                    if (state.soundOn) "Sound" else "Muted") { actions.sound() }
-                if (state.voiceAccessAvailable) Toggle(state.voiceAccessOn, LincSymbols.VoiceAccess, "Voice Access") { actions.voiceAccess() }
-                if (state.tabletAvailable) Toggle(state.tabletOn, LincSymbols.Tablet, "Tablet mode") { actions.tabletMode() }
+                // Tablet mode first and every button keyed, so nothing moves under a finger when
+                // another one comes or goes.
+                key("tablet") { if (state.tabletAvailable) Toggle(state.tabletOn, LincSymbols.Tablet, "Tablet mode") { actions.tabletMode() } }
+                key("sound") {
+                    if (state.soundAvailable) Toggle(state.soundOn, if (state.soundOn) LincSymbols.VolumeUp else LincSymbols.VolumeOff,
+                        if (state.soundOn) "Sound" else "Muted") { actions.sound() }
+                }
+                key("voice") { if (state.voiceAccessAvailable) Toggle(state.voiceAccessOn, LincSymbols.VoiceAccess, "Voice Access") { actions.voiceAccess() } }
                 if (state.displays > 1) Toggle(false, LincSymbols.Display, "Display") { actions.display() }
                 Toggle(false, LincSymbols.Tune, state.picture.ifEmpty { "Quality" }) { actions.quality() }
                 if (state.zoomed) Toggle(false, LincSymbols.FitScreen, "Fit") { actions.fit() }

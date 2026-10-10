@@ -9,10 +9,12 @@ first.
 
 ## [Unreleased]
 
-### Added — 2026-10-10 — Tablet mode in the bubble; APK icon and Material You fixed (1.0.0.3, protocol v22, D-074)
+### Added — 2026-10-10 — Tablet mode in the bubble; APK icon and Material You fixed (1.0.0.4, protocol v22, D-074)
 
-- **Tablet mode** toggle in the PC Remote panel: Windows 11's tablet posture flag (one Windows
-  permission prompt on the PC per switch; only visible on touch-capable PCs), Windows 10's tablet mode.
+- **Tablet mode** toggle in the PC Remote panel makes a non-touch PC finger-friendly: the mirrored
+  display's scale goes up two steps (e.g. 125 % → 175 %) and File Explorer gets touch spacing; no
+  Windows prompt, no reconnect; all put back when it is switched off, the session ends, Linc exits,
+  or after a crash. The panel's buttons no longer shift under a finger.
 - **The app icon is the right size**: the L was drawn ~4x too big and cropped; it now fits the adaptive
   icon, and follows Android 13+ themed icons.
 - **Material You everywhere**: the bubble and panel use the phone's wallpaper colours, and the app's

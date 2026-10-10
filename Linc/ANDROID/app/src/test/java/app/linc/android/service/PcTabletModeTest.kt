@@ -22,9 +22,10 @@ class PcTabletModeTest {
 
     @Test
     fun `the PC's report is read in full`() {
-        PcTabletMode.onState(buildJsonObject { put("on", true); put("touch", false); put("windows", "11") })
+        PcTabletMode.onState(buildJsonObject { put("on", true); put("scale", 200); put("windows", "11") })
         val s = PcTabletMode.state.value
-        assertTrue(s.known && s.on && !s.touch)
+        assertTrue(s.known && s.on)
+        assertEquals(200, s.scale)
         assertEquals("11", s.windows)
 
         PcTabletMode.onState(buildJsonObject { put("on", false); put("error", "declined") })

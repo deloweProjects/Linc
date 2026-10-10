@@ -15,14 +15,16 @@ import kotlinx.serialization.json.put
 data class TabletModeState(
     val known: Boolean = false,
     val on: Boolean = false,
-    /** The PC has a touch screen; without one Windows 11 usually won't change its layout. */
-    val touch: Boolean = false,
-    /** "11" or "10". On 11 every switch needs a Windows permission prompt on the PC. */
+    /** The display scale Tablet mode just switched the PC to, in percent. */
+    val scale: Int? = null,
     val windows: String = "",
     val error: String? = null,
 )
 
-/** Windows tablet mode from PC Remote's bubble (v22, D-074). */
+/**
+ * "Tablet mode" from PC Remote's bubble (v22, D-074): the PC makes itself finger-friendly (a bigger
+ * display scale and touch spacing) with no touch screen and no Windows prompt.
+ */
 object PcTabletMode {
 
     private val _state = MutableStateFlow(TabletModeState())
@@ -46,7 +48,7 @@ object PcTabletMode {
         _state.value = TabletModeState(
             known = true,
             on = bool("on"),
-            touch = bool("touch"),
+            scale = (payload["scale"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull(),
             windows = (payload["windows"] as? JsonPrimitive)?.contentOrNull ?: "",
             error = (payload["error"] as? JsonPrimitive)?.contentOrNull,
         )

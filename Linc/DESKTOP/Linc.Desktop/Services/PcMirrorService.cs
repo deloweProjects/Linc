@@ -139,7 +139,8 @@ public sealed class PcMirrorService(
             // v22 (D-074): Windows tablet mode from the bubble.
             case MessageType.PcTabletModeSet:
                 bool tablet = (bool?)envelope.Payload["on"] ?? false;
-                _ = Task.Run(() => TabletMode.SetAsync(tablet));
+                string? mirrored = _activeDisplay?.Name;
+                _ = Task.Run(() => TabletMode.SetAsync(tablet, mirrored));
                 break;
 
             case MessageType.PcTabletModeGet:
@@ -524,6 +525,7 @@ public sealed class PcMirrorService(
         _disposed = true;
         StopAudio();
         _voiceAccess?.Dispose(); // puts the user's own default microphone back
+        PcTabletMode.RestorePending(log); // and the display scale Tablet mode raised
         try { StopAsync().GetAwaiter().GetResult(); } catch { }
         _gate.Dispose();
     }
