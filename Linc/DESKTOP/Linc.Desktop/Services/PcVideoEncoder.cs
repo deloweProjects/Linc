@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
+using Vortice.DXGI;
 using static Linc.Desktop.Services.Mf;
 
 namespace Linc.Desktop.Services;
@@ -34,47 +37,176 @@ public readonly record struct EncodedFrame(byte[] Data, bool Keyframe, long Time
 /// </summary>
 public sealed class PcVideoEncoder : IDisposable
 {
-    private readonly IMFTransform _transform;
-    private readonly IMFMediaEventGenerator _events;
+    private readonly IMFTransform _transform = null!;
+    private readonly IMFMediaEventGenerator _events = null!;
     private readonly ICodecAPI? _codecApi;
-    private readonly IMFDXGIDeviceManager _deviceManager;
+    private readonly IMFDXGIDeviceManager _deviceManager = null!;
     private readonly IntPtr _deviceManagerPtr;
     private readonly int _framesPerSecond;
     private bool _disposed;
 
     /// <summary>Friendly name of the selected MFT, e.g. "AMDh264Encoder". For logs.</summary>
-    public string EncoderName { get; }
+    public string EncoderName { get; } = "";
 
+    /// <summary>
+    /// Open the first hardware encoder that accepts the stream. Encoders on the graphics chip that
+    /// captures the screen come first: on a hybrid laptop (Intel + NVIDIA/AMD) the first encoder
+    /// Windows lists can belong to the other chip, and handed this device it fails — on a friend's
+    /// PC as START_OF_STREAM MF_E_SHUTDOWN, after which the half-built encoder, never released,
+    /// held the hardware session and every retry failed with E_INVALIDARG (2026-10-10). So every
+    /// candidate is tried, and each one that fails is shut down and released before the next.
+    /// </summary>
     public PcVideoEncoder(ID3D11Device device, int width, int height, int framesPerSecond, int bitrate)
     {
         _framesPerSecond = framesPerSecond;
-        (_transform, EncoderName) = SelectHardwareEncoder();
-        _events = (IMFMediaEventGenerator)_transform;
+        var failures = new List<string>();
+        var candidates = HardwareEncoders(AdapterLuid(device));
+        try
+        {
+            if (candidates.Count == 0)
+                throw new LincException(
+                    "This PC has no hardware H.264 video encoder, so it can't stream its screen to your phone.");
+            foreach (var candidate in candidates)
+            {
+                IMFTransform? transform = null;
+                IMFDXGIDeviceManager? manager = null;
+                IntPtr managerPtr = IntPtr.Zero;
+                try
+                {
+                    var iid = typeof(IMFTransform).GUID;
+                    Check(candidate.Activate.ActivateObject(ref iid, out object activated), "ActivateObject");
+                    transform = (IMFTransform)activated;
 
-        // Unlock first: until this is set the transform rejects everything else.
-        Check(_transform.GetAttributes(out IMFAttributes attributes), "GetAttributes");
-        var key = MF_TRANSFORM_ASYNC_UNLOCK;
-        Check(attributes.SetUINT32(ref key, 1), "MF_TRANSFORM_ASYNC_UNLOCK");
-        key = MF_LOW_LATENCY;
-        attributes.SetUINT32(ref key, 1);   // advisory — encoders may ignore it
-        Marshal.ReleaseComObject(attributes);
+                    // Unlock first: until this is set the transform rejects everything else.
+                    Check(transform.GetAttributes(out IMFAttributes attributes), "GetAttributes");
+                    var key = MF_TRANSFORM_ASYNC_UNLOCK;
+                    Check(attributes.SetUINT32(ref key, 1), "MF_TRANSFORM_ASYNC_UNLOCK");
+                    key = MF_LOW_LATENCY;
+                    attributes.SetUINT32(ref key, 1);   // advisory — encoders may ignore it
+                    Marshal.ReleaseComObject(attributes);
 
-        // Share our D3D device so the encoder reads captured textures in place.
-        Check(MFCreateDXGIDeviceManager(out int resetToken, out _deviceManager), "MFCreateDXGIDeviceManager");
-        Check(_deviceManager.ResetDevice(device.NativePointer, resetToken), "ResetDevice");
-        _deviceManagerPtr = Marshal.GetIUnknownForObject(_deviceManager);
-        Check(_transform.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, _deviceManagerPtr), "SET_D3D_MANAGER");
+                    // Share our D3D device so the encoder reads captured textures in place.
+                    Check(MFCreateDXGIDeviceManager(out int resetToken, out manager), "MFCreateDXGIDeviceManager");
+                    Check(manager.ResetDevice(device.NativePointer, resetToken), "ResetDevice");
+                    managerPtr = Marshal.GetIUnknownForObject(manager);
+                    Check(transform.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, managerPtr), "SET_D3D_MANAGER");
 
-        // Encoders require the output type before the input type.
-        SetOutputType(width, height, framesPerSecond, bitrate);
-        SetInputType(width, height, framesPerSecond);
+                    _transform = transform;
+                    _events = (IMFMediaEventGenerator)transform;
+                    _codecApi = transform as ICodecAPI;
+                    _deviceManager = manager;
+                    _deviceManagerPtr = managerPtr;
 
-        // Rate control and GOP length live on ICodecAPI, not on the media type.
-        _codecApi = _transform as ICodecAPI;
-        ConfigureRateControl(framesPerSecond, bitrate);
+                    // Encoders require the output type before the input type.
+                    SetOutputType(width, height, framesPerSecond, bitrate);
+                    SetInputType(width, height, framesPerSecond);
+                    // Rate control and GOP length live on ICodecAPI, not on the media type.
+                    ConfigureRateControl(framesPerSecond, bitrate);
 
-        Check(_transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, IntPtr.Zero), "BEGIN_STREAMING");
-        Check(_transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, IntPtr.Zero), "START_OF_STREAM");
+                    Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, IntPtr.Zero), "BEGIN_STREAMING");
+                    Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, IntPtr.Zero), "START_OF_STREAM");
+                    EncoderName = failures.Count == 0 ? candidate.Name : $"{candidate.Name} (after: {string.Join("; ", failures)})";
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{candidate.Name} — {ex.Message}");
+                    // Give the hardware session back before trying the next encoder.
+                    if (transform is not null)
+                    {
+                        try { transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
+                        try { if (transform is IMFShutdown shutdown) shutdown.Shutdown(); } catch { }
+                        try { candidate.Activate.ShutdownObject(); } catch { }
+                        try { Marshal.ReleaseComObject(transform); } catch { }
+                    }
+                    try { if (managerPtr != IntPtr.Zero) Marshal.Release(managerPtr); } catch { }
+                    try { if (manager is not null) Marshal.ReleaseComObject(manager); } catch { }
+                    _transform = null!; _events = null!; _codecApi = null; _deviceManager = null!; _deviceManagerPtr = IntPtr.Zero;
+                }
+            }
+            throw new LincException("None of this PC's video encoders would start: " + string.Join("; ", failures));
+        }
+        finally
+        {
+            foreach (var candidate in candidates) { try { Marshal.ReleaseComObject(candidate.Activate); } catch { } }
+        }
+    }
+
+    /// <summary>The LUID of the graphics adapter a D3D device runs on.</summary>
+    private static long AdapterLuid(ID3D11Device device)
+    {
+        try
+        {
+            using var dxgi = device.QueryInterface<IDXGIDevice>();
+            using var adapter = dxgi.GetAdapter();
+            var luid = adapter.Description.Luid;
+            return ((long)luid.HighPart << 32) | luid.LowPart;
+        }
+        catch { return 0; }
+    }
+
+    private sealed record Candidate(IMFActivate Activate, string Name, long? Luid);
+
+    /// <summary>
+    /// Every hardware H.264 encoder, those on <paramref name="adapterLuid"/> first, then those
+    /// that don't say which adapter they belong to, then the rest — Windows' own order otherwise.
+    /// </summary>
+    private static List<Candidate> HardwareEncoders(long adapterLuid)
+    {
+        MFT_REGISTER_TYPE_INFO[] output =
+            [new() { guidMajorType = MFMediaType_Video, guidSubtype = MFVideoFormat_H264 }];
+        Check(MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER,
+            MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
+            null!, output, out IntPtr list, out uint count), "MFTEnumEx");
+        var found = new List<Candidate>();
+        try
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var activate = (IMFActivate)Marshal.GetObjectForIUnknown(Marshal.ReadIntPtr(list, i * IntPtr.Size));
+                var nameKey = MFT_FRIENDLY_NAME_Attribute;
+                string name = activate.GetAllocatedString(ref nameKey, out string friendly, out _) == 0 ? friendly : "unknown encoder";
+                var luidKey = MFT_ENUM_ADAPTER_LUID;
+                long? luid = activate.GetUINT64(ref luidKey, out long value) == 0 ? value : null;
+                found.Add(new Candidate(activate, name, luid));
+            }
+        }
+        finally
+        {
+            for (int i = 0; i < count; i++) Marshal.Release(Marshal.ReadIntPtr(list, i * IntPtr.Size));
+            Marshal.FreeCoTaskMem(list);
+        }
+        return found
+            .Select((c, i) => (c, i, rank: c.Luid == adapterLuid && adapterLuid != 0 ? 0 : c.Luid is null ? 1 : 2))
+            .OrderBy(x => x.rank).ThenBy(x => x.i).Select(x => x.c).ToList();
+    }
+
+    /// <summary>For logs: this PC's graphics adapters and hardware H.264 encoders.</summary>
+    public static IEnumerable<string> Describe()
+    {
+        var lines = new List<string>();
+        try
+        {
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            for (uint a = 0; factory.EnumAdapters1(a, out IDXGIAdapter1 adapter).Success; a++)
+            {
+                using (adapter)
+                {
+                    var d = adapter.Description1;
+                    long luid = ((long)d.Luid.HighPart << 32) | d.Luid.LowPart;
+                    int outputs = 0;
+                    while (adapter.EnumOutputs((uint)outputs, out IDXGIOutput o).Success) { o.Dispose(); outputs++; }
+                    lines.Add($"GPU {a}: {d.Description} (luid {luid:X}, {outputs} display(s))");
+                }
+            }
+            foreach (var c in HardwareEncoders(0))
+            {
+                lines.Add($"H.264 encoder: {c.Name}" + (c.Luid is { } l ? $" (luid {l:X})" : ""));
+                Marshal.ReleaseComObject(c.Activate);
+            }
+        }
+        catch (Exception ex) { lines.Add($"(couldn't list graphics hardware: {ex.Message})"); }
+        return lines;
     }
 
     /// <summary>
@@ -178,39 +310,6 @@ public sealed class PcVideoEncoder : IDisposable
         key = MF_MT_INTERLACE_MODE; type.SetUINT32(ref key, MFVideoInterlace_Progressive);
         Check(_transform.SetInputType(0, type, 0), "SetInputType");
         Marshal.ReleaseComObject(type);
-    }
-
-    private static (IMFTransform, string) SelectHardwareEncoder()
-    {
-        MFT_REGISTER_TYPE_INFO[] output =
-            [new() { guidMajorType = MFMediaType_Video, guidSubtype = MFVideoFormat_H264 }];
-
-        Check(MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER,
-            MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
-            null!, output, out IntPtr list, out uint count), "MFTEnumEx");
-
-        try
-        {
-            if (count == 0)
-                throw new LincException(
-                    "This PC has no hardware H.264 video encoder, so it can't stream its screen to your phone.");
-
-            IntPtr first = Marshal.ReadIntPtr(list, 0);
-            var activate = (IMFActivate)Marshal.GetObjectForIUnknown(first);
-            var nameKey = MFT_FRIENDLY_NAME_Attribute;
-            string name = activate.GetAllocatedString(ref nameKey, out string friendly, out _) == 0
-                ? friendly : "unknown encoder";
-
-            var iid = typeof(IMFTransform).GUID;
-            Check(activate.ActivateObject(ref iid, out object transform), "ActivateObject");
-            Marshal.ReleaseComObject(activate);
-            return ((IMFTransform)transform, name);
-        }
-        finally
-        {
-            for (int i = 0; i < count; i++) Marshal.Release(Marshal.ReadIntPtr(list, i * IntPtr.Size));
-            Marshal.FreeCoTaskMem(list);
-        }
     }
 
     /// <summary>Block until the encoder next wants input or has output. Returns an ME* constant.</summary>

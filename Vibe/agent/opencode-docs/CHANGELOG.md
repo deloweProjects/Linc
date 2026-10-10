@@ -9,6 +9,13 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-10 — Mirror PC on hybrid-graphics PCs; icon downloads over Wi-Fi (1.0.0.7, D-076)
+
+- Mirror PC tries every hardware video encoder, the screen's own graphics chip first, and cleans up
+  one that fails — it used to try only the first and leave it stuck, so every retry failed.
+- Many app icons fetched at once over a direct Wi-Fi link no longer get mistaken for new connections.
+- PC Copy log lists the graphics chips and video encoders.
+
 ### Fixed/Added — 2026-10-10 — Voice Access really hears the phone; Phone | PC mic; Microphone tool (1.0.0.6, protocol v23, D-075)
 
 - **Voice Access now hears the phone.** It keeps its own microphone setting and ignored the Windows

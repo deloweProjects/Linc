@@ -57,7 +57,14 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     public int ReversePort => 46011;
 
     private readonly Lazy<X509Certificate2> _identity = new(() => LoadOrCreateIdentity(Path.Combine(registry.RootPath, "tls-identity.pfx")));
-    private readonly ConcurrentDictionary<(int Channel, string Token), TaskCompletionSource<Stream>> _channelWaiters = new();
+    /// <summary>
+    /// Dial-backs being waited for, first come first served per (channel, session). A single slot
+    /// per key used to be overwritten when the PC opened the same channel several times at once
+    /// (app icons over the bulk channel): one dial-back matched, the rest arrived to an empty slot,
+    /// were taken for new control connections and dropped, and their fetches hung for 8 s each.
+    /// </summary>
+    private readonly ConcurrentDictionary<(int Channel, string Token), ConcurrentQueue<TaskCompletionSource<Stream>>> _channelWaiters = new();
+    private int _waiting;
 
     private TcpListener? _listener;
     private ServiceDiscovery? _advertiser;
@@ -171,15 +178,22 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     public Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct)
     {
         var waiter = new TaskCompletionSource<Stream>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _channelWaiters[(channel, sessionToken)] = waiter;
-        ct.Register(() =>
-        {
-            if (_channelWaiters.TryRemove((channel, sessionToken), out var pending))
-            {
-                pending.TrySetCanceled(ct);
-            }
-        });
+        _channelWaiters.GetOrAdd((channel, sessionToken), _ => new()).Enqueue(waiter);
+        Interlocked.Increment(ref _waiting);
+        // A cancelled waiter stays queued but completed; TakeWaiter skips it.
+        ct.Register(() => { if (waiter.TrySetCanceled(ct)) Interlocked.Decrement(ref _waiting); });
         return waiter.Task;
+    }
+
+    /// <summary>The oldest still-waiting request for this dial-back, if any.</summary>
+    private TaskCompletionSource<Stream>? TakeWaiter(int channel, string token)
+    {
+        if (!_channelWaiters.TryGetValue((channel, token), out var queue)) return null;
+        while (queue.TryDequeue(out var waiter))
+        {
+            if (!waiter.Task.IsCompleted) return waiter;
+        }
+        return null;
     }
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
@@ -238,18 +252,21 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             // Channel dial-backs announce themselves with a header frame immediately;
             // control connections stay silent (the desktop speaks first). Only try the
             // read when a dial-back is actually expected.
-            if (!_channelWaiters.IsEmpty)
+            if (Volatile.Read(ref _waiting) > 0)
             {
                 var header = await TryReadHeaderAsync(ssl);
                 if (header is not null)
                 {
                     var channel = (int?)header["channel"] ?? -1;
                     var token = (string?)header["sessionToken"] ?? "";
-                    if (_channelWaiters.TryRemove((channel, token), out var waiter))
+                    if (TakeWaiter(channel, token) is { } waiter)
                     {
                         if (channel is VideoChannel or AudioChannel) LimitSendBuffer(client);
-                        waiter.TrySetResult(ssl);
-                        return; // ownership handed to the waiter
+                        if (waiter.TrySetResult(ssl))
+                        {
+                            Interlocked.Decrement(ref _waiting);
+                            return; // ownership handed to the waiter
+                        }
                     }
                     ssl.Dispose(); // unknown/stale dial-back
                     return;

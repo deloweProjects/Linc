@@ -15,9 +15,13 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.6 ("1.0.0-beta.6") — 2026-10-10
+## 1.0.0.7 ("1.0.0-beta.7") — 2026-10-10
 
-(1.0.0.3 to 1.0.0.5 were local test builds and were never released.) Install both apps (protocol v23).
+(1.0.0.3 to 1.0.0.6 were local test builds and were never released.) Install both apps (protocol v23).
+
+- **Mirror PC on PCs with two graphics chips** (e.g. Intel + NVIDIA laptops): Linc now tries every
+  hardware video encoder, the screen's own chip first, instead of giving up after the first.
+- **Over a direct Wi-Fi link**, fetching many app icons at once no longer stalls.
 
 - **Voice Access now actually hears your phone.** It keeps its own microphone setting and ignored the
   Windows default; Linc now points it at the phone while you've chosen the phone.

@@ -1093,3 +1093,30 @@ Microphone card. Changing it switches a running Voice Access over at once.
 **Android.** Recording with the screen off or Linc in the background needs a `microphone`-typed
 foreground service on Android 14+, so the companion service now declares `connectedDevice|microphone`
 and adds the microphone type only while the phone's mic is streaming.
+
+## D-076: Mirror PC tries every hardware encoder; concurrent channel dial-backs all match
+
+**2026-10-10.** A friend's PC log (itel S685LN phone, Linc 1.0.0.2 desktop): Mirror PC never started —
+first `START_OF_STREAM failed 0xC00D3E85` (MF_E_SHUTDOWN), then `E_INVALIDARG` on every retry — and the
+wireless link dropped ~80 s after connecting, with 12 "Phone connected directly" lines in one second.
+
+**Encoder.** `PcVideoEncoder` activated only the *first* hardware H.264 MFT Windows listed and, if its
+setup threw, never shut it down. On a hybrid-graphics PC the first encoder can sit on the other GPU
+from the one whose D3D device captures the screen; handed that device it fails, and the leaked
+half-built encoder keeps the hardware session, so retries fail too. Now every hardware encoder is
+tried, those whose `MFT_ENUM_ADAPTER_LUID` matches the capture device's adapter first, then those
+that don't say, then the rest; a failed one is ended (`END_STREAMING`, `IMFShutdown`,
+`IMFActivate.ShutdownObject`) and released before the next; all failing gives one message naming
+each encoder and its error. The log names the encoder used and any skipped. Checked here
+(mirrorsim encoder scenarios, AMD) for no regression; the hybrid fallback itself is untested here.
+**Copy log** on the PC now lists the GPUs (with LUIDs and display counts) and the H.264 encoders.
+
+**Dial-backs.** `TlsTransportService.AwaitChannelAsync` kept one waiter per (channel, session) and
+overwrote it on every call. Opening the bulk channel for many app icons at once (54 new apps on the
+friend's phone) left one waiter; the other dial-backs found nothing, were read as new control
+connections (the 12 log lines), dropped by the supervisor, and their fetches waited out 8 s each. Now
+each key holds a FIFO queue of waiters and every dial-back gets the oldest one still waiting.
+Build-checked only (no harness compiles the TLS transport).
+
+The ~80 s drop itself is not explained by the PC log; the phone's Copy log (D-073: exit reasons,
+battery exemption, Doze, Wi-Fi events) is what can.

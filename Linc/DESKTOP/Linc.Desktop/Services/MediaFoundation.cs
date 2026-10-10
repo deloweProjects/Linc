@@ -44,6 +44,8 @@ public static class Mf
     public static readonly Guid MF_TRANSFORM_ASYNC_UNLOCK = new("e5666d6b-3422-4eb6-a421-da7db1f8e207");
     public static readonly Guid MF_SA_D3D11_AWARE = new("206b4fc8-fcf9-4c51-afe3-9764369e33a0");
     public static readonly Guid MFT_FRIENDLY_NAME_Attribute = new("314ffbae-5b41-4c95-9c19-4e7d586face3");
+    /// <summary>On a hardware MFT's activate: the LUID of the graphics adapter it runs on.</summary>
+    public static readonly Guid MFT_ENUM_ADAPTER_LUID = new("1d39518c-e220-4da8-a07f-ba172552d6b1");
 
     public const uint MFT_ENUM_FLAG_SYNCMFT = 0x1;
     public const uint MFT_ENUM_FLAG_ASYNCMFT = 0x2;

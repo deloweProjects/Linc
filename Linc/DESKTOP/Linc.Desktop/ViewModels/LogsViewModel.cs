@@ -44,6 +44,8 @@ public partial class LogsViewModel : ObservableObject
         text.AppendLine($"Linc PC log — {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         text.AppendLine($"App: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}");
         text.AppendLine($"Windows: {Environment.OSVersion.VersionString}, {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}");
+        // Graphics chips and video encoders: what Mirror PC runs on, and why it might not start.
+        foreach (var line in PcVideoEncoder.Describe()) text.AppendLine(line);
         text.AppendLine();
         bool fromDisk = false;
         foreach (var day in new[] { DateTime.Now.AddDays(-1), DateTime.Now })
