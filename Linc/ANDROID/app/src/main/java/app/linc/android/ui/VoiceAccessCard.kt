@@ -107,6 +107,12 @@ fun VoiceAccessCard() {
                 Switch(checked = phoneMic, onCheckedChange = {
                     phoneMic = it
                     MirrorSettings.setVoicePhoneMic(context, it)
+                    // Running already: switch its microphone over now (D-075).
+                    if (state.on) {
+                        if (it && !PcVoiceAccess.hasMicPermission(context)) askMic.launch(Manifest.permission.RECORD_AUDIO)
+                        else if (it) startWithPhoneMic()
+                        else PcVoiceAccess.set(context, true, phoneMic = false)
+                    }
                 })
             }
             Button(

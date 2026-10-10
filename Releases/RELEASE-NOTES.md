@@ -15,9 +15,16 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.5 ("1.0.0-beta.5") — 2026-10-10
+## 1.0.0.6 ("1.0.0-beta.6") — 2026-10-10
 
-(1.0.0.3 and 1.0.0.4 were local test builds and were never released.)
+(1.0.0.3 to 1.0.0.5 were local test builds and were never released.) Install both apps (protocol v23).
+
+- **Voice Access now actually hears your phone.** It keeps its own microphone setting and ignored the
+  Windows default; Linc now points it at the phone while you've chosen the phone.
+- **Choose Phone or PC microphone** in the PC Remote bubble, or on the Voice Access card.
+- **Microphone tool** (Tools): use your phone as the PC's microphone in any app — calls, dictation.
+- **Automatic in Mirror PC**: with Phone chosen, whenever an app on the PC starts listening, it hears
+  your phone. The phone's mic only runs while something is listening.
 
 - **Voice Access's microphone setup now finishes.** The download from vb-audio.com used to give up
   after 5 minutes on that server's slow connection; it now downloads in pieces, picks up where it

@@ -38,6 +38,19 @@ class CompanionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // The phone's mic streaming to the PC (D-075): add (or drop) the microphone type so
+        // Android keeps recording with the screen off and Linc in the background.
+        if (intent?.action == ACTION_MIC && server != null) {
+            val on = intent.getBooleanExtra(EXTRA_ON, false)
+            runCatching {
+                ServiceCompat.startForeground(
+                    this, NOTIFICATION_ID, buildNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                        (if (on) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0),
+                )
+            }.onFailure { LogStore.log(LogLevel.WARN, "Phone microphone: Android wouldn't let it run in the background (${it.message})") }
+            return START_STICKY
+        }
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
@@ -230,7 +243,11 @@ class CompanionService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private companion object {
+    companion object {
+        /** Intent action: the phone's mic started or stopped streaming to the PC (extra [EXTRA_ON]). */
+        const val ACTION_MIC = "app.linc.android.action.MIC"
+        const val EXTRA_ON = "on"
+
         const val CHANNEL_ID = "linc.companion"
         const val NOTIFICATION_ID = 1
     }

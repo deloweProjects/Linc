@@ -60,6 +60,27 @@ class PcVoiceAccessTest {
     }
 
     @Test
+    fun `the PC says when the phone mic is live, and for whom (D-075)`() {
+        PcVoiceAccess.onState(buildJsonObject {
+            put("available", true); put("cable", true); put("micOn", true); put("tool", false); put("auto", true); put("listening", true)
+        })
+        val s = PcVoiceAccess.state.value
+        assertTrue(s.micOn && s.auto && s.listening)
+        assertFalse(s.tool)
+        PcVoiceAccess.onState(buildJsonObject { put("available", true) })   // an older PC: all off
+        assertFalse(PcVoiceAccess.state.value.micOn || PcVoiceAccess.state.value.auto)
+    }
+
+    @Test
+    fun `the microphone tool and auto mode need a v23 PC`() {
+        regs += CompanionOutbox.register(22) { sent += it }
+        assertFalse(PcVoiceAccess.micReady())
+        regs.forEach { CompanionOutbox.release(it) }; regs.clear()
+        regs += CompanionOutbox.register(23) { sent += it }
+        assertTrue(PcVoiceAccess.micReady())
+    }
+
+    @Test
     fun `asking for state needs a v21 desktop`() {
         regs += CompanionOutbox.register(20) { sent += it }
         assertFalse(PcVoiceAccess.ready())

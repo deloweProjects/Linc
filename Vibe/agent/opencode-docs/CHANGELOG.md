@@ -9,6 +9,17 @@ first.
 
 ## [Unreleased]
 
+### Fixed/Added — 2026-10-10 — Voice Access really hears the phone; Phone | PC mic; Microphone tool (1.0.0.6, protocol v23, D-075)
+
+- **Voice Access now hears the phone.** It keeps its own microphone setting and ignored the Windows
+  default Linc changed; Linc now points that setting at the virtual cable while the phone is chosen.
+- **Phone | PC microphone choice** in the PC Remote panel (and on the Voice Access and Microphone
+  cards); switches a running Voice Access over at once.
+- **Microphone tool** in Tools: the phone as the PC's microphone for any app (calls, Win+H dictation).
+- **Automatic in Mirror PC**: with Phone chosen, any PC app that starts listening hears the phone; the
+  phone's mic only runs while something is listening.
+- The phone keeps recording with the screen off (microphone-type foreground service).
+
 ### Fixed — 2026-10-10 — Voice Access microphone setup actually finishes (1.0.0.5, D-071)
 
 - The VB-CABLE download used to time out after 5 minutes on vb-audio.com's slow server and start

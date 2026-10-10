@@ -95,6 +95,9 @@ class RemoteUiState {
     var voiceAccessAvailable by mutableStateOf(false)
     var voiceAccessOn by mutableStateOf(false)
     var tabletAvailable by mutableStateOf(false)
+    /** Which microphone the PC hears in PC Remote: this phone's, or its own (D-075). */
+    var phoneMic by mutableStateOf(true)
+    var micLive by mutableStateOf(false)
     var tabletOn by mutableStateOf(false)
     var displays by mutableIntStateOf(1)
     var zoomed by mutableStateOf(false)
@@ -111,6 +114,7 @@ interface RemoteActions {
     fun sound()
     fun voiceAccess()
     fun tabletMode()
+    fun setPhoneMic(phone: Boolean)
     fun display()
     fun quality()
     fun fit()
@@ -305,6 +309,19 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Pop up on text fields", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(checked = state.autoKeyboard, onCheckedChange = actions::setAutoKeyboard)
+            }
+
+            // Microphone: which one the PC hears — Voice Access, calls, dictation — while in here.
+            Section(if (state.micLive) "Microphone · phone is live" else "Microphone")
+            Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+                ToggleButton(
+                    checked = state.phoneMic, onCheckedChange = { actions.setPhoneMic(true) },
+                    shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(), modifier = Modifier.weight(1f),
+                ) { IconLabel(LincSymbols.Mic, "Phone") }
+                ToggleButton(
+                    checked = !state.phoneMic, onCheckedChange = { actions.setPhoneMic(false) },
+                    shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(), modifier = Modifier.weight(1f),
+                ) { IconLabel(LincSymbols.Display, "PC") }
             }
 
             // Everything else.

@@ -202,7 +202,7 @@ public partial class App : Application
             // D-071: a phone-mic session cut short by a crash or a kill left the virtual cable as
             // the default microphone; put the user's own back. COM, so off the UI thread.
             var restoreLog = Services.GetRequiredService<ILogService>();
-            _ = Task.Run(() => PcVoiceAccess.RestorePendingDefaultMic(restoreLog));
+            _ = Task.Run(() => PcVoiceAccess.RestoreAllMics(restoreLog));
             // D-074: likewise a Tablet mode left on: put back the display scale and Explorer spacing.
             _ = Task.Run(() => PcTabletMode.RestorePending(restoreLog));
             // M9e: view models are constructed synchronously as part of Activate() — always call

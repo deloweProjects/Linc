@@ -136,6 +136,20 @@ public sealed class PcMirrorService(
                 _ = Task.Run(() => VoiceAccess.SendStateAsync());
                 break;
 
+            // v23 (D-075): the phone as this PC's microphone — the Microphone tool, and PC Remote's
+            // automatic mode (the phone's mic whenever a PC app listens).
+            case MessageType.PcMicSet:
+                bool micOn = (bool?)envelope.Payload["on"] ?? false;
+                bool micInstall = (bool?)envelope.Payload["installCable"] ?? false;
+                _ = Task.Run(() => VoiceAccess.SetToolAsync(micOn, micInstall));
+                break;
+
+            case MessageType.PcMicAuto:
+                bool auto = (bool?)envelope.Payload["on"] ?? false;
+                bool autoInstall = (bool?)envelope.Payload["installCable"] ?? false;
+                _ = Task.Run(() => VoiceAccess.SetAutoAsync(auto, autoInstall));
+                break;
+
             // v22 (D-074): Windows tablet mode from the bubble.
             case MessageType.PcTabletModeSet:
                 bool tablet = (bool?)envelope.Payload["on"] ?? false;

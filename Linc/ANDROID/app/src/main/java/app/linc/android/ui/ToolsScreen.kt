@@ -197,6 +197,7 @@ fun ToolsScreen(onBack: () -> Unit) {
             )
 
             VoiceAccessCard()
+            PhoneMicCard()
 
             if (confirmAction != null) {
                 val restart = confirmAction == "restart"

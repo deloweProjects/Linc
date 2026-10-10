@@ -333,6 +333,39 @@ class MirrorActivity : ComponentActivity() {
             touched()
         }
 
+        /**
+         * Which microphone the PC hears while you're in PC Remote (D-075). Phone: Voice Access,
+         * calls and dictation on the PC all get this phone's mic — streamed only while a PC app
+         * is actually listening. Switches Voice Access over live if it's running.
+         */
+        override fun setPhoneMic(phone: Boolean) {
+            if (phone && !PcVoiceAccess.hasMicPermission(this@MirrorActivity)) {
+                afterMicGranted = { setPhoneMic(true) }
+                askMic.launch(Manifest.permission.RECORD_AUDIO)
+                return
+            }
+            val s = PcVoiceAccess.state.value
+            if (phone && !s.cable && s.canSetUp) {
+                ui.panelOpen = false
+                AlertDialog.Builder(this@MirrorActivity)
+                    .setTitle("Set up the microphone on the PC?")
+                    .setMessage(PcVoiceAccess.SETUP_EXPLANATION)
+                    .setPositiveButton("Set up") { _, _ ->
+                        MirrorSettings.setVoicePhoneMic(this@MirrorActivity, true)
+                        PcVoiceAccess.setAuto(this@MirrorActivity, true, installCable = true)
+                        refreshUi()
+                    }
+                    .setNegativeButton("Not now", null)
+                    .show()
+                return
+            }
+            MirrorSettings.setVoicePhoneMic(this@MirrorActivity, phone)
+            if (s.on) PcVoiceAccess.set(this@MirrorActivity, true, phoneMic = phone)
+            if (PcVoiceAccess.micReady()) PcVoiceAccess.setAuto(this@MirrorActivity, phone)
+            else if (phone && !s.on) toast("Using the phone as the PC's mic outside Voice Access needs Linc 1.0.0.6 or newer on the PC.")
+            refreshUi(); touched()
+        }
+
         override fun display() = pickDisplay()
         override fun quality() = pickQuality()
         override fun fit() { scale = 1f; applyTransform(); refreshUi() }
@@ -384,6 +417,8 @@ class MirrorActivity : ComponentActivity() {
         ui.voiceAccessAvailable = true
         ui.voiceAccessOn = PcVoiceAccess.state.value.on
         ui.tabletAvailable = true
+        ui.phoneMic = MirrorSettings.voicePhoneMic(this)
+        ui.micLive = PcVoiceAccess.micLive.value
         ui.tabletOn = PcTabletMode.state.value.on
         ui.displays = MirrorSession.displays.value.size
         ui.zoomed = scale > 1f
@@ -411,6 +446,11 @@ class MirrorActivity : ComponentActivity() {
                     if (MirrorSettings.audio(this@MirrorActivity)) MirrorControl.audio(true)
                     PcVoiceAccess.refresh(this@MirrorActivity)
                     PcTabletMode.refresh()
+                    // "Phone" chosen: the PC hears this phone whenever an app there listens (D-075).
+                    if (PcVoiceAccess.micReady() && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
+                        PcVoiceAccess.hasMicPermission(this@MirrorActivity)) {
+                        PcVoiceAccess.setAuto(this@MirrorActivity, true)
+                    }
                     refreshUi()
                 } else {
                     loading.visibility = View.VISIBLE
@@ -451,6 +491,7 @@ class MirrorActivity : ComponentActivity() {
         lifecycleScope.launch { ModifierKeys.latches.collectLatest { keyboard.refresh() } }
         lifecycleScope.launch { MirrorSession.displays.collectLatest { refreshUi() } }
         lifecycleScope.launch { AudioReceiver.playing.collectLatest { refreshUi() } }
+        lifecycleScope.launch { PcVoiceAccess.micLive.collectLatest { refreshUi() } }
         lifecycleScope.launch {
             PcVoiceAccess.state.collectLatest { state ->
                 refreshUi()
@@ -897,6 +938,8 @@ class MirrorActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Leaving PC Remote ends the automatic phone mic; the PC puts its own default back (D-075).
+        if (PcVoiceAccess.micReady()) PcVoiceAccess.setAuto(this, false)
         // Tablet mode is for PC Remote: leaving puts the PC's own scale back (D-074).
         if (PcTabletMode.ready() && PcTabletMode.state.value.on) PcTabletMode.set(false)
         handler.removeCallbacksAndMessages(null)

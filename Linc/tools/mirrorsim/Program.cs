@@ -559,6 +559,24 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         }
     });
 
+    yield return ("D-075 phone mic: Voice Access's own mic id, and who is listening", a =>
+    {
+        // The id format must be exactly what Voice Access writes itself, or it ignores it. On a
+        // PC where it has a microphone chosen, rebuild that value from its endpoint id.
+        using var va = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\VoiceAccess");
+        if (va?.GetValue("VoiceAccessMicrophoneId") is string chosen)
+        {
+            var endpoint = chosen.Split('#')[2];   // \\?\SWD#MMDEVAPI#{0.0.1.00000000}.{guid}#{interface}
+            a.Equal(chosen, PcMicAudio.VoiceAccessMicId(endpoint), "rebuilds Voice Access's own value exactly");
+        }
+        else Console.WriteLine("    Voice Access has no microphone chosen here; format checked by shape only");
+        a.True(PcMicAudio.VoiceAccessMicId("{0.0.1.00000000}.{dd0d4dfa-6cc5-4191-a766-b69e7975d214}")
+            .StartsWith(@"\\?\SWD#MMDEVAPI#{0.0.1.00000000}.{dd0d4dfa"), "a capture endpoint becomes a device-interface path");
+        bool listening = PcMicAudio.MicInUseByOtherApps();
+        Console.WriteLine($"    an app is using a microphone right now: {listening}");
+        a.True(true, "the microphone-in-use records read without error");
+    });
+
     yield return ("v20 audio: PC sound is captured and AAC-encoded live", a =>
     {
         int rate;

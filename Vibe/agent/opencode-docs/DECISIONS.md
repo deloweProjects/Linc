@@ -1061,3 +1061,35 @@ panel were hard-coded to `darkColorScheme()`, and the window theme was always li
 (`Theme.Material.Light`), so dark mode flashed white and system dialogs came up light. The overlay now
 uses `dynamicDarkColorScheme` (falling back to Linc's dark ramp) and the window theme is
 `Theme.DeviceDefault.DayNight`.
+
+## D-075: Voice Access hears the phone; a Phone | PC mic choice; the phone as the PC's mic for any app
+
+**2026-10-10.** Owner, with VB-CABLE installed: "voice access still barely works … looks like it still
+uses pc mic … let me choose pc or phone mic, then also add mic tool in app and auto use phone mic when
+im in mirror when therz mic use required".
+
+**Why it heard the PC.** Windows Voice Access does not follow the default microphone. It keeps its own
+choice in `HKCU\Software\Microsoft\VoiceAccess\VoiceAccessMicrophoneId` (a device-interface path,
+`\\?\SWD#MMDEVAPI#{endpoint id}#{2eef81be-33fa-4800-9670-1cd474972c3f}`), which on the owner's PC named
+the laptop's "Microphone Array (AMD Audio Device)". D-070 switched only the default, so the phone's
+audio reached CABLE Output and Voice Access never listened to it. Now, with the phone chosen, Linc writes
+the cable's path there (the user's choice saved to `voiceaccess-restore-vamic.txt` first), restarts Voice
+Access if it was running (it reads the setting at start), and puts it back afterwards, on Exit and after
+a crash. `mirrorsim` "D-075 phone mic" rebuilds Voice Access's own stored value exactly from its endpoint.
+
+**Owners.** The phone's mic now has three users on the PC: Voice Access, the new **Microphone** tool
+(protocol v23 `pc.mic.set`: the phone as the PC's mic for every app), and **PC Remote's automatic mode**
+(v23 `pc.mic.auto`, sent when the picture comes up with "Phone" chosen, cleared when PC Remote closes).
+While any of them wants it, CABLE Output is the Windows default (so whatever an app opens is the phone).
+The audio itself streams while Voice Access or the tool wants it — or, in automatic mode, only while some
+other app is actually listening: Linc polls Windows' microphone consent store (the data behind the
+taskbar's mic icon) once a second, ignoring desktop apps whose exe is no longer running (a crashed app
+never writes its stop time), and pauses the stream 5 s after the last listener stops.
+
+**The choice** is one setting, "which microphone the PC hears": a connected Phone | PC button group in the
+PC Remote panel, the switch on the Voice Access card, and "In Mirror PC, use this phone's mic" on the
+Microphone card. Changing it switches a running Voice Access over at once.
+
+**Android.** Recording with the screen off or Linc in the background needs a `microphone`-typed
+foreground service on Android 14+, so the companion service now declares `connectedDevice|microphone`
+and adds the microphone type only while the phone's mic is streaming.

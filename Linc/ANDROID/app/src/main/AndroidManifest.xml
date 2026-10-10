@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- The phone as the PC's microphone (D-075): Android 14+ only lets a foreground service
+         record with the screen off or Linc in the background when it is typed "microphone". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Android 14+ requires one "device interaction" permission alongside the
          connectedDevice FGS type; CHANGE_NETWORK_STATE is normal (auto-granted). -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
@@ -189,7 +192,7 @@
         <service
             android:name=".service.CompanionService"
             android:exported="true"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|microphone" />
 
         <service
             android:name=".service.LincNotificationListener"

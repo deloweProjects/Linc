@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 22;
+    public const int Version = 23;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -101,6 +101,8 @@ public static class MessageType
     public const string PcTabletModeSet = "pc.tabletmode.set";       // phone → desktop: Windows tablet mode on/off (v22)
     public const string PcTabletModeGet = "pc.tabletmode.get";       // phone → desktop: ask for its state (v22)
     public const string PcTabletModeState = "pc.tabletmode.state";   // desktop → phone (v22)
+    public const string PcMicSet = "pc.mic.set";                     // phone → desktop: the phone as the PC's mic, any app (v23)
+    public const string PcMicAuto = "pc.mic.auto";                   // phone → desktop: PC Remote with "Phone" chosen (v23)
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies
