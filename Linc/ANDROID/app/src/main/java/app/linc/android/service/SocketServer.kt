@@ -97,6 +97,9 @@ class SocketServer(
     )
 
     private var serverSocket: LocalServerSocket? = null
+
+    /** Control connections being served right now; more than one only during a handoff (D-081). */
+    private val liveControls = java.util.concurrent.atomic.AtomicInteger(0)
     private var acceptJob: Job? = null
 
     fun start() {
@@ -273,6 +276,7 @@ class SocketServer(
             },
         ))
 
+        liveControls.incrementAndGet()
         try {
             val desktopApp = (hello.payload["app"] as? JsonPrimitive)?.contentOrNull ?: "desktop"
             val desktopVersion = (hello.payload["appVersion"] as? JsonPrimitive)?.contentOrNull ?: "?"
@@ -659,10 +663,18 @@ class SocketServer(
             // every unsolicited send until the next handshake.
             outboxRegistration?.let { CompanionOutbox.release(it) }
             SessionRegistry.clear(sessionToken)
-            // Only report a disconnect when the peer left, not when we're shutting down.
-            if (serverSocket != null) {
+            // Only report a disconnect when the peer left, not when we're shutting down — and not
+            // while another control connection is still live: the PC moves the link between USB
+            // and Wi-Fi by opening the new one before closing the old (D-081).
+            val remaining = liveControls.decrementAndGet()
+            if (serverSocket != null && remaining == 0) {
                 CompanionStateHolder.update(ServiceState.Listening)
                 LogStore.log(LogLevel.WARN, "Desktop disconnected")
+                // The PC may still be right there on another route (the cable just came out):
+                // dial it directly now rather than after the presence loop's wait.
+                ReconnectSignal.poke("the PC link ended")
+            } else if (remaining > 0) {
+                LogStore.log(LogLevel.INFO, "One of two PC links closed; still connected on the other")
             }
         }
     }

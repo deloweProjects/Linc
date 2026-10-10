@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         getSystemService(ClipboardManager::class.java)
             .addPrimaryClipChangedListener(clipboardListener)
+        // Opening Linc is the user saying "connect" (D-081): skip the dialler's wait.
+        app.linc.android.service.ReconnectSignal.poke("Linc opened")
     }
 
     override fun onPause() {

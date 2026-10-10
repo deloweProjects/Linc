@@ -41,6 +41,9 @@ class PresenceClient(
     @Volatile
     private var activeEndpoint: Pair<String, Int>? = null
 
+    /** Misses in a row for the remembered last-good address ([ReconnectPolicy.FORGET_AFTER]). */
+    private var lastGoodFailures = 0
+
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(serviceType: String) {}
         override fun onDiscoveryStopped(serviceType: String) {}
@@ -82,20 +85,30 @@ class PresenceClient(
             discovering = true
         }
         loopJob = scope.launch(Dispatchers.IO) {
-            var idleDelaysMs = 3_000L
+            var missStreak = 0
+            var missesSincePoke: Int? = null
             while (isActive) {
                 if (shouldDial()) {
                     val connected = dialControl()
-                    idleDelaysMs = if (connected) 3_000L else (idleDelaysMs * 2).coerceAtMost(30_000L)
+                    if (connected) {
+                        missStreak = 0
+                        missesSincePoke = null
+                    } else {
+                        missStreak++
+                        missesSincePoke = missesSincePoke?.plus(1)?.takeUnless { ReconnectPolicy.burstOver(it) }
+                    }
                 } else {
-                    idleDelaysMs = 3_000L
+                    missStreak = 0
+                    missesSincePoke = null
                 }
                 // Sleep out the backoff, but wake at once on a strong "the PC is right here"
-                // signal (an NFC tap, the screen coming on) instead of waiting up to 30 s.
-                val poked = withTimeoutOrNull(idleDelaysMs) { ReconnectSignal.await() }
-                if (poked != null) {
+                // signal (NFC tap, Wi-Fi joined, screen on, Linc opened, the PC link ending) and
+                // then try a short burst before settling back to the normal pace (D-081).
+                val wait = ReconnectPolicy.delayMs(missStreak, missesSincePoke)
+                val poked = withTimeoutOrNull(wait) { ReconnectSignal.await() }
+                if (poked != null && shouldDial()) {
                     LogStore.log(LogLevel.INFO, "Looking for the PC now ($poked)")
-                    idleDelaysMs = 3_000L
+                    missesSincePoke = 0
                     restartDiscovery()
                 }
             }
@@ -128,20 +141,55 @@ class PresenceClient(
             TransportStore.desktopCert(context) != null &&
             CompanionStateHolder.state.value is ServiceState.Listening
 
-    /** Tries the advertised endpoint, then the adb-reverse loopback. Blocks while connected. */
+    /**
+     * Dials the USB reverse tunnel, then the address that worked last time, then whatever mDNS
+     * advertised ([ReconnectPolicy.order]). Blocks while connected.
+     */
     private fun dialControl(): Boolean {
         val cert = TransportStore.desktopCert(context) ?: return false
-        for (endpoint in candidateEndpoints()) {
+        val lastGood = ReconnectPolicy.parse(TransportStore.lastEndpoint(context))
+        val candidates = candidateEndpoints(lastGood)
+        if (candidates.isEmpty()) return false
+        // Race plain TCP probes to every candidate and do TLS once, to the first that answers
+        // (D-072's channel rule, now for control too): a dead remembered address or an
+        // unreachable advertised one no longer costs a whole 4 s timeout each, in turn.
+        val reachable = EndpointRace.first(
+            candidates,
+            timeoutMs = DIAL_TIMEOUT_MS + 500L,
+            connect = { endpoint ->
+                Socket().use { it.connect(InetSocketAddress(endpoint.first, endpoint.second), DIAL_TIMEOUT_MS) }
+                endpoint
+            },
+            close = {},
+        )
+        if (lastGood != null && reachable != lastGood) {
+            lastGoodFailures++
+            if (ReconnectPolicy.shouldForget(lastGoodFailures)) {
+                TransportStore.saveLastEndpoint(context, null)
+                lastGoodFailures = 0
+                LogStore.log(LogLevel.INFO, "Forgot ${ReconnectPolicy.format(lastGood)}: it failed ${ReconnectPolicy.FORGET_AFTER} times in a row")
+            }
+        }
+        for (endpoint in listOfNotNull(reachable)) {
             val socket = runCatching {
                 TlsIdentity.connect(endpoint.first, endpoint.second, cert, DIAL_TIMEOUT_MS)
             }.getOrNull() ?: continue
+            if (endpoint.first != "127.0.0.1") {
+                TransportStore.saveLastEndpoint(context, ReconnectPolicy.format(endpoint))
+            }
+            if (endpoint == lastGood) lastGoodFailures = 0
             activeEndpoint = endpoint
             LogStore.log(LogLevel.INFO, "Connected to the PC directly (no ADB) at ${endpoint.first}:${endpoint.second}")
             val since = android.os.SystemClock.elapsedRealtime()
             val why = server.serveExternal(socket) // blocks until the desktop disconnects
             activeEndpoint = null
             val lasted = android.os.SystemClock.elapsedRealtime() - since
-            LogStore.log(LogLevel.WARN, "Direct connection to the PC ended after ${lasted / 1000} s (${why ?: "closed"})")
+            val stillLinked = CompanionStateHolder.state.value is ServiceState.Connected
+            LogStore.log(
+                if (stillLinked) LogLevel.INFO else LogLevel.WARN,
+                "Direct connection to the PC ended after ${lasted / 1000} s (${why ?: "closed"})" +
+                    if (stillLinked) " — the PC moved the link to another connection" else "",
+            )
             if (why?.contains("connection abort", ignoreCase = true) == true && !ConnectionWatch.isBatteryExempt(context)) {
                 // ECONNABORTED: Android destroyed the socket itself — what it does to an app it
                 // has cut off in the background. The fix is the exemption, so say so plainly.
@@ -155,15 +203,11 @@ class PresenceClient(
         return false
     }
 
-    private fun candidateEndpoints(): List<Pair<String, Int>> {
-        val endpoints = mutableListOf<Pair<String, Int>>()
+    private fun candidateEndpoints(lastGood: Pair<String, Int>? = null): List<Pair<String, Int>> {
         // adb-reverse (USB cable) path first: loopback is always reachable when it exists.
         val reversePort = TransportStore.reversePort(context)
-        if (reversePort > 0) {
-            endpoints += "127.0.0.1" to reversePort
-        }
-        endpoints += advertised // every real LAN address the desktop advertised
-        return endpoints.distinct().filter { it.second > 0 }
+        val reverse = if (reversePort > 0) "127.0.0.1" to reversePort else null
+        return ReconnectPolicy.order(reverse, lastGood, advertised) // + every LAN address advertised
     }
 
     /**

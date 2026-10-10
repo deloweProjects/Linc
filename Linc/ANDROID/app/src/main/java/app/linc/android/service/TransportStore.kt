@@ -14,6 +14,7 @@ object TransportStore {
     private const val KEY_TLS_PORT = "desktopTlsPort"
     private const val KEY_REVERSE_PORT = "desktopReversePort"
     private const val KEY_PRESENCE = "presenceEnabled"
+    private const val KEY_LAST_ENDPOINT = "lastDirectEndpoint"
 
     fun saveExchange(context: Context, certB64: String, tlsPort: Int, reversePort: Int) {
         prefs(context).edit()
@@ -27,6 +28,11 @@ object TransportStore {
     fun desktopCert(context: Context): String? = prefs(context).getString(KEY_DESKTOP_CERT, null)
     fun tlsPort(context: Context): Int = prefs(context).getInt(KEY_TLS_PORT, 0)
     fun reversePort(context: Context): Int = prefs(context).getInt(KEY_REVERSE_PORT, 0)
+
+    /** The PC address a direct link last worked on (D-081), tried before waiting for mDNS. */
+    fun lastEndpoint(context: Context): String? = prefs(context).getString(KEY_LAST_ENDPOINT, null)
+    fun saveLastEndpoint(context: Context, endpoint: String?) =
+        prefs(context).edit().apply { if (endpoint == null) remove(KEY_LAST_ENDPOINT) else putString(KEY_LAST_ENDPOINT, endpoint) }.apply()
 
     fun presenceEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_PRESENCE, true)
     fun savePresenceEnabled(context: Context, enabled: Boolean) =

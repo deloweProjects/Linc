@@ -44,7 +44,10 @@ class ConnectionWatch(private val context: Context) {
             val power = c.getSystemService(PowerManager::class.java)
             when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> log("Screen off")
-                Intent.ACTION_SCREEN_ON -> log("Screen on")
+                Intent.ACTION_SCREEN_ON -> {
+                    log("Screen on")
+                    ReconnectSignal.poke("screen on")
+                }
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED ->
                     log(if (power?.isDeviceIdleMode == true) "Phone entered Doze (deep sleep)" else "Phone left Doze")
                 PowerManager.ACTION_POWER_SAVE_MODE_CHANGED ->
@@ -66,7 +69,10 @@ class ConnectionWatch(private val context: Context) {
         }
         runCatching {
             val callback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(n: Network) = log("Wi-Fi connected")
+                override fun onAvailable(n: Network) {
+                    log("Wi-Fi connected")
+                    ReconnectSignal.poke("Wi-Fi connected")
+                }
                 override fun onLost(n: Network) = log("Wi-Fi lost")
             }
             context.getSystemService(ConnectivityManager::class.java).registerNetworkCallback(

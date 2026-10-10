@@ -116,7 +116,8 @@ public interface IDeviceRegistry
 
     void SaveFolderSyncPaths(string? pcPath, string phonePath);
 
-    void SaveLastHostPort(string hostPort);
+    /// <summary>Remember (or, with null, forget — D-081) the active phone's last wireless host:port.</summary>
+    void SaveLastHostPort(string? hostPort);
     void SavePairedDevice(string serial, string model);
     void SaveClipboardSyncEnabled(bool enabled);
     void SaveNotificationSyncEnabled(bool enabled);
@@ -446,7 +447,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
         }, persist: false);
     }
 
-    public void SaveLastHostPort(string hostPort) =>
+    public void SaveLastHostPort(string? hostPort) =>
         UpdateActive(d => d with { LastHostPort = hostPort });
 
     public IReadOnlyList<KnownDevice> KnownDevices => _knownDevices;

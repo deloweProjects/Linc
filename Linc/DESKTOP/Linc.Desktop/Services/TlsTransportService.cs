@@ -37,6 +37,9 @@ public interface ITlsTransportService : IDisposable
     void Start();
     void Stop();
 
+    /// <summary>Republish the <c>_linc._tcp</c> advert now — after the PC wakes (D-081).</summary>
+    void RefreshAdvert();
+
     /// <summary>
     /// Registers a waiter for a phone dial-back carrying `{channel, sessionToken}`,
     /// to be armed BEFORE sending `channel.open` (avoids the race). The returned task
@@ -77,6 +80,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     public string CertificateBase64 => Convert.ToBase64String(_identity.Value.Export(X509ContentType.Cert));
 
     public event Action<Stream, IPEndPoint?>? ControlArrived;
+
 
     public void Start()
     {
@@ -120,6 +124,22 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     }
 
     public void Dispose() => Stop();
+
+    public void RefreshAdvert()
+    {
+        if (_listener is null)
+        {
+            return; // background connection is off
+        }
+        try
+        {
+            Advertise();
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Couldn't refresh the direct-connection advert: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// Publishes (or republishes) the <c>_linc._tcp</c> advert for the CURRENT set of interfaces

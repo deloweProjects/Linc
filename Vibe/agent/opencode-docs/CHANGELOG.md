@@ -9,6 +9,17 @@ first.
 
 ## [Unreleased]
 
+### Changed — 2026-10-11 — Connections that just work (1.0.0.11, D-081)
+
+- Plugging in the USB cable while on Wi-Fi switches to the cable without disconnecting; unplugging it
+  moves back to Wi-Fi without showing a drop.
+- The phone reconnects as soon as it joins Wi-Fi, its screen comes on or you open Linc, and tries the
+  PC address that worked last time first.
+- The PC notices waking from sleep (it never did on PCs with Modern Standby) and reconnects.
+- No more minutes of redialling an old hotspot address after the phone leaves; retries back off and
+  restart the moment something changes, and addresses that keep failing are forgotten.
+- The PC log no longer repeats the same line more than three times a minute.
+
 ### Fixed — 2026-10-11 — The Remote trackpad works without Mirror PC (1.0.0.11, D-080)
 
 - The phone's trackpad, keyboard and presentation keys work on their own — the PC used to ignore them

@@ -1237,3 +1237,46 @@ and drag = left-button drag; two quick taps = double click. **Trade-off:** a sin
 tap-then-drag applies to Mirror PC's touch surface (`PointerGestures`, unchanged), where a laggy
 click is felt against the picture; on a blind trackpad the drag gesture is worth the wait. Every
 pointer change is consumed, so a scrolling parent can't steal a drag.
+
+## D-081: One connection owner, make-before-break handoffs, and every signal through one nudge
+
+**2026-10-11.** Owner: make the connection logic "just work". Full write-up, inventory, timers,
+before-numbers and the test script: `Vibe/agent/design/connection.md`.
+
+**Found** (PC logs, 25 Sep – 11 Oct): the hotspot standby redialled a dead address six times per
+drop, each `adb connect` hanging 20 s — ~2.5 minutes and 12 lines per drop, ending in an `adb.arm`
+to a phone that wasn't there; every switch was break-before-make (`ConnectionManager` called
+`Disconnect()` first), so plugging a cable in while on Wi-Fi was a visible drop; a pulled cable was
+always a drop (cable out → connected again: median 10 s, p90 115 s); the phone logged Wi-Fi joined
+and screen on but never acted on them; `PowerModeChanged` never fired once (this PC is Modern
+Standby); backoff never reset on a real signal and never forgot an address; four half-overlapping
+nudge paths; wireless ADB and Direct TLS swapping places for no gain; log floods of 80–229 identical
+lines a minute.
+
+**Decided:**
+- `ConnectionSupervisor` stays the only owner of the live transport; every rule moves into the pure
+  `LinkPolicy` (`tools/linksim`: 55 checks, 6 of them visible-behaviour scenarios). Ranking is
+  **USB > Wi-Fi > nothing**; wireless ADB and Direct TLS rank the same and never swap.
+- **Make-before-break.** `ConnectionManager` handshakes the new link beside the old and swaps them
+  (`Install`); a failed upgrade changes nothing. The phone keeps every live control connection,
+  sends to the newest (as it already did) and now stays `Connected` while any is alive.
+- **Cable out with Wi-Fi possible** = a 12 s handoff window in which State stays Connected while
+  wireless ADB is adopted or the phone — which now pokes its own dialler when its link ends —
+  dials in. Nothing lands: an honest drop.
+- **Backoff** 1, 2, 5, 10, 20, 30 s per endpoint; strong signals (cable, network, resume, BLE,
+  phone dialling in, the user) cut every wait; 5 failures in a row forget the endpoint
+  (`LastHostPort` cleared). The hotspot standby retires after 2 misses when no phone is linked
+  (6 otherwise) and its `adb connect` is limited to 6 s.
+- **One nudge path** `Nudge(LinkSignal, detail)`. Resume is also detected from a stalled 5 s clock
+  tick (works on Modern Standby), and re-publishes the `_linc._tcp` advert.
+- **Phone:** pokes on Wi-Fi joined, screen on, Linc opened and link ended (NFC already did); after a
+  poke it dials at once, then at 1 s and 2 s; dials the address that worked last (remembered,
+  forgotten after 5 misses) before mDNS; races TCP probes for control as it did for channels.
+  `ReconnectPolicy`, 5 unit tests.
+- **Logs:** `LogService` writes any one message (numbers normalised) at most 3 times a minute,
+  then notes how many it held back.
+
+**Protocol unchanged** (v23). **Verified here:** both apps build; 212 Android unit tests;
+linksim, presencesim, hotspotsim (2 pre-existing onboarding-text failures, unrelated, fixed in
+Part 5), onboardsim. **Not verified here:** any of it on the owner's phone and network — the
+before/after numbers for the §2.8 targets need the connection test script and `linksim log`.
