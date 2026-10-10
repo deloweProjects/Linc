@@ -9,6 +9,15 @@ first.
 
 ## [Unreleased]
 
+### Added — 2026-10-10 — Tablet mode in the bubble; APK icon and Material You fixed (1.0.0.3, protocol v22, D-074)
+
+- **Tablet mode** toggle in the PC Remote panel: Windows 11's tablet posture flag (one Windows
+  permission prompt on the PC per switch; only visible on touch-capable PCs), Windows 10's tablet mode.
+- **The app icon is the right size**: the L was drawn ~4x too big and cropped; it now fits the adaptive
+  icon, and follows Android 13+ themed icons.
+- **Material You everywhere**: the bubble and panel use the phone's wallpaper colours, and the app's
+  window follows dark mode (no white flash, dark system dialogs).
+
 ### Fixed — 2026-10-10 — Mirror PC no longer freezes on the bubble; faster start; Voice Access sets up its own microphone (D-071, D-072)
 
 - **Tapping the PC Remote bubble no longer kills Linc.** It was an ANR, not a crash: the bubble's

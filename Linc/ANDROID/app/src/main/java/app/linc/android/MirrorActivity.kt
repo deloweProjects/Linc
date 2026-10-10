@@ -46,6 +46,7 @@ import app.linc.android.service.MirrorSession
 import app.linc.android.service.MirrorSettings
 import app.linc.android.service.MirrorSettings.PointerMode
 import app.linc.android.service.ModifierKeys
+import app.linc.android.service.PcTabletMode
 import app.linc.android.service.PcVoiceAccess
 import app.linc.android.service.PointerGestures
 import app.linc.android.ui.PcRemoteOverlay
@@ -308,6 +309,18 @@ class MirrorActivity : ComponentActivity() {
             touched()
         }
 
+        /**
+         * Windows tablet mode (v22, D-074). On Windows 11 every switch is a machine-wide setting,
+         * so Windows asks for permission on the PC — said up front, since the prompt is on the
+         * secure desktop and never shows in the mirror.
+         */
+        override fun tabletMode() {
+            val s = PcTabletMode.state.value
+            PcTabletMode.set(!s.on)
+            if (s.windows == "11") toast("Approve the Windows prompt on the PC to switch tablet mode.")
+            touched()
+        }
+
         override fun display() = pickDisplay()
         override fun quality() = pickQuality()
         override fun fit() { scale = 1f; applyTransform(); refreshUi() }
@@ -356,6 +369,8 @@ class MirrorActivity : ComponentActivity() {
         ui.soundOn = MirrorSettings.audio(this)
         ui.voiceAccessAvailable = PcVoiceAccess.ready() && PcVoiceAccess.state.value.available
         ui.voiceAccessOn = PcVoiceAccess.state.value.on
+        ui.tabletAvailable = PcTabletMode.ready() && PcTabletMode.state.value.known
+        ui.tabletOn = PcTabletMode.state.value.on
         ui.displays = MirrorSession.displays.value.size
         ui.zoomed = scale > 1f
         ui.picture = MirrorSettings.get(this).label
@@ -381,6 +396,7 @@ class MirrorActivity : ComponentActivity() {
                     applyTransform()
                     if (MirrorSettings.audio(this@MirrorActivity)) MirrorControl.audio(true)
                     PcVoiceAccess.refresh(this@MirrorActivity)
+                    PcTabletMode.refresh()
                     refreshUi()
                 } else {
                     loading.visibility = View.VISIBLE
@@ -430,6 +446,17 @@ class MirrorActivity : ComponentActivity() {
                 } else if (state.on && state.mic != "phone" && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
                     !state.cable && !state.canSetUp) {
                     toast("Voice Access is using the PC's own microphone. Update Linc on the PC so it can set up this phone as its microphone.")
+                }
+            }
+        }
+        lifecycleScope.launch {
+            var first = true
+            PcTabletMode.state.collectLatest { state ->
+                refreshUi()
+                if (first) { first = false; return@collectLatest }
+                state.error?.let { toast("Tablet mode: $it") }
+                if (state.error == null && state.on && state.windows == "11" && !state.touch) {
+                    toast("Tablet mode is on. This PC has no touch screen, so Windows may keep its usual layout.")
                 }
             }
         }

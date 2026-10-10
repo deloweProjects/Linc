@@ -992,3 +992,31 @@ with the screen off Android (and harder still, makers' battery managers) can fre
   reasons for Linc's last process deaths (`getHistoricalProcessExitReasons`), and the log, which is
   now also kept in a ~256 KB file so it survives the app being killed. **Logs → Copy log** (PC)
   copies Linc's version, Windows and the last two days of the PC log.
+
+## D-074: Windows tablet mode from the bubble; the APK icon and Material You fixed
+
+**2026-10-10.** Owner: "add to bubble a tablet mode setting so it makes windows go tablet mode. also
+fix the android apk icon its not in size, also fix the dynamic theme to the apk."
+
+**Tablet mode (protocol v22).** Windows 11 dropped the tablet-mode switch; its tablet layout follows
+the posture flag `HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl\ConvertibleSlateMode` (0 =
+slate, 1 = laptop), normally set by a 2-in-1's hinge sensor, and only takes effect on touch-capable
+convertibles. The owner's laptop reports no digitizer (`SM_DIGITIZER` 0) and already has the flag at 0.
+Offered a virtual phone-sized display or touch-friendly settings instead, the owner chose "try real
+tablet mode anyway". So the bubble's **Tablet mode** toggle writes the flag through one elevated
+`reg.exe` (a UAC prompt on the PC — on the secure desktop, so never in the mirror; the phone says so)
+and broadcasts the `ConvertibleSlateMode` setting change as the sensor driver does. On Windows 10 it
+uses the real per-user tablet mode (`ImmersiveShell\TabletMode` + `UserInteractionMode`), no prompt.
+`pc.tabletmode.state` carries `touch`, and with none the phone warns that Windows may not change.
+The state shown is what Windows has — on this laptop that starts as "on", since the flag is already 0.
+
+**APK icon.** The adaptive foreground was a 432 px PNG in plain `drawable/` (read as mdpi, i.e. 432 dp)
+drawn `gravity="center"` into a 108 dp layer: ~4x too big and cropped. It is now in `drawable-nodpi`
+with `gravity="fill"` (the PNG is a full 108 dp canvas, the L inside the 66 dp safe zone), and doubles as
+the `<monochrome>` layer so Android 13+ themed icons tint it with the wallpaper.
+
+**Dynamic theme.** The app's Compose theme already used Material You, but the PC Remote bubble and
+panel were hard-coded to `darkColorScheme()`, and the window theme was always light
+(`Theme.Material.Light`), so dark mode flashed white and system dialogs came up light. The overlay now
+uses `dynamicDarkColorScheme` (falling back to Linc's dark ramp) and the window theme is
+`Theme.DeviceDefault.DayNight`.

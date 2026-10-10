@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 21
+const val PROTOCOL_VERSION = 22
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -93,6 +93,9 @@ object MessageType {
     const val PC_VOICEACCESS_SET = "pc.voiceaccess.set"     // phone → desktop: start/stop Voice Access (v21)
     const val PC_VOICEACCESS_GET = "pc.voiceaccess.get"     // phone → desktop (v21)
     const val PC_VOICEACCESS_STATE = "pc.voiceaccess.state" // desktop → phone (v21)
+    const val PC_TABLETMODE_SET = "pc.tabletmode.set"       // phone → desktop: Windows tablet mode (v22)
+    const val PC_TABLETMODE_GET = "pc.tabletmode.get"       // phone → desktop (v22)
+    const val PC_TABLETMODE_STATE = "pc.tabletmode.state"   // desktop → phone (v22)
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

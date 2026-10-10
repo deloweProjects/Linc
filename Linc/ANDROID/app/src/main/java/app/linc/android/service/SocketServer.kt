@@ -530,6 +530,7 @@ class SocketServer(
                     MessageType.PC_MIRROR_PONG -> if (negotiated >= 20) MirrorSession.onPong(message.payload)
                     MessageType.PC_DISPLAYS -> if (negotiated >= 14) MirrorSession.onDisplays(message.payload)
                     MessageType.PC_VOICEACCESS_STATE -> if (negotiated >= 21) PcVoiceAccess.onState(message.payload)
+                    MessageType.PC_TABLETMODE_STATE -> if (negotiated >= 22) PcTabletMode.onState(message.payload)
                     // v15: the PC sets the phone's screen orientation (D-055). Bad payload →
                     // internal; WRITE_SETTINGS not granted → not-granted (a plain-language route
                     // to the Settings screen — same wording style as v7 dnd.set).

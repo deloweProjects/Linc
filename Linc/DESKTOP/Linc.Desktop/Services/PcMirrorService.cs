@@ -135,11 +135,24 @@ public sealed class PcMirrorService(
             case MessageType.PcVoiceAccessGet:
                 _ = Task.Run(() => VoiceAccess.SendStateAsync());
                 break;
+
+            // v22 (D-074): Windows tablet mode from the bubble.
+            case MessageType.PcTabletModeSet:
+                bool tablet = (bool?)envelope.Payload["on"] ?? false;
+                _ = Task.Run(() => TabletMode.SetAsync(tablet));
+                break;
+
+            case MessageType.PcTabletModeGet:
+                _ = Task.Run(() => TabletMode.SendStateAsync());
+                break;
         }
     }
 
     private PcVoiceAccess? _voiceAccess;
     private PcVoiceAccess VoiceAccess => _voiceAccess ??= new PcVoiceAccess(connection, log);
+
+    private PcTabletMode? _tabletMode;
+    private PcTabletMode TabletMode => _tabletMode ??= new PcTabletMode(connection, log);
 
     // ---- PC audio (v20, channel 6) ------------------------------------------
 

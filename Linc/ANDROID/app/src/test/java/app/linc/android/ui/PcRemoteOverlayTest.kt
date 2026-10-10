@@ -42,7 +42,7 @@ class PcRemoteOverlayTest {
             LincSymbols.VolumeUp, LincSymbols.VolumeOff, LincSymbols.Display, LincSymbols.Tune,
             LincSymbols.FitScreen, LincSymbols.TaskView, LincSymbols.Home, LincSymbols.Power,
             LincSymbols.Mic, LincSymbols.VoiceAccess, LincSymbols.Close, LincSymbols.Listening,
-            LincSymbols.KeyboardAlt,
+            LincSymbols.KeyboardAlt, LincSymbols.Tablet,
         ).forEach { assertTrue(it.name, it.root.size > 0) }
     }
 }

@@ -44,7 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TonalToggleButton
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,11 +62,14 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.linc.android.service.LinkStats
+import app.linc.android.ui.theme.LincDarkColorScheme
+import app.linc.android.ui.theme.dynamicColorAvailable
 import kotlin.math.roundToInt
 
 /**
@@ -90,6 +93,8 @@ class RemoteUiState {
     var soundOn by mutableStateOf(true)
     var voiceAccessAvailable by mutableStateOf(false)
     var voiceAccessOn by mutableStateOf(false)
+    var tabletAvailable by mutableStateOf(false)
+    var tabletOn by mutableStateOf(false)
     var displays by mutableIntStateOf(1)
     var zoomed by mutableStateOf(false)
     /** Bubble position: which edge, and how far down (0..1). */
@@ -104,6 +109,7 @@ interface RemoteActions {
     fun setAutoKeyboard(on: Boolean)
     fun sound()
     fun voiceAccess()
+    fun tabletMode()
     fun display()
     fun quality()
     fun fit()
@@ -130,7 +136,14 @@ private val Poor = Color(0xFFFF8A80)
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PcRemoteOverlay(state: RemoteUiState, actions: RemoteActions) {
-    MaterialExpressiveTheme(colorScheme = darkColorScheme()) {
+    // Always dark — it floats over the PC picture — but in the phone's own Material You colours,
+    // like the rest of the app (the plain darkColorScheme() it used ignored the wallpaper).
+    val context = LocalContext.current
+    val scheme = remember(context) {
+        if (dynamicColorAvailable) runCatching { dynamicDarkColorScheme(context) }.getOrDefault(LincDarkColorScheme)
+        else LincDarkColorScheme
+    }
+    MaterialExpressiveTheme(colorScheme = scheme) {
         if (!state.visible) return@MaterialExpressiveTheme
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val density = LocalDensity.current
@@ -299,6 +312,7 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                 if (state.soundAvailable) Toggle(state.soundOn, if (state.soundOn) LincSymbols.VolumeUp else LincSymbols.VolumeOff,
                     if (state.soundOn) "Sound" else "Muted") { actions.sound() }
                 if (state.voiceAccessAvailable) Toggle(state.voiceAccessOn, LincSymbols.VoiceAccess, "Voice Access") { actions.voiceAccess() }
+                if (state.tabletAvailable) Toggle(state.tabletOn, LincSymbols.Tablet, "Tablet mode") { actions.tabletMode() }
                 if (state.displays > 1) Toggle(false, LincSymbols.Display, "Display") { actions.display() }
                 Toggle(false, LincSymbols.Tune, state.picture.ifEmpty { "Quality" }) { actions.quality() }
                 if (state.zoomed) Toggle(false, LincSymbols.FitScreen, "Fit") { actions.fit() }

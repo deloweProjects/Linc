@@ -15,6 +15,19 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.3 ("1.0.0-beta.3") — 2026-10-10
+
+Install both apps (protocol v22).
+
+- **Tablet mode** in the PC Remote bubble. On Windows 11 it switches the PC's tablet posture — Windows
+  asks for permission on the PC each time, and it only changes the layout on touch-screen PCs. On
+  Windows 10 it is the real tablet mode.
+- **The app icon is the right size** (it was drawn too big and cropped) and follows themed icons.
+- **Material You everywhere**: the bubble and panel take the phone's wallpaper colours, and the app
+  follows dark mode.
+
+---
+
 ## 1.0.0.2 ("1.0.0-beta.2") — 2026-10-10
 
 Everything since beta.1 that was only in local test builds, plus this round's fixes. Install both
