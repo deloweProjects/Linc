@@ -37,8 +37,15 @@ data class VoiceAccessState(
      * install it itself.
      */
     val setup: String = "",
+    /** While setting up: how much of the download has arrived, 0..100 (100 = installing). */
+    val progress: Int? = null,
     val error: String? = null,
 ) {
+    /** What to tell the user while the PC sets the microphone up. */
+    val setupText: String get() = when {
+        progress != null && progress < 100 -> "Downloading the microphone for the PC… $progress %"
+        else -> "Setting up the microphone… on the PC, approve Windows' prompt (it may be flashing in the taskbar) and click Install Driver."
+    }
     /** The PC could set up the phone-as-microphone itself if asked. */
     val canSetUp: Boolean get() = available && !cable && setup in setOf("needed", "failed")
     val settingUp: Boolean get() = setup == "installing"
@@ -106,6 +113,7 @@ object PcVoiceAccess {
             mic = (payload["mic"] as? JsonPrimitive)?.contentOrNull ?: "pc",
             cable = bool("cable"),
             setup = (payload["setup"] as? JsonPrimitive)?.contentOrNull ?: "",
+            progress = (payload["progress"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull(),
             error = (payload["error"] as? JsonPrimitive)?.contentOrNull,
         )
     }

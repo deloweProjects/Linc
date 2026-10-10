@@ -9,6 +9,15 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-10 — Voice Access microphone setup actually finishes (1.0.0.5, D-071)
+
+- The VB-CABLE download used to time out after 5 minutes on vb-audio.com's slow server and start
+  over each time. It now downloads in parallel ranges, resumes where it stopped, waits as long as
+  data keeps arriving, and accepts a copy you downloaded yourself into Downloads.
+- The phone shows the download's progress, then what to click on the PC.
+- Taps on Voice Access while it is setting up no longer start it on the PC's own microphone.
+- The app icon's L is smaller again.
+
 ### Added — 2026-10-10 — Tablet mode in the bubble; APK icon and Material You fixed (1.0.0.4, protocol v22, D-074)
 
 - **Tablet mode** toggle in the PC Remote panel makes a non-touch PC finger-friendly: the mirrored

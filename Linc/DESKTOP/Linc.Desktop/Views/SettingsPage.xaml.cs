@@ -45,8 +45,11 @@ public sealed partial class SettingsPage : Page
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         CableInstallButton.IsEnabled = false;
-        CableStatus.Text = "Setting up… approve Windows' prompt, then click Install Driver in VB-Audio's setup.";
-        var result = await Task.Run(() => _cable.InstallAsync());
+        CableStatus.Text = "Downloading VB-CABLE…";
+        var progress = new Progress<int>(p => CableStatus.Text = p < 100
+            ? $"Downloading VB-CABLE… {p} %"
+            : "Approve Windows' prompt, then click Install Driver in VB-Audio's setup.");
+        var result = await Task.Run(() => _cable.InstallAsync(progress));
         await RefreshCableAsync(result.Ok ? null : result.Message);
     }
 

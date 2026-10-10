@@ -84,7 +84,7 @@ fun VoiceAccessCard() {
                 when {
                     !ready -> "Update Linc on the PC to use Voice Access from here."
                     !state.available -> "This PC doesn't have Windows Voice Access (Windows 11 22H2 or later)."
-                    state.settingUp -> "Setting up the microphone… on the PC, approve Windows' prompt (it may be flashing in the taskbar) and click Install Driver."
+                    state.settingUp -> state.setupText
                     state.on && micLive -> "On — the PC is listening through this phone. Try \"open Edge\" or \"show numbers\"."
                     state.on -> "On — the PC is listening through its own microphone."
                     else -> "Control the PC by voice: \"click Start\", \"scroll down\", \"type hello\"."

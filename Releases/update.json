@@ -29,15 +29,15 @@
     "",
     "Keys beginning with an underscore are ignored by both parsers."
   ],
-  "latest": "1.0.0.4",
+  "latest": "1.0.0.5",
   "minimumSupported": "1.0.0-beta.1",
-  "notes": "Linc 1.0.0-beta.4 — tablet mode in the PC Remote bubble, a properly sized app icon, and Material You colours throughout.",
+  "notes": "Linc 1.0.0-beta.5 — Voice Access can set up the phone as the PC microphone, tablet mode in the PC Remote bubble, and a neater app icon.",
   "desktop": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.4/Linc-Desktop-1.0.0.4-2026-10-10.zip",
-    "sha256": "0B451652A46D858D0EA099C1145B23DBB530A249053B3FB5D143136097B70444"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.5/Linc-Desktop-1.0.0.5-2026-10-10.zip",
+    "sha256": "65BD9470AE593E6ABB05379EA3A3F5560FB57B1CBEF5C6F0ABED00E0CD993FFE"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.4/Linc-Companion-1.0.0.4-2026-10-10.apk",
-    "sha256": "05DE49DF37B9038C5F29B1B814C7C2D9A8349F6C9D5C9409BE3B4F43D22B17EF"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.5/Linc-Companion-1.0.0.5-2026-10-10.apk",
+    "sha256": "63876CC82C3D6B88CAFCBB48EB27D8621109D64742272E669377D42AC9F01CBC"
   }
 }

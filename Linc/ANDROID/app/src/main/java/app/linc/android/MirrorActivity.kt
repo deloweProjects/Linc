@@ -89,6 +89,7 @@ class MirrorActivity : ComponentActivity() {
     private val ui = RemoteUiState()
     private var phoneKeyboardUp = false
     private var keyboardAutoShown = false
+    private var lastSetupStage = 0
     private var recognizer: SpeechRecognizer? = null
     private var afterMicGranted: (() -> Unit)? = null
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -296,6 +297,11 @@ class MirrorActivity : ComponentActivity() {
         }
 
         override fun voiceAccess() {
+            if (PcVoiceAccess.state.value.settingUp) {
+                toast(PcVoiceAccess.state.value.setupText)
+                touched()
+                return
+            }
             if (!PcVoiceAccess.ready() || !PcVoiceAccess.state.value.available) {
                 toast(if (!PcVoiceAccess.ready()) "Voice Access needs a newer Linc on the PC."
                       else "This PC doesn't have Windows Voice Access (Windows 11 22H2 or later).")
@@ -450,8 +456,14 @@ class MirrorActivity : ComponentActivity() {
                 refreshUi()
                 state.error?.let { toast(it) }
                 if (state.settingUp) {
-                    toast("Setting up the microphone… on the PC, approve Windows' prompt (it may be flashing in the taskbar) and click Install Driver.")
-                } else if (state.on && state.mic != "phone" && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
+                    // One toast when setup starts and one when the installer opens, not every 5 %.
+                    val stage = if ((state.progress ?: 100) >= 100) 2 else 1
+                    if (stage != lastSetupStage) toast(state.setupText)
+                    lastSetupStage = stage
+                } else {
+                    lastSetupStage = 0
+                }
+                if (!state.settingUp && state.on && state.mic != "phone" && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
                     !state.cable && !state.canSetUp) {
                     toast("Voice Access is using the PC's own microphone. Update Linc on the PC so it can set up this phone as its microphone.")
                 }

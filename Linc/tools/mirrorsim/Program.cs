@@ -484,6 +484,81 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         a.True(VirtualCablePackage.Url.StartsWith("https://download.vb-audio.com/"), "fetched from the maker over HTTPS, never bundled");
     });
 
+    yield return ("D-071 virtual cable download: ranged, survives a flaky server, resumes", a =>
+    {
+        // The real pack, served from localhost the way vb-audio.com behaved on 2026-10-10: slow,
+        // and failing now and then. LINC_VBCABLE_ZIP points at a verified copy; no copy, no test.
+        var source = Environment.GetEnvironmentVariable("LINC_VBCABLE_ZIP");
+        if (source is null || !File.Exists(source)) { Console.WriteLine("    LINC_VBCABLE_ZIP not set; skipped"); return; }
+        var pack = File.ReadAllBytes(source);
+        a.True(VirtualCablePackage.HashMatches(pack, VirtualCablePackage.Sha256), "the test copy is the pinned pack");
+
+        int port = 47000 + Random.Shared.Next(1000);
+        using var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+        listener.Start();
+        int requests = 0, fullBodyRequests = 0;
+        var serving = Task.Run(async () =>
+        {
+            while (listener.IsListening)
+            {
+                System.Net.HttpListenerContext ctx;
+                try { ctx = await listener.GetContextAsync(); } catch { return; }
+                _ = Task.Run(async () =>
+                {
+                    int n = Interlocked.Increment(ref requests);
+                    var range = ctx.Request.Headers["Range"];
+                    if (range is null) { Interlocked.Increment(ref fullBodyRequests); }
+                    if (n % 3 == 0) { ctx.Response.StatusCode = 500; ctx.Response.Close(); return; }   // flaky
+                    await Task.Delay(150);                                                                // slow
+                    var span = range!.Replace("bytes=", "").Split('-');
+                    long start = long.Parse(span[0]), end = long.Parse(span[1]);
+                    ctx.Response.StatusCode = 206;
+                    ctx.Response.Headers["Content-Range"] = $"bytes {start}-{end}/{pack.Length}";
+                    ctx.Response.ContentLength64 = end - start + 1;
+                    try { await ctx.Response.OutputStream.WriteAsync(pack.AsMemory((int)start, (int)(end - start + 1))); } catch { }
+                    ctx.Response.Close();
+                });
+            }
+        });
+
+        var folder = Path.Combine(Path.GetTempPath(), "linc-cable-test-" + Guid.NewGuid().ToString("N"));
+        var log = new ConsoleLog();
+        var setup = new VirtualCableSetup(log, () => false, $"http://127.0.0.1:{port}/pack.zip", folder);
+        try
+        {
+            // First attempt: stopped part-way, as if the PC slept or Linc was closed.
+            using var stop = new CancellationTokenSource();
+            int seen = 0;
+            var first = new Progress<int>(p => { seen = Math.Max(seen, p); if (p >= 40) stop.Cancel(); });
+            try { setup.FetchPackAsync(first, stop.Token).GetAwaiter().GetResult(); a.True(false, "the first attempt should have been stopped"); }
+            catch (OperationCanceledException) { }
+            var kept = Directory.Exists(Path.Combine(folder, "parts")) ? Directory.GetFiles(Path.Combine(folder, "parts")).Length : 0;
+            a.True(kept > 0 && kept < VirtualCablePackage.Chunks(VirtualCablePackage.Bytes).Count, $"a stopped download keeps what it got ({kept} ranges)");
+
+            // Second attempt carries on and produces the exact pinned file.
+            int before = requests;
+            int last = 0;
+            var zip = setup.FetchPackAsync(new Progress<int>(p => last = p), CancellationToken.None).GetAwaiter().GetResult();
+            Thread.Sleep(200); // let the last progress callback land
+            a.True(VirtualCablePackage.HashMatches(File.ReadAllBytes(zip), VirtualCablePackage.Sha256), "the resumed download is the pinned pack, byte for byte");
+            a.True(requests - before < 2 * VirtualCablePackage.Chunks(VirtualCablePackage.Bytes).Count, "only the missing ranges were fetched again (with retries)");
+            a.Equal(100, last, "progress reaches 100 %");
+            a.Equal(0, fullBodyRequests, "never asks for the whole file in one go");
+            a.True(!Directory.Exists(Path.Combine(folder, "parts")), "the pieces are cleaned up once the pack is whole");
+
+            // Already there: a third call does no network at all.
+            int quiet = requests;
+            setup.FetchPackAsync(null, CancellationToken.None).GetAwaiter().GetResult();
+            a.Equal(quiet, requests, "a verified copy on disk is used without downloading again");
+        }
+        finally
+        {
+            listener.Stop();
+            try { Directory.Delete(folder, recursive: true); } catch { }
+        }
+    });
+
     yield return ("v20 audio: PC sound is captured and AAC-encoded live", a =>
     {
         int rate;

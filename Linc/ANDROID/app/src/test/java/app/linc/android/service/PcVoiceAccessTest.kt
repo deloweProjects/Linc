@@ -47,6 +47,13 @@ class PcVoiceAccessTest {
         PcVoiceAccess.onState(buildJsonObject { put("available", true); put("cable", true); put("setup", "ready") })
         assertFalse(PcVoiceAccess.state.value.canSetUp)
 
+        // While downloading the phone shows how far it has got, then what to do on the PC.
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("setup", "installing"); put("progress", 40) })
+        assertEquals(40, PcVoiceAccess.state.value.progress)
+        assertTrue("40 %" in PcVoiceAccess.state.value.setupText)
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("setup", "installing"); put("progress", 100) })
+        assertTrue("Install Driver" in PcVoiceAccess.state.value.setupText)
+
         // An older PC never sends "setup": the phone must not offer what it can't do.
         PcVoiceAccess.onState(buildJsonObject { put("available", true); put("cable", false) })
         assertFalse(PcVoiceAccess.state.value.canSetUp)

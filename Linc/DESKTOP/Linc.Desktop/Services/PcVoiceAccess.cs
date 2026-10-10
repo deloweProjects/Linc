@@ -70,6 +70,13 @@ public sealed class PcVoiceAccess : IDisposable
     /// <summary>Handle the phone's <c>pc.voiceaccess.set</c>; always answers with the resulting state.</summary>
     public async Task SetAsync(bool on, bool phoneMic, bool installCable = false)
     {
+        // While the microphone is being set up, nothing else happens: a second tap used to start
+        // Voice Access on the PC's own mic halfway through the download.
+        if (CableSetup.IsBusy)
+        {
+            await SendStateAsync(setup: "installing", progress: _progress);
+            return;
+        }
         string mic = "pc";
         bool cable = false;
         string? error = null;
@@ -92,8 +99,18 @@ public sealed class PcVoiceAccess : IDisposable
                 {
                     // The user agreed on the phone: set the cable up now (D-071). The phone
                     // shows "setting up the microphone…" while Windows asks on the PC.
-                    await SendStateAsync("pc", cable: false, setup: "installing");
-                    var result = await CableSetup.InstallAsync();
+                    _progress = 0;
+                    await SendStateAsync("pc", cable: false, setup: "installing", progress: 0);
+                    // Tell the phone how the download is going, in 5 % steps.
+                    int lastSent = 0;
+                    var progress = new Progress<int>(p =>
+                    {
+                        _progress = p;
+                        if (p - lastSent < 5 && p < 100) return;
+                        lastSent = p;
+                        _ = SendStateAsync("pc", cable: false, setup: "installing", progress: p);
+                    });
+                    var result = await CableSetup.InstallAsync(progress);
                     _setupState = result.Ok ? null : "failed";
                     if (result.Ok) pair = FindCable();
                     else error = result.Message;
@@ -119,7 +136,10 @@ public sealed class PcVoiceAccess : IDisposable
         await SendStateAsync(mic, cable, error, setup);
     }
 
-    public Task SendStateAsync(string? mic = null, bool? cable = null, string? error = null, string? setup = null)
+    /// <summary>The download's percentage while the cable is being set up.</summary>
+    private volatile int _progress;
+
+    public Task SendStateAsync(string? mic = null, bool? cable = null, string? error = null, string? setup = null, int? progress = null)
     {
         bool running = Running;
         bool hasCable = cable ?? CablePresent();
@@ -132,6 +152,7 @@ public sealed class PcVoiceAccess : IDisposable
             // v21 addition (D-071): whether the PC can set the cable up itself, and how it's going.
             ["setup"] = setup ?? (CableSetup.IsBusy ? "installing" : hasCable ? "ready" : _setupState ?? "needed"),
         };
+        if (CableSetup.IsBusy || progress is not null) payload["progress"] = progress ?? _progress;
         if (error is not null) payload["error"] = error;
         return _connection.SendToPhoneAsync(Envelope.Create(MessageType.PcVoiceAccessState, payload), CancellationToken.None);
     }

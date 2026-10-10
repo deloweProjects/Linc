@@ -13,10 +13,10 @@ The hash you get must match the line below exactly. If it does not, the file is
 damaged or has been tampered with - do not run it.
 
 
-1.0.0.4 ("1.0.0-beta.4", 2026-10-10, release v1.0.0.4):
+1.0.0.5 ("1.0.0-beta.5", 2026-10-10, release v1.0.0.5):
 
-0B451652A46D858D0EA099C1145B23DBB530A249053B3FB5D143136097B70444  Linc-Desktop-1.0.0.4-2026-10-10.zip
-05DE49DF37B9038C5F29B1B814C7C2D9A8349F6C9D5C9409BE3B4F43D22B17EF  Linc-Companion-1.0.0.4-2026-10-10.apk
+65BD9470AE593E6ABB05379EA3A3F5560FB57B1CBEF5C6F0ABED00E0CD993FFE  Linc-Desktop-1.0.0.5-2026-10-10.zip
+63876CC82C3D6B88CAFCBB48EB27D8621109D64742272E669377D42AC9F01CBC  Linc-Companion-1.0.0.5-2026-10-10.apk
 
 1.0.0.2 ("1.0.0-beta.2", 2026-10-10, release v1.0.0.2):
 
@@ -31,8 +31,8 @@ AB2039D25C8DABAA22ADCBC18FC087AF63D4B52958FF42C1E7B5FF361F203B33  Linc-Companion
 
 File sizes (bytes), as a second check:
 
-    Linc-Desktop-1.0.0.4-2026-10-10.zip     173171633
-    Linc-Companion-1.0.0.4-2026-10-10.apk    29777434
+    Linc-Desktop-1.0.0.5-2026-10-10.zip     173176727
+    Linc-Companion-1.0.0.5-2026-10-10.apk    29777434
     Linc-Desktop-1.0.0.2-2026-10-10.zip     173163761
     Linc-Companion-1.0.0.2-2026-10-10.apk    29762309
     Linc-Desktop-1.0.0-beta.1.zip     170997273

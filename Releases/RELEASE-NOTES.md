@@ -15,9 +15,14 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.4 ("1.0.0-beta.4") — 2026-10-10
+## 1.0.0.5 ("1.0.0-beta.5") — 2026-10-10
 
-(1.0.0.3 was a local test build and was never released.)
+(1.0.0.3 and 1.0.0.4 were local test builds and were never released.)
+
+- **Voice Access's microphone setup now finishes.** The download from vb-audio.com used to give up
+  after 5 minutes on that server's slow connection; it now downloads in pieces, picks up where it
+  stopped, and shows its progress on the phone. A copy you downloaded yourself into Downloads works too.
+- The app icon's L is smaller.
 
 Install both apps (protocol v22).
 

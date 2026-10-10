@@ -943,6 +943,24 @@ Tested: package pin and setup selection (`mirrorsim` "D-071 virtual cable"), pho
 the old-PC fallback (`PcVoiceAccessTest`). **Not** run here: the install itself (it changes the
 owner's drivers) — an owner check.
 
+**Fixed 2026-10-10 (1.0.0.5) — the setup never got past the download.** The owner: "the voice access
+pc setup its bad, doesnt work right". The PC log showed both attempts ending in "HttpClient.Timeout
+of 300 seconds elapsing": vb-audio.com serves one connection at a crawl (it took parallel ranges to
+fetch it here at all), the single GET had a fixed 5-minute limit, and nothing was kept, so each retry
+started from zero. Taps during the download also went through as ordinary Voice Access requests and
+started it on the PC's own mic. Now:
+- the pack (pinned at 1,318,877 bytes) comes down as 64 KB ranges over 8 connections, each range
+  retried, each finished range kept in `drivers\vb-cable-45\parts` so a later attempt resumes; it gives
+  up only after 2 minutes with *no* progress, with a message that says it kept what it got;
+- a browser download of the same file in the user's Downloads is used once its SHA-256 matches;
+- the phone shows "Downloading the microphone for the PC… N %" (state `progress`, sent in 5 % steps),
+  then the Install Driver instruction; desktop Settings shows the same;
+- while setup runs, other Voice Access requests only re-send the state.
+`mirrorsim` "D-071 virtual cable download" serves the real pack from a localhost server that is slow
+and fails every third request, stops the download at 40 %, and checks the resume fetches only the
+missing ranges and yields the pinned file byte for byte. On the owner's PC the verified pack was put
+in Linc's cache directly, so the next setup goes straight to VB-Audio's installer.
+
 ## D-072: The bubble "crash" was an ANR from a concave shadow; channels dial back by racing
 
 **2026-10-10.** Owner: Mirror PC "slow to load, laggy, and tapping the bubble crashes the app and
@@ -1030,8 +1048,8 @@ after a crash. The panel's buttons are keyed and always present (Tablet mode fir
 moves under a finger; Voice Access explains itself when the PC can't do it. `pc.tabletmode.state` is
 now `{on, scale?, windows, error?}`.
 
-The icon's L was then shrunk further at the owner's request ("still a lil big"): 20 x 38 dp on the
-108 dp canvas, centred, well inside the 66 dp safe zone for every mask shape.
+The icon's L was then shrunk further at the owner's request, twice ("still a lil big", "reduce the
+app icon l again"): now 15 x 28 dp on the 108 dp canvas, centred, rendered from the original art.
 
 **APK icon.** The adaptive foreground was a 432 px PNG in plain `drawable/` (read as mdpi, i.e. 432 dp)
 drawn `gravity="center"` into a 108 dp layer: ~4x too big and cropped. It is now in `drawable-nodpi`
