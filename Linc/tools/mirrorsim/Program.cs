@@ -601,6 +601,17 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         a.True(true, "the microphone-in-use records read without error");
     });
 
+    yield return ("D-078 adb serials: wireless links are never mistaken for a USB cable", a =>
+    {
+        // The exact serials one phone had in a friend's first setup.
+        a.True(!AdbSerial.IsNetwork("131722549O000808"), "the USB serial is USB");
+        a.True(AdbSerial.IsNetwork("192.168.1.61:34521"), "IPv4 wireless debugging is network");
+        a.True(AdbSerial.IsNetwork("[2605:59c1:343f:b210:bca1:fdff:fee0:d6cf]:33705"), "IPv6 wireless debugging is network");
+        a.True(AdbSerial.IsNetwork("adb-131722549O000808-hiwood._adb-tls-connect._tcp"), "the mDNS name from wireless pairing is network");
+        a.True(AdbSerial.IsNetwork("adb-2C141FDH20089M-abc._adb._tcp"), "the older mDNS form is network");
+        a.True(!AdbSerial.IsNetwork("emulator-5554") && !AdbSerial.IsNetwork("") && !AdbSerial.IsNetwork(null), "everything else is not");
+    });
+
     yield return ("v20 audio: PC sound is captured and AAC-encoded live", a =>
     {
         int rate;

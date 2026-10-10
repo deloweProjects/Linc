@@ -59,7 +59,22 @@ public sealed class AdbServerHost : IAdbServerHost
     {
         if (_started)
         {
-            return;
+            // Started once is not running now (D-078): the server can die — killed by another
+            // tool, or crashing mid-pairing — and a cached "started" sent every later pairing and
+            // connect to a dead port ("actively refused 127.0.0.1:5038", a dozen times in a row
+            // during a friend's first setup). Ask it, and start it again if it is gone.
+            try
+            {
+                if ((await AdbServer.Instance.GetStatusAsync(ct)).IsRunning)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Can't tell: treat as gone and start it, which is harmless if it was running.
+            }
+            _started = false;
         }
         var adbPath = AdbPath
             ?? throw new LincException(

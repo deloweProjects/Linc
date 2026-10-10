@@ -15,9 +15,15 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.8 ("1.0.0-beta.8") — 2026-10-10
+## 1.0.0.9 ("1.0.0-beta.9") — 2026-10-10
 
-(1.0.0.3 to 1.0.0.7 were local test builds and were never released.) Install both apps (protocol v23).
+(1.0.0.3 to 1.0.0.8 were local test builds and were never released.) Install both apps (protocol v23).
+
+- **First setup and adding a phone are reliable**: Linc restarts its connection engine if it has
+  stopped, recognises a phone paired over Wi-Fi as wireless (not a USB cable it then thinks was
+  pulled), and no longer cuts the brand-new connection straight after setup.
+- **One phone stays one phone**: its saved apps, photos and messages no longer split into several
+  copies depending on how it connected.
 
 - **Mirror PC on Intel graphics**: encoders that won't take the screen's pixels directly get a picture
   converted on the GPU; a failed start no longer blocks every retry.

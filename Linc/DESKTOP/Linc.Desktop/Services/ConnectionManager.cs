@@ -10,7 +10,16 @@ public enum LinkTransport { AdbUsb, AdbWireless, DirectTls }
 
 public sealed record ConnectedDevice(
     string Model, string Serial, string SerialNo, CompanionHello Companion,
-    LinkTransport Transport = LinkTransport.AdbWireless);
+    LinkTransport Transport = LinkTransport.AdbWireless)
+{
+    /// <summary>
+    /// The phone's own identity for everything stored per phone (D-078): its hardware serial, the
+    /// same key the device registry uses — not <see cref="Serial"/>, which is whatever adb calls
+    /// this connection (USB serial, IPv4/IPv6 host:port, mDNS name) and changes with the route.
+    /// Keyed by route, one phone became four cached "phones", re-downloading every app icon each time.
+    /// </summary>
+    public string CacheKey => string.IsNullOrEmpty(SerialNo) ? Serial : SerialNo;
+}
 
 public interface IConnectionManager
 {
@@ -335,7 +344,7 @@ public sealed class ConnectionManager(
             companion.MessageReceived += envelope => CompanionMessageReceived?.Invoke(envelope);
             _companion = companion;
             RawDevice = device;
-            var transport = serial.Contains(':') ? LinkTransport.AdbWireless : LinkTransport.AdbUsb;
+            var transport = AdbSerial.IsNetwork(serial) ? LinkTransport.AdbWireless : LinkTransport.AdbUsb;
             Current = new ConnectedDevice(model, serial, serialNo, hello, transport);
             if (hello.V >= 9)
             {

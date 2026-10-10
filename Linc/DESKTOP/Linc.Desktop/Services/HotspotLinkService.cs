@@ -370,9 +370,18 @@ public sealed class HotspotLinkService(
 
             // M13c §2.3: an optimisation layered on top, never depended on. Only worth doing
             // when adbd is on some other port; it is already where we want it otherwise.
+            // But never while the live link to the phone rides on wireless debugging: `tcpip`
+            // restarts adbd, which cut a friend's brand-new link 10 s after first setup (D-078).
             if (port != HotspotConnector.AdbTcpPort)
             {
-                await promotion.PromoteAsync(result.Endpoint, ct);
+                if (connection.Current?.Transport == LinkTransport.AdbWireless)
+                {
+                    log.Log(LogLevel.Info, $"Not moving {result.Endpoint} to port {HotspotConnector.AdbTcpPort} now: the link to the phone runs over wireless debugging, and the move restarts it.");
+                }
+                else
+                {
+                    await promotion.PromoteAsync(result.Endpoint, ct);
+                }
             }
 
             StartHealthLoop(result.Endpoint, expectedSerial);

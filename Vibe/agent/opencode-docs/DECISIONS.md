@@ -1149,3 +1149,29 @@ Oppo/Realme/OnePlus, Vivo), **Auto-start** opening that screen (falls back to ap
 ECONNABORTED end is followed in the log by the plain-language reason. And a direct dial the PC turns
 away at once (it was already linked over ADB) now counts as a miss, so the phone backs off to 30 s
 instead of redialling every 3 s.
+
+## D-078: First setup, adding and removing phones — four bugs from one setup log
+
+**2026-10-10.** Owner: "fix what happens when i remove device or try to add another or first set up
+… it breaks, struggles to connect". A friend's first setup (21:28–21:44) showed each of these:
+
+1. **Linc's ADB service died and was never restarted.** `AdbServerHost.EnsureRunningAsync` cached
+   `_started = true` after the first start, so once the server on 5038 was gone every pairing and
+   connect went to a dead port ("actively refused 127.0.0.1:5038", a dozen times). It now asks the
+   server whether it is running (`GetStatusAsync`) and starts it again if not; a failed pairing call
+   restarts it and retries once, since the code is still unused.
+2. **Wireless links were taken for USB cables.** `ConnectionManager` called any serial without a
+   colon USB, and `UsbWatcherService` any serial that wasn't IPv4 `host:port`, so the mDNS name wireless
+   pairing produces (`adb-…._adb-tls-connect._tcp`) and IPv6 addresses (`[2605:…]:33705`) were
+   "USB" — the link was labelled USB, and the USB watcher declared the "cable" pulled when the serial
+   changed. One classifier, `AdbSerial.IsNetwork`, is used by both (mirrorsim "D-078 adb serials",
+   with the exact serials from the log).
+3. **Linc cut its own fresh link.** The fixed-port promotion (`adb tcpip 5555`, M13c) restarts adbd,
+   and it ran right after a wireless link came up — under the companion link riding on it, which went
+   "device offline" 10 s after "Onboarding complete". It is skipped while the live link is
+   ADB-wireless.
+4. **One phone, four cached phones.** Per-phone caches (Home photos/messages/calls/media, the app
+   catalog, Sync) were keyed by the adb serial of the route — USB serial, IPv4, IPv6, mDNS — while the
+   registry and the cache *load* used the hardware serial. Each new route looked like a new phone and
+   re-downloaded every app icon (the 64-icon burst that tripped D-076's dial-back bug). They now use
+   `ConnectedDevice.CacheKey`, the hardware serial.

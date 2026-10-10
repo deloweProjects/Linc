@@ -9,6 +9,13 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-10 — First setup, adding and removing phones (1.0.0.9, D-078)
+
+- Linc restarts its own ADB service when it has died, instead of failing every pairing after it.
+- A phone paired over Wi-Fi is no longer mistaken for a USB cable (and then "unplugged").
+- Linc no longer restarts wireless debugging under a link that is using it, right after setup.
+- One phone is one phone: its saved apps, photos and messages no longer split by how it connected.
+
 ### Fixed — 2026-10-10 — Mirror PC on Intel graphics; the phone stays connected (1.0.0.8, D-077)
 
 - Mirror PC feeds encoders that won't take the screen's pixels directly (Intel Quick Sync) a
