@@ -1009,6 +1009,11 @@ and broadcasts the `ConvertibleSlateMode` setting change as the sensor driver do
 uses the real per-user tablet mode (`ImmersiveShell\TabletMode` + `UserInteractionMode`), no prompt.
 `pc.tabletmode.state` carries `touch`, and with none the phone warns that Windows may not change.
 The state shown is what Windows has — on this laptop that starts as "on", since the flag is already 0.
+The button is always in the panel: the owner first tested against a still-running 1.0.0.2 desktop (v21)
+and saw no button at all, so with an older PC it now explains instead of hiding.
+
+The icon's L was then shrunk further at the owner's request ("still a lil big"): 20 x 38 dp on the
+108 dp canvas, centred, well inside the 66 dp safe zone for every mask shape.
 
 **APK icon.** The adaptive foreground was a 432 px PNG in plain `drawable/` (read as mdpi, i.e. 432 dp)
 drawn `gravity="center"` into a 108 dp layer: ~4x too big and cropped. It is now in `drawable-nodpi`

@@ -315,6 +315,12 @@ class MirrorActivity : ComponentActivity() {
          * secure desktop and never shows in the mirror.
          */
         override fun tabletMode() {
+            // Shown even to an older PC, so the button isn't mysteriously missing — it says why.
+            if (!PcTabletMode.ready()) {
+                toast("Tablet mode needs Linc 1.0.0.3 or newer on the PC. Quit Linc on the PC and run the new version.")
+                touched()
+                return
+            }
             val s = PcTabletMode.state.value
             PcTabletMode.set(!s.on)
             if (s.windows == "11") toast("Approve the Windows prompt on the PC to switch tablet mode.")
@@ -369,7 +375,7 @@ class MirrorActivity : ComponentActivity() {
         ui.soundOn = MirrorSettings.audio(this)
         ui.voiceAccessAvailable = PcVoiceAccess.ready() && PcVoiceAccess.state.value.available
         ui.voiceAccessOn = PcVoiceAccess.state.value.on
-        ui.tabletAvailable = PcTabletMode.ready() && PcTabletMode.state.value.known
+        ui.tabletAvailable = true
         ui.tabletOn = PcTabletMode.state.value.on
         ui.displays = MirrorSession.displays.value.size
         ui.zoomed = scale > 1f
