@@ -36,27 +36,6 @@ public sealed partial class OnboardingView : UserControl
         }
     }
 
-    private void OnPrimaryButtonClick(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel == null)
-            return;
-
-        switch (ViewModel.Step)
-        {
-            case OnboardingStep.Intro:
-                ViewModel.StartCommand.Execute(null);
-                break;
-            case OnboardingStep.EnableDebugging:
-                ViewModel.BeginDetectionCommand.Execute(null);
-                break;
-            case OnboardingStep.Done:
-                OnCloseRequested();
-                break;
-            default:
-                break;
-        }
-    }
-
     private void OnCancelButtonClick(object sender, RoutedEventArgs e)
     {
         OnCloseRequested();

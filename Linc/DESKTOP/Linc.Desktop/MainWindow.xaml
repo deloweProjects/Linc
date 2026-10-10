@@ -95,7 +95,7 @@
                                     BorderThickness="0"
                                     Padding="4"
                                     MinWidth="0"
-                                    ToolTipService.ToolTip="Close this tab (the phone stays paired)">
+                                    ToolTipService.ToolTip="Close or remove this phone">
                                     <FontIcon Glyph="&#xE8BB;" FontSize="11" />
                                 </Button>
                                 <!-- Which phone the pages are showing. -->
@@ -118,8 +118,8 @@
                     Background="Transparent"
                     BorderThickness="0"
                     AutomationProperties.AutomationId="AddDeviceButton"
-                    AutomationProperties.Name="Pair another phone"
-                    ToolTipService.ToolTip="Pair another phone">
+                    AutomationProperties.Name="Add a phone"
+                    ToolTipService.ToolTip="Add a phone, or bring back one you closed">
                     <FontIcon Glyph="&#xE710;" FontSize="13" />
                 </Button>
             </StackPanel>
@@ -138,11 +138,11 @@
                 Click="OnPairPhone"
                 Visibility="{x:Bind Tabs.IsStripHidden, Mode=OneWay}"
                 AutomationProperties.AutomationId="PairPhoneButton"
-                AutomationProperties.Name="Pair a phone"
-                ToolTipService.ToolTip="Set up your phone">
+                AutomationProperties.Name="Add a phone"
+                ToolTipService.ToolTip="Add a phone, or bring back one you closed">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <FontIcon Glyph="&#xE710;" FontSize="13" />
-                    <TextBlock Text="Pair a phone" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
+                    <TextBlock Text="Add a phone" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
                 </StackPanel>
             </Button>
 

@@ -181,6 +181,15 @@ public interface IDeviceRegistry
     /// <summary>Hides a device's tab without unpairing it (closing a tab ≠ forgetting — D-033).</summary>
     void SetDeviceHidden(string serial, bool hidden);
 
+    /// <summary>
+    /// No phone is active (D-079): the last open tab was closed. The phone stays paired and
+    /// known (hidden), nothing is connected, and the add-a-phone flow brings it back.
+    /// </summary>
+    void ClearActiveDevice();
+
+    /// <summary>True when a known phone's tab was closed — it isn't reconnected on its own.</summary>
+    bool IsHidden(string serial);
+
     /// <summary>Removes one device from the list (closing its tab is not this — that's explicit forget).</summary>
     void ForgetKnownDevice(string serial);
 }
@@ -506,6 +515,21 @@ public sealed class DeviceRegistry : IDeviceRegistry
         SyncLanesChanged?.Invoke(); // the new device's lanes are (probably) different ones
     }
 
+    public void ClearActiveDevice()
+    {
+        if (PairedSerial is null)
+        {
+            return;
+        }
+        PairedSerial = null;
+        PairedModel = null;
+        Persist();
+        ActiveDeviceChanged?.Invoke();
+    }
+
+    public bool IsHidden(string serial) =>
+        _knownDevices.FirstOrDefault(d => string.Equals(d.Serial, serial, StringComparison.OrdinalIgnoreCase)) is { Hidden: true };
+
     public void SetDeviceHidden(string serial, bool hidden)
     {
         var index = _knownDevices.FindIndex(d => d.Serial == serial);
@@ -525,7 +549,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
             if (PairedSerial == serial)
             {
                 // The active phone was forgotten: fall back to another known one, or nothing.
-                var next = _knownDevices.FirstOrDefault(d => !d.Hidden) ?? _knownDevices.FirstOrDefault();
+                // Only an open tab takes over; a closed one stays closed (D-079), so forgetting the last
+                // open phone leaves "no phone selected" rather than reviving one the user put away.
+                var next = _knownDevices.FirstOrDefault(d => !d.Hidden);
                 PairedSerial = next?.Serial;
                 PairedModel = next?.Model;
                 ActiveDeviceChanged?.Invoke();

@@ -85,7 +85,10 @@ public interface IConnectionSupervisor : IDisposable
     Task ConnectUsbManualAsync(DeviceData device);
 
     /// <summary>Trust the next connect advert regardless of serial — call right after pairing.</summary>
-    void ExpectNextDevice();
+    void ExpectNextDevice(bool newPhoneOnly = false);
+
+    /// <summary>The add-a-phone flow was closed: stop expecting, and resume normal reconnecting.</summary>
+    void StopExpecting();
 
     void RequestDisconnect();
     void ResumeAutomatic();
@@ -121,6 +124,13 @@ public sealed class ConnectionSupervisor(
     private readonly Dictionary<string, (int Failures, DateTime NextAttemptUtc)> _backoff = [];
     private CancellationTokenSource? _healthCts;
     private bool _expectAny;
+
+    /// <summary>
+    /// The add-a-phone flow is adding a NEW phone (D-079): while set, phones this PC already knows
+    /// are not adopted — over USB, Wi-Fi discovery or a direct dial-in — so a known phone that
+    /// happens to be nearby can't win the race and be reported as the one just added.
+    /// </summary>
+    private bool _expectNewOnly;
     private bool _started;
     private int _recovering;
 
@@ -230,6 +240,7 @@ public sealed class ConnectionSupervisor(
             connection.Disconnect();
             Device = null;
             _expectAny = false;
+            _expectNewOnly = false;
             _backoff.Clear(); // a different phone shouldn't inherit the old one's penalty box
             LastRttMs = null;
             ConnectedAtUtc = null;
@@ -251,13 +262,21 @@ public sealed class ConnectionSupervisor(
     public Task ConnectManualAsync(string hostPort) => ConnectAsync(hostPort, manual: true);
     public Task ConnectUsbManualAsync(DeviceData device) => ConnectUsbAsync(device, manual: true);
 
-    public void ExpectNextDevice()
+    public void ExpectNextDevice(bool newPhoneOnly = false)
     {
         _expectAny = true;
+        _expectNewOnly = newPhoneOnly;
         if (State is LinkState.NoDevice or LinkState.Paused)
         {
             SetState(LinkState.Searching);
         }
+    }
+
+    public void StopExpecting()
+    {
+        _expectAny = false;
+        _expectNewOnly = false;
+        ResumeAutomatic();
     }
 
     public void RequestDisconnect()
@@ -269,6 +288,7 @@ public sealed class ConnectionSupervisor(
             connection.Disconnect();
             Device = null;
             _expectAny = false;
+            _expectNewOnly = false;
             SetState(LinkState.Paused);
         }
         finally
@@ -331,6 +351,11 @@ public sealed class ConnectionSupervisor(
         if (!_expectAny && !matchesPairedPhone && returning is null)
         {
             return;
+        }
+        if (_expectNewOnly && (matchesPairedPhone ||
+            DeviceAdmission.RecogniseKnown(service.InstanceName, KnownSerials(), contains: true) is not null))
+        {
+            return; // adding a new phone (D-079): a known one nearby must not win the race
         }
         if (returning is not null)
         {
@@ -453,6 +478,10 @@ public sealed class ConnectionSupervisor(
             return;
         }
         var knownSerial = registry.PairedSerial;
+        if (_expectNewOnly && DeviceAdmission.RecogniseKnown(device.Serial, KnownSerials()) is not null)
+        {
+            return; // adding a new phone (D-079): known phones wait
+        }
         if (knownSerial is not null && device.Serial == knownSerial)
         {
             // The paired phone over USB: connect when idle, or switch to it from a lower-priority
@@ -496,6 +525,12 @@ public sealed class ConnectionSupervisor(
         if (DeviceAdmission.RecogniseKnown(device.Serial, KnownSerials()) is { } returning &&
             DeviceAdmission.MayAdoptKnownPhone(Activity(State)))
         {
+            // A phone whose tab the user closed stays closed (D-079): plugging it in doesn't
+            // re-adopt it behind their back. The add-a-phone flow (expecting) or picking it does.
+            if (registry.IsHidden(returning) && !_expectAny)
+            {
+                return;
+            }
             if (!IsBackedOff(device.Serial ?? ""))
             {
                 log.Log(LogLevel.Info, $"Recognised {ModelOf(returning)} over USB — a phone this PC already knows; connecting.");
@@ -620,6 +655,7 @@ public sealed class ConnectionSupervisor(
                 }
                 registry.SaveLastHostPort(address.Trim());
                 _expectAny = false;
+                _expectNewOnly = false;
                 _backoff.Remove(address);
                 ConnectedAtUtc = DateTimeOffset.UtcNow;
                 if (_hasConnectedOnce)
@@ -673,7 +709,19 @@ public sealed class ConnectionSupervisor(
                 }
                 // Any known phone can now authenticate (TlsTransportService), so say which one
                 // this is before adopting it: the adopt reads model/serial from the active record.
-                if (IdentifyTlsPhone(stream) is { } phone && phone.Serial != registry.PairedSerial)
+                var dialler = IdentifyTlsPhone(stream);
+                if (_expectNewOnly)
+                {
+                    stream.Dispose(); // only known phones dial in directly; adding a new one (D-079)
+                    return;
+                }
+                if (dialler is { } closed && closed.Serial != registry.PairedSerial &&
+                    registry.IsHidden(closed.Serial) && !_expectAny)
+                {
+                    stream.Dispose(); // its tab was closed (D-079); the phone backs off and retries later
+                    return;
+                }
+                if (dialler is { } phone && phone.Serial != registry.PairedSerial)
                 {
                     log.Log(LogLevel.Info, $"Recognised {phone.Model} dialling in directly — a phone this PC already knows.");
                     registry.SavePairedDevice(phone.Serial, phone.Model);
@@ -738,6 +786,7 @@ public sealed class ConnectionSupervisor(
                     registry.SavePairedDevice(Device.SerialNo, Device.Model);
                 }
                 _expectAny = false;
+                _expectNewOnly = false;
                 _backoff.Remove(device.Serial);
                 ConnectedAtUtc = DateTimeOffset.UtcNow;
                 if (_hasConnectedOnce)

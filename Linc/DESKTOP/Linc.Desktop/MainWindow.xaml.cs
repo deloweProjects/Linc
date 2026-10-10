@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
         // the phone, installs the companion and saves it as a tab. This replaces M2a's "navigate to
         // the Device page and start pairing", so the whole first-run story is one consistent flow.
         Tabs.AddDeviceRequested += () => Shell.IsOnboarding = true;
+        Tabs.CloseRequested += tab => _ = ConfirmCloseTabAsync(tab);
         // M12c-amend Part C: the non-wizard install-confirmation gate. MainWindow's Content is
         // the one XamlRoot that outlives whichever page is on screen, so the dialog can show
         // regardless of which page a background reconnect happens to interrupt.
@@ -201,6 +202,36 @@ public sealed partial class MainWindow : Window
     // The lone "pair a phone" button that stands in for the tab strip when no phone is paired
     // (M2b zero-device entry). Same destination as the strip's "+" and Home's CTA.
     private void OnPairPhone(object sender, RoutedEventArgs e) => Shell.IsOnboarding = true;
+
+    /// <summary>
+    /// The tab X (D-079): say what closing does before doing it. Disconnect and close keeps the
+    /// pairing; Remove forgets the phone; Cancel does nothing.
+    /// </summary>
+    private async Task ConfirmCloseTabAsync(DeviceTabViewModel tab)
+    {
+        bool connected = Tabs.IsConnected(tab);
+        var dialog = new ContentDialog
+        {
+            Title = $"Close {tab.Model}?",
+            Content = (connected ? $"Linc will disconnect from {tab.Model}. " : "") +
+                $"It stays paired: bring it back any time with + → \"Phones you've used before\" — no pairing needed.\n\n" +
+                "Remove it instead if you don't want it on this PC any more (you'd pair it again to use it).",
+            PrimaryButtonText = connected ? "Disconnect and close" : "Close",
+            SecondaryButtonText = "Remove completely",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        switch (await dialog.ShowAsync())
+        {
+            case ContentDialogResult.Primary:
+                Tabs.DisconnectAndClose(tab);
+                break;
+            case ContentDialogResult.Secondary:
+                Tabs.Remove(tab);
+                break;
+        }
+    }
 
     private void OnNavLoaded(object sender, RoutedEventArgs e)
     {

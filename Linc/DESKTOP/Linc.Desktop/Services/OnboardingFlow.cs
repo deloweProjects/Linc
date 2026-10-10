@@ -1,56 +1,72 @@
 namespace Linc.Desktop.Services;
 
-/// <summary>The onboarding wizard's five plain-language stages (M2b).</summary>
+/// <summary>
+/// The add-a-phone flow's stages (D-079). One front door for first setup, adding another phone
+/// and bringing back one that was closed: choose how, prepare (if pairing is needed), check the
+/// connection, done — and "done" says whether the phone was new or already added.
+/// </summary>
 public enum OnboardingStep
 {
-    /// <summary>"Let's connect your phone."</summary>
-    Intro,
+    /// <summary>Pick a phone you've used before, or how to connect a new one (USB / Wi-Fi / already set up).</summary>
+    Choose,
 
-    /// <summary>Turn on USB + Wireless debugging on the phone.</summary>
-    EnableDebugging,
+    /// <summary>New phone over a cable: turn on USB debugging and plug in.</summary>
+    PrepareUsb,
 
-    /// <summary>Watch for the phone over USB, or pair wirelessly with the QR / code.</summary>
-    DetectPair,
+    /// <summary>New phone over Wi-Fi: turn on Wireless debugging, then scan the QR or type the code.</summary>
+    PrepareWifi,
 
-    /// <summary>The ADB link is up; the desktop is installing + starting the companion.</summary>
-    Install,
+    /// <summary>Linc is finding and connecting the phone (and installing the companion if needed).</summary>
+    Checking,
 
-    /// <summary>The companion answered and the phone is saved. "You're all set."</summary>
+    /// <summary>Connected: "Added X" or "X was already added — connected again".</summary>
     Done,
 }
 
+/// <summary>How the user said they want to connect, on the Choose screen.</summary>
+public enum OnboardingRoute { Usb, Wifi, AlreadySetUp, KnownPhone }
+
 /// <summary>
-/// The wizard's step transitions as pure functions — no WinUI, no services — so the state machine
-/// can be exercised headlessly by a console harness (tools/onboardsim) while <see cref="ViewModels"/>
-/// just calls into it. Every transition is a no-op unless it applies to the current step, which is
-/// what makes the flow safe to re-drive (idempotent Back/BeginDetection, out-of-order events).
+/// The flow's transitions as pure functions — no WinUI, no services — so tools/onboardsim can drive
+/// it headlessly. Every transition is a no-op unless it applies to the current step, so the flow is
+/// safe to re-drive with repeated or out-of-order events.
 /// </summary>
 public static class OnboardingFlow
 {
-    /// <summary>Intro → EnableDebugging (the "Get started" button).</summary>
-    public static OnboardingStep Start(OnboardingStep current) =>
-        current == OnboardingStep.Intro ? OnboardingStep.EnableDebugging : current;
-
-    /// <summary>EnableDebugging → DetectPair (arm detection and show the QR).</summary>
-    public static OnboardingStep BeginDetection(OnboardingStep current) =>
-        current == OnboardingStep.EnableDebugging ? OnboardingStep.DetectPair : current;
-
-    /// <summary>One step back, where a back step exists (DetectPair → EnableDebugging → Intro).</summary>
-    public static OnboardingStep Back(OnboardingStep current) => current switch
-    {
-        OnboardingStep.DetectPair => OnboardingStep.EnableDebugging,
-        OnboardingStep.EnableDebugging => OnboardingStep.Intro,
-        _ => current,
-    };
+    /// <summary>Choose → the route's next screen. Known phones and "already set up" skip pairing.</summary>
+    public static OnboardingStep Choose(OnboardingStep current, OnboardingRoute route) =>
+        current != OnboardingStep.Choose ? current : route switch
+        {
+            OnboardingRoute.Usb => OnboardingStep.PrepareUsb,
+            OnboardingRoute.Wifi => OnboardingStep.PrepareWifi,
+            _ => OnboardingStep.Checking,
+        };
 
     /// <summary>
-    /// The ADB link came up (supervisor Connecting): move into the install screen, but only from
-    /// the detect screen — a Connecting blip during a later reconnect must not drag the finished
-    /// wizard backwards.
+    /// The phone showed up (USB seen, wireless pairing succeeded, or "my phone is ready"):
+    /// from a prepare screen to Checking.
     /// </summary>
-    public static OnboardingStep Connecting(OnboardingStep current) =>
-        current == OnboardingStep.DetectPair ? OnboardingStep.Install : current;
+    public static OnboardingStep PhoneFound(OnboardingStep current) =>
+        current is OnboardingStep.PrepareUsb or OnboardingStep.PrepareWifi ? OnboardingStep.Checking : current;
 
-    /// <summary>The companion answered (supervisor Connected): the flow is finished, from anywhere.</summary>
-    public static OnboardingStep Connected(OnboardingStep current) => OnboardingStep.Done;
+    /// <summary>Back to the choice, from any screen before Done.</summary>
+    public static OnboardingStep Back(OnboardingStep current) =>
+        current is OnboardingStep.PrepareUsb or OnboardingStep.PrepareWifi or OnboardingStep.Checking
+            ? OnboardingStep.Choose
+            : current;
+
+    /// <summary>
+    /// The phone is connected: Done — but never from Choose. A link that was already up when the
+    /// flow opened (or reconnects underneath it) must not make it declare a phone added before the
+    /// user has picked anything.
+    /// </summary>
+    public static OnboardingStep Connected(OnboardingStep current) =>
+        current == OnboardingStep.Choose ? current : OnboardingStep.Done;
+
+    /// <summary>
+    /// What Done says: a phone whose hardware serial was known before the flow opened was
+    /// already added; anything else is new.
+    /// </summary>
+    public static bool WasAlreadyAdded(string? serial, IEnumerable<string> knownBefore) =>
+        !string.IsNullOrEmpty(serial) && knownBefore.Contains(serial, StringComparer.OrdinalIgnoreCase);
 }

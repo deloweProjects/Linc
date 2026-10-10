@@ -15,9 +15,14 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.9 ("1.0.0-beta.9") — 2026-10-10
+## 1.0.0.10 ("1.0.0-beta.10") — 2026-10-11
 
-(1.0.0.3 to 1.0.0.8 were local test builds and were never released.) Install both apps (protocol v23).
+(1.0.0.3 to 1.0.0.9 were local test builds and were never released.) Install both apps (protocol v23).
+
+- **Adding and removing phones flows properly.** Closing a phone's tab asks whether to disconnect
+  (it stays paired) or remove it. "Add a phone" lets you pick a phone you've used before, or add a new
+  one by USB, Wi-Fi QR code, or "already set up"; it checks the connection and tells you whether the
+  phone was new or already added.
 
 - **First setup and adding a phone are reliable**: Linc restarts its connection engine if it has
   stopped, recognises a phone paired over Wi-Fi as wireless (not a USB cable it then thinks was

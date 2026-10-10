@@ -31,10 +31,10 @@
     -->
     <!-- From 1.0.0.2 (display name 1.0.0-beta.2): numeric four-part versions, the same on both
          apps, because the update check ignores anything after a "-" (M20 A2). -->
-    <Version>1.0.0.9</Version>
-    <AssemblyVersion>1.0.0.9</AssemblyVersion>
-    <FileVersion>1.0.0.9</FileVersion>
-    <InformationalVersion>1.0.0.9</InformationalVersion>
+    <Version>1.0.0.10</Version>
+    <AssemblyVersion>1.0.0.10</AssemblyVersion>
+    <FileVersion>1.0.0.10</FileVersion>
+    <InformationalVersion>1.0.0.10</InformationalVersion>
     <Product>Linc</Product>
     <AssemblyTitle>Linc</AssemblyTitle>
     <Company>Linc</Company>

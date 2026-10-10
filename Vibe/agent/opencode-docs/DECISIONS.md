@@ -1175,3 +1175,40 @@ instead of redialling every 3 s.
    registry and the cache *load* used the hardware serial. Each new route looked like a new phone and
    re-downloaded every app icon (the 64-icon burst that tripped D-076's dial-back bug). They now use
    `ConnectedDevice.CacheKey`, the hardware serial.
+
+## D-079: One flow for adding, re-adding and closing phones
+
+**2026-10-11.** Owner: "the ui is broken when i x a device, disconnect it and add a no devices and
+select old pixel the ui isnt flowing … let user choose connection type and allow skip if already
+paired then screen that checks if connected, know which is new, if its readding old device say device
+already added etc then allow continue … figure out a proper logic sequence for this".
+
+**What was broken.** Closing a tab only hid it: the closed phone stayed the *active* phone and stayed
+connected, so with the last tab closed the pages showed a phone the strip no longer had. A closed
+phone was also re-adopted on its own the next time it was plugged in or dialled in directly. The
+wizard was Intro → "turn on debugging" → detect/QR → install → done, with no way to bring back a
+known phone, skip pairing, or tell a new phone from one already added; adding a phone while another
+was connected stalled behind the confirmation card.
+
+**The sequence now.**
+- **Tab X** asks first: *Disconnect and close* (stays paired), *Remove completely* (forget), *Cancel*.
+  Closing the active tab moves to another open one; closing the last clears the active phone
+  (`IDeviceRegistry.ClearActiveDevice`) so nothing is connected and the title bar offers "Add a phone".
+- **Closed stays closed.** The supervisor doesn't auto-adopt a hidden phone over USB or a direct
+  dial-in unless the add flow is expecting a phone; forgetting the active phone only falls back to an
+  open tab.
+- **Add a phone** (`OnboardingFlow`, D-079 steps): **Choose** — "Phones you've used before" (pick to
+  reconnect, no pairing; un-hides and activates it) and "A new phone": USB cable, Wi-Fi (QR or code),
+  or "It's already set up — just connect" (skips pairing). If a phone is connected it says that
+  connecting another disconnects it. → **Prepare USB / Prepare Wi-Fi** (USB advances by itself when
+  the phone appears; Wi-Fi when pairing succeeds) → **Checking** (live status: looking / connecting —
+  setting up / …; after 25 s, route-specific hints and "Try another way") → **Done**: "Added X" or
+  "X was already added — connected again" (hardware serial against the phones known when the flow
+  opened), then Continue. Back from any screen returns to Choose.
+- **New phones win.** Adding a *new* phone first releases the connected one and arms the supervisor in
+  a new-phone-only mode (`ExpectNextDevice(newPhoneOnly: true)`): known phones aren't adopted over
+  USB, Wi-Fi discovery or direct dial-in until it connects, so a nearby known phone can't be the one
+  "added". Leaving the flow before Done calls `StopExpecting()`, back to normal reconnecting.
+
+`tools/onboardsim` covers every transition, the skips, Back, out-of-order events and the new-vs-
+already-added rule (all green). The UI itself is a hands-on owner check.

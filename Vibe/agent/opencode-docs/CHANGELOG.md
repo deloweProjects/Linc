@@ -9,6 +9,14 @@ first.
 
 ## [Unreleased]
 
+### Changed — 2026-10-11 — Adding, re-adding and closing phones flow properly (1.0.0.10, D-079)
+
+- Closing a phone's tab asks first: disconnect and close, remove completely, or cancel. Closing the
+  last one really disconnects; a closed phone isn't reconnected behind your back.
+- "Add a phone" starts with a choice: phones you've used before (reconnect, no pairing), or a new one
+  by USB, Wi-Fi QR, or "already set up". Then a checking screen, then "Added X" or "X was already
+  added", and Continue.
+
 ### Fixed — 2026-10-10 — First setup, adding and removing phones (1.0.0.9, D-078)
 
 - Linc restarts its own ADB service when it has died, instead of failing every pairing after it.

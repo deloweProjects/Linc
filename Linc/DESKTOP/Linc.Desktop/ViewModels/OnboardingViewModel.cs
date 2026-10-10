@@ -1,4 +1,5 @@
-﻿using System.IO;
+using System.Collections.ObjectModel;
+using System.IO;
 using AdvancedSharpAdbClient.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -10,18 +11,40 @@ using QRCoder;
 
 namespace Linc.Desktop.ViewModels;
 
+/// <summary>A phone this PC already knows, offered on the Choose screen.</summary>
+public sealed class KnownPhoneOption
+{
+    public KnownPhoneOption(string serial, string model, string detail, Action<KnownPhoneOption> pick)
+    {
+        Serial = serial;
+        Model = model;
+        Detail = detail;
+        // On the item so the DataTemplate can x:Bind it directly.
+        PickCommand = new RelayCommand(() => pick(this));
+    }
+
+    public string Serial { get; }
+    public string Model { get; }
+    public string Detail { get; }
+    public RelayCommand PickCommand { get; }
+}
+
 /// <summary>
-/// The guided first-run front door (M2b). It doesn't reinvent connecting — it wraps the machinery
-/// that already exists (PairingService for the QR/code, the supervisor's auto-connect, and
-/// PhoneSetupService's install+grant+start that ConnectionManager already runs on every connect)
-/// with plain-language, step-by-step copy and every ADB state translated.
+/// The one front door for phones (D-079): first setup, adding another, and bringing back one
+/// that was closed. Choose → (Prepare USB | Prepare Wi-Fi) → Checking → Done.
 ///
-/// Re-runnable: each run arms the supervisor for the next phone it sees, so a second run pairs an
-/// <i>additional</i> device (it becomes another tab). A phone that already has the companion skips
-/// straight through the install stage because EnsureReadyAsync no-ops in a few milliseconds.
-///
-/// Transient (one per wizard open); <see cref="Dispose"/> detaches every subscription so a closed
-/// wizard leaves no listeners on the singleton services behind.
+/// <list type="bullet">
+/// <item><b>Choose</b> lists the phones this PC already knows (reconnect, no pairing) and the ways
+/// to add a new one — USB cable, Wi-Fi (QR or code), or "already set up" to skip pairing. If a phone
+/// is connected it says plainly that adding another disconnects it.</item>
+/// <item><b>Checking</b> watches the real connection and says what is happening; after a while
+/// without progress it shows what to check and offers another way.</item>
+/// <item><b>Done</b> knows whether the phone is new or was already added (its hardware serial
+/// against the phones known when the flow opened) and says so.</item>
+/// </list>
+/// It wraps the existing machinery (pairing, the supervisor, PhoneSetupService) rather than
+/// reinventing it. Transient: <see cref="Dispose"/> detaches everything and, if the flow was left
+/// before finishing, puts the supervisor back to normal reconnecting.
 /// </summary>
 public partial class OnboardingViewModel : ObservableObject, IDisposable
 {
@@ -33,10 +56,15 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     private readonly IDeviceRegistry _registry;
     private readonly ILogService _log;
     private readonly DispatcherQueue _dispatcher;
+    private readonly HashSet<string> _knownBefore;
+    private readonly DispatcherQueueTimer _slowTimer;
 
     private PairingSession? _qrSession;
     private DiscoveredService? _pairingPhone;
+    private OnboardingRoute? _route;
+    private string? _target;   // the known phone picked, if that was the route
     private bool _armed;
+    private bool _finished;
     private bool _disposed;
 
     public OnboardingViewModel(
@@ -56,42 +84,65 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         _registry = registry;
         _log = log;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
+        _knownBefore = new HashSet<string>(registry.KnownDevices.Select(d => d.Serial), StringComparer.OrdinalIgnoreCase);
 
         PairingCode = "";
         PairingPhoneText = "";
-        UsbStatusText = "";
+        CheckingTitle = "Looking for your phone…";
+        CheckingDetail = "";
+        DoneTitle = "";
+        DoneDetail = "";
+
+        foreach (var device in registry.KnownDevices)
+        {
+            // The phone that is connected right now needs no reconnecting.
+            if (device.Serial == registry.PairedSerial && supervisor.State == LinkState.Connected)
+            {
+                continue;
+            }
+            var detail = device.Hidden ? "Closed — pick it to bring it back" : "Paired — pick it to connect";
+            KnownPhones.Add(new KnownPhoneOption(device.Serial, device.Model, detail, PickKnown));
+        }
+        _slowTimer = _dispatcher.CreateTimer();
+        _slowTimer.Interval = TimeSpan.FromSeconds(25);
+        _slowTimer.IsRepeating = false;
+        _slowTimer.Tick += (_, _) => ShowSlowHints = Step == OnboardingStep.Checking;
 
         _supervisor.StateChanged += OnSupervisorStateChanged;
         _discovery.PairingServiceSeen += OnPairingServiceSeen;
         _usbWatcher.UsbDeviceSeen += OnUsbDeviceSeen;
     }
 
-    // ---- Step state machine ----
+    // ---- Step state ----
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsIntro), nameof(IsEnableDebugging), nameof(IsDetectPair),
-        nameof(IsInstall), nameof(IsDone), nameof(PrimaryText), nameof(ShowPrimary), nameof(ShowBack))]
-    public partial OnboardingStep Step { get; set; } = OnboardingStep.Intro;
+    [NotifyPropertyChangedFor(nameof(IsChoose), nameof(IsPrepareUsb), nameof(IsPrepareWifi), nameof(IsChecking),
+        nameof(IsDone), nameof(ShowBack), nameof(CancelText))]
+    public partial OnboardingStep Step { get; set; } = OnboardingStep.Choose;
 
-    public bool IsIntro => Step == OnboardingStep.Intro;
-    public bool IsEnableDebugging => Step == OnboardingStep.EnableDebugging;
-    public bool IsDetectPair => Step == OnboardingStep.DetectPair;
-    public bool IsInstall => Step == OnboardingStep.Install;
+    public bool IsChoose => Step == OnboardingStep.Choose;
+    public bool IsPrepareUsb => Step == OnboardingStep.PrepareUsb;
+    public bool IsPrepareWifi => Step == OnboardingStep.PrepareWifi;
+    public bool IsChecking => Step == OnboardingStep.Checking;
     public bool IsDone => Step == OnboardingStep.Done;
+    public bool ShowBack => Step is OnboardingStep.PrepareUsb or OnboardingStep.PrepareWifi or OnboardingStep.Checking;
+    public string CancelText => Step == OnboardingStep.Done ? "Close" : "Cancel";
 
-    /// <summary>The dialog's own primary button; empty text hides it (detect/install just wait).</summary>
-    public string PrimaryText => Step switch
-    {
-        OnboardingStep.Intro => "Get started",
-        OnboardingStep.EnableDebugging => "My phone is ready",
-        OnboardingStep.Done => "Finish",
-        _ => "",
-    };
+    // ---- Choose ----
 
-    public bool ShowPrimary => PrimaryText.Length > 0;
-    public bool ShowBack => Step is OnboardingStep.EnableDebugging or OnboardingStep.DetectPair;
+    public ObservableCollection<KnownPhoneOption> KnownPhones { get; } = [];
+    public bool HasKnownPhones => KnownPhones.Count > 0;
 
-    // ---- Bound state ----
+    /// <summary>"Adding another phone disconnects Pixel 7" — said before anything is chosen.</summary>
+    public string ConnectedNowText => _supervisor.State == LinkState.Connected && _supervisor.Device is { } d
+        ? $"{d.Model} is connected now. Linc works with one phone at a time, so connecting another disconnects {d.Model} (it stays paired)."
+        : "";
+
+    public bool ShowConnectedNow => ConnectedNowText.Length > 0;
+
+    public bool ApkMissing => _setup.LocateApk() is null;
+
+    // ---- Wi-Fi pairing ----
 
     [ObservableProperty]
     public partial ImageSource? QrImage { get; set; }
@@ -104,12 +155,6 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     public partial string PairingPhoneText { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasUsbStatus))]
-    public partial string UsbStatusText { get; set; }
-
-    public bool HasUsbStatus => UsbStatusText.Length > 0;
-
-    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError), nameof(CanPairWithCode))]
     public partial string? ErrorMessage { get; set; }
 
@@ -120,59 +165,128 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     public bool HasError => ErrorMessage is not null;
     public bool CanPairWithCode => _pairingPhone is not null && PairingCode.Trim().Length >= 6 && !IsBusy;
 
-    /// <summary>The model the wizard finished on, for the "You're all set" line.</summary>
-    public string ConnectedModel => _supervisor.Device?.Model ?? _registry.PairedModel ?? "your phone";
+    // ---- Checking / Done ----
 
-    /// <summary>
-    /// M15c A2: adding a phone from onboarding while one is already connected will disconnect it —
-    /// said here, before the user picks up a cable, not after the first link vanishes.
-    /// </summary>
-    public string OneAtATimeText => DeviceAdmission.OneAtATimeNotice(
-        _supervisor.State == LinkState.Connected ? _supervisor.Device?.Model ?? _supervisor.Device?.Serial : null) ?? "";
+    [ObservableProperty]
+    public partial string CheckingTitle { get; set; }
 
-    public bool ShowOneAtATimeNote => OneAtATimeText.Length > 0;
+    [ObservableProperty]
+    public partial string CheckingDetail { get; set; }
 
-    /// <summary>Warn up front when there's no APK to install (a desktop-only build).</summary>
-    public bool ApkMissing => _setup.LocateApk() is null;
+    [ObservableProperty]
+    public partial bool ShowSlowHints { get; set; }
 
-    /// <summary>Raised when the wizard should close (cancel or finish).</summary>
+    public string SlowHintsText => _route switch
+    {
+        OnboardingRoute.Usb => "Taking a while? Check the cable carries data (some are charge-only), unlock the phone, and tap Allow on \"Allow USB debugging?\". Still nothing — try Wi-Fi instead.",
+        OnboardingRoute.Wifi => "Taking a while? Keep the phone on the Wireless debugging screen, on the same Wi-Fi as this PC, and scan the QR again — or try a cable.",
+        OnboardingRoute.KnownPhone => "Taking a while? Unlock the phone and open Linc on it, check it's on the same Wi-Fi as this PC (or plug it in), and make sure Wireless debugging is still on.",
+        _ => "Taking a while? Open Linc on the phone and check it's on the same Wi-Fi as this PC — or plug it in. If it was never paired with this PC, go back and add it as a new phone.",
+    };
+
+    [ObservableProperty]
+    public partial string DoneTitle { get; set; }
+
+    [ObservableProperty]
+    public partial string DoneDetail { get; set; }
+
+    /// <summary>Raised when the flow should close (cancel, finish).</summary>
     public event Action? CloseRequested;
 
-    // ---- Navigation commands ----
+    // ---- Choose commands ----
 
     [RelayCommand]
-    private void Start() => Step = OnboardingFlow.Start(Step);
+    private void ChooseUsb() => Go(OnboardingRoute.Usb);
 
     [RelayCommand]
-    private void Back() => Step = OnboardingFlow.Back(Step);
+    private void ChooseWifi() => Go(OnboardingRoute.Wifi);
 
-    /// <summary>
-    /// EnableDebugging → DetectPair: arm the supervisor for the next phone it sees and show the QR.
-    /// Idempotent, so re-entering the step (Back then forward) doesn't double-arm.
-    /// </summary>
     [RelayCommand]
-    private void BeginDetection()
+    private void ChooseAlreadySetUp() => Go(OnboardingRoute.AlreadySetUp);
+
+    /// <summary>A phone this PC already knows: un-close it, make it active, and wait for it.</summary>
+    private void PickKnown(KnownPhoneOption option)
     {
-        Arm();
-        Step = OnboardingFlow.BeginDetection(Step);
+        _target = option.Serial;
+        _route = OnboardingRoute.KnownPhone;
+        ErrorMessage = null;
+        _registry.SetDeviceHidden(option.Serial, hidden: false);
+        if (_registry.PairedSerial != option.Serial)
+        {
+            _registry.SetActiveDevice(option.Serial); // the supervisor drops the old link and hunts this one
+        }
+        else
+        {
+            _supervisor.ResumeAutomatic();
+        }
+        _supervisor.NudgeReconnect($"Reconnecting {option.Model} from the add-a-phone screen");
+        _log.Log(LogLevel.Info, $"Add a phone: reconnecting {option.Model}, a phone this PC already knows.");
+        CheckingTitle = $"Connecting {option.Model}…";
+        CheckingDetail = "It's already paired, so there's nothing to set up — just finding it on Wi-Fi or USB.";
+        EnterChecking(OnboardingFlow.Choose(Step, OnboardingRoute.KnownPhone));
     }
 
-    private void Arm()
+    /// <summary>A new phone (or "already set up"): get the supervisor ready for it.</summary>
+    private void Go(OnboardingRoute route)
     {
-        if (_armed)
-        {
-            return;
-        }
-        _armed = true;
+        _route = route;
+        _target = null;
         ErrorMessage = null;
-        _log.Log(LogLevel.Info, "Onboarding: watching for a phone to connect (USB or wireless pairing).");
-        _qrSession = _pairing.CreateQrSession();
-        QrImage = CreateQrImage(_qrSession.QrText);
-        _pairingPhone = null;
-        PairingPhoneText = "Waiting for your phone…";
-        // Trust the next phone that appears (USB or the just-paired wireless one) instead of
-        // popping the "unknown USB device" confirmation card the Device page shows.
-        _supervisor.ExpectNextDevice();
+        Arm(newPhoneOnly: route != OnboardingRoute.AlreadySetUp);
+        var next = OnboardingFlow.Choose(Step, route);
+        if (next == OnboardingStep.Checking)
+        {
+            CheckingTitle = "Looking for your phone…";
+            CheckingDetail = "Open Linc on the phone. Linc connects over Wi-Fi or USB, whichever it finds first.";
+            _supervisor.NudgeReconnect("Looking for an already set-up phone");
+            EnterChecking(next);
+        }
+        else
+        {
+            Step = next;
+        }
+    }
+
+    private void Arm(bool newPhoneOnly)
+    {
+        if (!_armed)
+        {
+            _armed = true;
+            _log.Log(LogLevel.Info, "Add a phone: watching for a phone to connect (USB or wireless pairing).");
+            _qrSession = _pairing.CreateQrSession();
+            QrImage = CreateQrImage(_qrSession.QrText);
+            _pairingPhone = null;
+            PairingPhoneText = "Waiting for your phone…";
+        }
+        // Connecting a new phone while another is connected: let go of that one first, so the new
+        // one isn't held up behind it or asked about in a card.
+        if (newPhoneOnly && _supervisor.State == LinkState.Connected)
+        {
+            _supervisor.RequestDisconnect();
+        }
+        _supervisor.ExpectNextDevice(newPhoneOnly);
+    }
+
+    private void EnterChecking(OnboardingStep step)
+    {
+        Step = step;
+        ShowSlowHints = false;
+        OnPropertyChanged(nameof(SlowHintsText));
+        _slowTimer.Stop();
+        _slowTimer.Start();
+        // Already connected to exactly what was asked for (e.g. it reconnected the moment it was picked).
+        if (_supervisor.State == LinkState.Connected) CheckConnected();
+    }
+
+    // ---- Prepare commands ----
+
+    /// <summary>"My phone is plugged in" on the USB screen.</summary>
+    [RelayCommand]
+    private void PhoneReady()
+    {
+        CheckingTitle = "Looking for your phone…";
+        CheckingDetail = "Accept \"Allow USB debugging?\" on the phone if it asks.";
+        EnterChecking(OnboardingFlow.PhoneFound(Step));
     }
 
     [RelayCommand]
@@ -185,37 +299,33 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private void Back()
+    {
+        _slowTimer.Stop();
+        ShowSlowHints = false;
+        ErrorMessage = null;
+        Step = OnboardingFlow.Back(Step);
+    }
+
+    [RelayCommand]
     private void Finish() => CloseRequested?.Invoke();
 
     [RelayCommand]
     private void Cancel() => CloseRequested?.Invoke();
 
-    // ---- Detection / pairing (reuses the Device-page machinery) ----
+    // ---- Events from the machinery ----
 
     private void OnUsbDeviceSeen(DeviceData device)
     {
         _dispatcher.TryEnqueue(() =>
         {
-            if (_disposed || Step is OnboardingStep.Intro)
+            if (_disposed) return;
+            if (Step == OnboardingStep.PrepareUsb)
             {
-                return; // don't yank the user out of the welcome screen
-            }
-            // A phone is visible over USB, so debugging is clearly already on: skip the "turn it on"
-            // instructions and move to the detect screen (step b's "detect if it's already on and
-            // skip ahead"). We never jump to "You're all set" from here — success only comes from a
-            // real connection transition the supervisor reports (OnSupervisorStateChanged), so an
-            // ALREADY-connected phone can't make the wizard falsely declare a fresh pairing done.
-            if (Step is OnboardingStep.EnableDebugging)
-            {
-                BeginDetection();
-            }
-            if (Step is OnboardingStep.DetectPair && _supervisor.State != LinkState.Connected)
-            {
-                // A phone this PC has connected before is a returning phone, not a new one: say
-                // so, so nobody thinks Linc is about to add a second copy of it.
-                UsbStatusText = DeviceAdmission.RecogniseKnown(device.Serial, _registry.KnownDevices.Select(d => d.Serial)) is { } known
-                    ? $"Welcome back — {_registry.KnownDevices.First(d => d.Serial == known).Model} is already known to this PC. Reconnecting it (no new pairing needed)…"
-                    : "Phone detected over USB — connecting…";
+                // Debugging is on and the cable is in: no need to press anything.
+                CheckingTitle = "Phone found over USB — connecting…";
+                CheckingDetail = "Accept \"Allow USB debugging?\" on the phone if it asks.";
+                EnterChecking(OnboardingFlow.PhoneFound(Step));
             }
         });
     }
@@ -224,16 +334,11 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     {
         _dispatcher.TryEnqueue(() =>
         {
-            if (_disposed || !_armed || IsBusy)
-            {
-                return;
-            }
+            if (_disposed || Step != OnboardingStep.PrepareWifi || IsBusy) return;
             _pairingPhone = service;
             PairingPhoneText = $"Phone found at {service.IpAddress}:{service.Port}.";
             OnPropertyChanged(nameof(CanPairWithCode));
-
-            // QR flow: the phone advertises the instance name from the QR we showed, so pairing
-            // completes hands-free with the QR's password.
+            // QR: the phone advertises the name from our QR, so pairing finishes hands-free.
             if (_qrSession is not null && service.InstanceName == _qrSession.ServiceName)
             {
                 _ = PairCoreAsync(service, _qrSession.Password);
@@ -248,8 +353,10 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         try
         {
             await _pairing.PairAsync(phone.IpAddress, phone.Port, code, CancellationToken.None);
-            PairingPhoneText = "Paired. Connecting to your phone…";
-            _supervisor.ExpectNextDevice(); // adopt the first advert this phone now sends
+            _supervisor.ExpectNextDevice(newPhoneOnly: true); // adopt the first advert this phone now sends
+            CheckingTitle = "Paired — connecting to your phone…";
+            CheckingDetail = "Linc is setting up its companion app on the phone. Nothing to tap.";
+            EnterChecking(OnboardingFlow.PhoneFound(Step));
         }
         catch (LincException ex)
         {
@@ -263,38 +370,42 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
 
     private void OnSupervisorStateChanged() => _dispatcher.TryEnqueue(() =>
     {
-        if (_disposed || !_armed)
-        {
-            return;
-        }
-        OnPropertyChanged(nameof(OneAtATimeText));
-        OnPropertyChanged(nameof(ShowOneAtATimeNote));
+        if (_disposed) return;
+        OnPropertyChanged(nameof(ConnectedNowText));
+        OnPropertyChanged(nameof(ShowConnectedNow));
+        if (Step != OnboardingStep.Checking) return;
         switch (_supervisor.State)
         {
-            case LinkState.Connecting when Step is OnboardingStep.DetectPair:
-                // The ADB link is up; ConnectionManager is now installing/granting/starting the
-                // companion inside this connect (M01). Show that as its own reassuring stage.
-                UsbStatusText = "";
-                Step = OnboardingFlow.Connecting(Step);
+            case LinkState.Connecting:
+                CheckingTitle = "Connecting — setting up your phone…";
+                CheckingDetail = "Installing or starting the Linc companion and turning on its permissions. Nothing to tap.";
                 break;
             case LinkState.Connected:
-                MoveToDone();
+                CheckConnected();
                 break;
         }
     });
 
-    // MoveToDone() routes through OnboardingFlow.Connected too, keeping every transition in one place.
-
-    private void MoveToDone()
+    /// <summary>Connected: finish — saying whether this phone is new or was already added.</summary>
+    private void CheckConnected()
     {
-        if (Step == OnboardingStep.Done)
-        {
-            return;
-        }
-        ErrorMessage = null;
-        OnPropertyChanged(nameof(ConnectedModel));
+        if (_supervisor.Device is not { } device) return;
+        // Picked a known phone but a different one answered: keep waiting for the one asked for.
+        if (_target is not null && !string.Equals(device.CacheKey, _target, StringComparison.OrdinalIgnoreCase)) return;
+
+        _slowTimer.Stop();
+        ShowSlowHints = false;
+        _finished = true;
+        _registry.SetDeviceHidden(device.CacheKey, hidden: false); // it's a tab again, whatever route
+        bool already = OnboardingFlow.WasAlreadyAdded(device.CacheKey, _knownBefore);
+        DoneTitle = already ? $"{device.Model} was already added" : $"Added {device.Model}";
+        DoneDetail = already
+            ? "It's connected again — nothing new was set up. Its tab is at the top."
+            : "It's connected and saved as a tab at the top. Linc reconnects to it by itself from now on — over Wi-Fi, or whenever it's plugged in.";
         Step = OnboardingFlow.Connected(Step);
-        _log.Log(LogLevel.Info, $"Onboarding complete: {ConnectedModel} is connected and saved.");
+        _log.Log(LogLevel.Info, already
+            ? $"Add a phone: {device.Model} was already added; connected again."
+            : $"Add a phone: added {device.Model}.");
     }
 
     private static BitmapImage CreateQrImage(string text)
@@ -310,13 +421,17 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
+        if (_disposed) return;
         _disposed = true;
+        _slowTimer.Stop();
         _supervisor.StateChanged -= OnSupervisorStateChanged;
         _discovery.PairingServiceSeen -= OnPairingServiceSeen;
         _usbWatcher.UsbDeviceSeen -= OnUsbDeviceSeen;
+        // Left before finishing: stop expecting a phone and go back to normal reconnecting, so a
+        // cancelled "add" can't leave the link paused or waiting for a phone nobody is adding.
+        if (_armed && !_finished)
+        {
+            _supervisor.StopExpecting();
+        }
     }
 }
