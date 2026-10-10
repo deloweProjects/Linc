@@ -601,6 +601,23 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         a.True(true, "the microphone-in-use records read without error");
     });
 
+    yield return ("1.0.0.11 phone input without a mirror lands on the primary display", a =>
+    {
+        // Before 1.0.0.11 every pc.input with no mirror session was dropped: the Remote
+        // trackpad, its taps and scrolls, the keyboard and presentation keys did nothing.
+        var left = new PcDisplay(0, "Left", -1920, 0, 1920, 1080, false);
+        var main = new PcDisplay(1, "Main", 0, 0, 2560, 1440, true);
+        var desk = new DisplayRect(-1920, 0, 4480, 1440);
+        a.True(PcInputService.TargetFor(null, [left, main], desk) == new DisplayRect(0, 0, 2560, 1440),
+            "no mirror: the primary display");
+        a.True(PcInputService.TargetFor(left, [left, main], desk) == new DisplayRect(-1920, 0, 1920, 1080),
+            "mirroring: the mirrored display");
+        a.True(PcInputService.TargetFor(null, [], desk) == desk, "no display list: the virtual desktop");
+        var real = PcScreenCapture.Enumerate();
+        var t = PcInputService.TargetFor(null, real, desk);
+        a.True(t.Width > 0 && t.Height > 0, $"this PC has a target ({t.Width}x{t.Height})");
+    });
+
     yield return ("D-078 adb serials: wireless links are never mistaken for a USB cable", a =>
     {
         // The exact serials one phone had in a friend's first setup.

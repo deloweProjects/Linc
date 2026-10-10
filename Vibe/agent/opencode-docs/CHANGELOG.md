@@ -9,6 +9,13 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-11 — The Remote trackpad works without Mirror PC (1.0.0.11, D-080)
+
+- The phone's trackpad, keyboard and presentation keys work on their own — the PC used to ignore them
+  unless Mirror PC was running.
+- Taps click even if your finger wobbles; two-finger scroll scrolls smoothly; two-finger tap is a
+  right click; tap then drag drags; slow drags move precisely and fast ones go far.
+
 ### Changed — 2026-10-11 — Adding, re-adding and closing phones flow properly (1.0.0.10, D-079)
 
 - Closing a phone's tab asks first: disconnect and close, remove completely, or cancel. Closing the

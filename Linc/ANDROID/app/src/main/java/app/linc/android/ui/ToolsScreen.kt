@@ -2,8 +2,6 @@ package app.linc.android.ui
 
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,8 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.input.pointer.PointerInputScope
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.linc.android.ui.theme.Dimens
@@ -63,7 +59,6 @@ import app.linc.android.service.PcMediaControl
 import app.linc.android.service.PcMediaStore
 import app.linc.android.service.PresentationControl
 import app.linc.android.service.PresentationKeys
-import app.linc.android.service.TrackpadGestures
 
 /**
  * The phone's Tools page (M4a): a full-screen remote keyboard + trackpad, reached from a Home
@@ -245,7 +240,7 @@ fun ToolsScreen(onBack: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .then(if (ready) Modifier.pointerInput(Unit) { trackpadGestures() } else Modifier),
+                        .trackpad(enabled = ready),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -520,49 +515,6 @@ private fun PresentationCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-    }
-}
-
-/**
- * One-finger drag moves the cursor, a tap (no movement) clicks, two fingers drag to scroll.
- * The deltas-in/payload-out mapping is [TrackpadGestures]; this loop only does gesture
- * recognition (pointer count, tap-vs-drag) and forwards results to [MirrorControl].
- */
-private suspend fun PointerInputScope.trackpadGestures() {
-    awaitEachGesture {
-        val first = awaitFirstDown(requireUnconsumed = false)
-        var lastX = first.position.x
-        var lastY = first.position.y
-        var moved = false
-
-        while (true) {
-            val event = awaitPointerEvent()
-            val pressed = event.changes.filter { it.pressed }
-            if (pressed.isEmpty()) break
-
-            val primary = pressed.first()
-            val dx = primary.position.x - lastX
-            val dy = primary.position.y - lastY
-            lastX = primary.position.x
-            lastY = primary.position.y
-
-            if (dx != 0f || dy != 0f) {
-                moved = true
-                if (pressed.size >= 2) {
-                    val scroll = TrackpadGestures.twoFingerDrag(dx, dy)
-                    if (scroll.dx != 0 || scroll.dy != 0) MirrorControl.scroll(scroll.dx, scroll.dy)
-                } else {
-                    val move = TrackpadGestures.drag(dx, dy)
-                    MirrorControl.pointerRelative("move", move.dx, move.dy)
-                }
-            }
-            event.changes.forEach { it.consume() }
-        }
-
-        if (!moved) {
-            MirrorControl.click(true)
-            MirrorControl.click(false)
         }
     }
 }

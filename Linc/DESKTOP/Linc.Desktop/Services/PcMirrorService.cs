@@ -258,16 +258,22 @@ public sealed class PcMirrorService(
     }
 
     /// <summary>
-    /// Apply a phone input event to whichever display is being mirrored. Ignored when nothing
-    /// is streaming — an input with no active view has no coordinate space to land in.
+    /// Apply a phone input event. While mirroring, absolute points land on the mirrored display;
+    /// with no mirror running (the phone's Remote trackpad, keyboard, presentation keys) they land
+    /// on the primary display. Relative moves, clicks, scrolls and keys need no target at all —
+    /// before 1.0.0.11 every one of them was dropped unless a mirror session was up.
     /// </summary>
     private void RouteInput(JsonObject payload)
     {
-        var display = _activeDisplay;
-        if (display is null) return;
-
-        var target = new DisplayRect(display.Left, display.Top, display.Width, display.Height);
+        IReadOnlyList<PcDisplay> displays;
+        try { displays = Displays; }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Couldn't list this PC's displays for phone input: {ex.Message}");
+            displays = [];
+        }
         var bounds = VirtualDesktopBounds();
+        var target = PcInputService.TargetFor(_activeDisplay, displays, bounds);
         try { input.Apply(payload, target, bounds); }
         catch (Exception ex) { log.Log(LogLevel.Warn, $"Couldn't apply phone input: {ex.Message}"); }
     }

@@ -1212,3 +1212,28 @@ was connected stalled behind the confirmation card.
 
 `tools/onboardsim` covers every transition, the skips, Back, out-of-order events and the new-vs-
 already-added rule (all green). The UI itself is a hands-on owner check.
+
+## D-080: The Remote trackpad works without Mirror PC, and its gestures are a tested engine
+
+**2026-10-11.** Owner: the Tools trackpad "doesn't work". Three bugs, all confirmed in code:
+
+1. **The PC dropped the input.** `PcMirrorService.RouteInput` began `if (_activeDisplay is null)
+   return;`, so every `pc.input` from the phone without a mirror session — trackpad moves, taps,
+   scrolls, the keyboard, presentation keys — was thrown away. Now the target is
+   `PcInputService.TargetFor`: the mirrored display while mirroring, else the primary display, else
+   the virtual desktop. Relative moves, clicks, wheel and keys never needed a target. mirrorsim
+   "1.0.0.11 phone input" checks the choice (it never moves the real cursor).
+2. **Two-finger scroll could never fire.** Each pointer event's few pixels were divided by 24 and
+   rounded — always 0 notches. Scroll now accumulates in wheel units with remainders kept, sent as
+   v20 `precise` (old PCs get whole notches, the remainder kept).
+3. **Taps didn't click.** Any 1 px of jitter set `moved`, cancelling the click. Movement under the
+   system touch slop is now jitter.
+
+The gesture rules are a pure engine (`TrackpadGestures`, 14 unit tests) fed by a Compose modifier
+(`Modifier.trackpad`): fractional moves carried between events; mild acceleration (2.5 PC px per dp
+slow, rising to 8 by ~1.5 dp/ms); tap = left click; two-finger tap = right click; tap then touch
+and drag = left-button drag; two quick taps = double click. **Trade-off:** a single tap's click waits
+220 ms for a possible second touch, as Windows precision touchpads do. D-067's argument against
+tap-then-drag applies to Mirror PC's touch surface (`PointerGestures`, unchanged), where a laggy
+click is felt against the picture; on a blind trackpad the drag gesture is worth the wait. Every
+pointer change is consumed, so a scrolling parent can't steal a drag.
