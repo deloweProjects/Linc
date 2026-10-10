@@ -1,0 +1,6 @@
+The .proto files in this folder define Google's Nearby Connections / Nearby Share
+(Quick Share) wire format. They are Copyright Google LLC and licensed under the
+Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0), as stated
+in each file's header. They were collected from the Chromium sources by the NearDrop
+project (https://github.com/grishka/NearDrop). Linc uses them unmodified to interoperate
+with Quick Share on Android.

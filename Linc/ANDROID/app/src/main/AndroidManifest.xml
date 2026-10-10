@@ -4,6 +4,9 @@
 
     <!-- v9 Direct TLS transport: dial the desktop over LAN (D-022). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- PC Remote (D-069): voice typing on the floating keyboard, and the phone as the PC's
+         microphone for Windows Voice Access. Asked for at first use, never up front. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- Android 14+ requires one "device interaction" permission alongside the
@@ -19,6 +22,13 @@
     <!-- Normal permission, no runtime prompt; used only to read Wi-Fi signal
          strength/link speed for the Details page (never the SSID). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Normal permission, no runtime prompt. Needed to acquire the low-latency Wi-Fi lock the
+         PC Remote screen holds while it is visible, which stops the radio's power-save mode
+         from sleeping between beacons and delaying the mirror's packets (D-066). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Lets Settings show Android's own "allow Linc to run in the background" prompt. Without
+         the exemption many phones freeze the app with the screen off and the PC link drops. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Special grant, sideload builds only (D-021): lets the desktop show the phone's
          wallpaper (as a tiny blurred thumbnail) behind the Home widgets. The user
          gives it explicitly from the Settings screen; everything works without it. -->
@@ -59,6 +69,26 @@
          permission before every write and reports `denied` rather than throwing. -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
+
+    <!-- NFC tap-to-connect: a Linc sticker by the desk starts the link on tap. Optional
+         hardware, so phones without NFC still install Linc. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+
+    <!-- Android 11+ package visibility: Quick Share (Google's in Play services, Samsung's
+         Quick Share app) must be visible for the Share section to hand files to it directly. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="com.google.android.gms.RECEIVE_NEARBY" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <package android:name="com.google.android.gms" />
+        <package android:name="com.samsung.android.app.sharelive" />
+    </queries>
 
     <application
         android:label="@string/app_name"
@@ -106,6 +136,21 @@
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- NFC tap-to-connect: opened by the linc://tap record on a Linc desk tag. No UI;
+             starts the companion, pokes the presence loop, finishes. -->
+        <activity
+            android:name=".NfcTapActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="linc" android:host="tap" />
             </intent-filter>
         </activity>
 

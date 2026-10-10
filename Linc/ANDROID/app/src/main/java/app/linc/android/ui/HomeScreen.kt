@@ -59,6 +59,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -87,6 +89,7 @@ import app.linc.android.service.CompanionStateHolder.ServiceState
 import app.linc.android.service.PcMedia
 import app.linc.android.service.PcMediaControl
 import app.linc.android.service.PcMediaStore
+import app.linc.android.service.QuickShareLauncher
 import app.linc.android.service.ShareSender
 import app.linc.android.service.ShareStore
 
@@ -535,6 +538,18 @@ private fun ShareSection() {
     val sending by ShareStore.sending.collectAsState()
     val sendStatus by ShareStore.sendStatus.collectAsState()
     val highlight by ShareStore.lastReceived.collectAsState()
+    val linkState by CompanionStateHolder.state.collectAsState()
+    val pcConnected = linkState is ServiceState.Connected
+    // The last file sent through Linc, so a disconnected PC can be offered Quick Share instead.
+    var lastSent by remember { mutableStateOf<android.net.Uri?>(null) }
+    var quickShareNote by remember { mutableStateOf("") }
+    val quickShareAvailable = remember { QuickShareLauncher.isAvailable(context) }
+
+    val quickSharePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty() && !QuickShareLauncher.send(context, uris)) {
+            quickShareNote = "Quick Share isn't available on this phone."
+        }
+    }
 
     // Let a newly arrived file glow briefly, then settle.
     LaunchedEffect(highlight) {
@@ -546,6 +561,7 @@ private fun ShareSection() {
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
+            lastSent = uri
             val name = ShareSender.nameFor(context, uri)
             ShareStore.beginSend(name)
             scope.launch {
@@ -598,6 +614,21 @@ private fun ShareSection() {
                 }
             }
 
+            // Linc stages the file and the PC sweeps it up on reconnect, so nothing is lost — but
+            // "later" isn't always good enough. The PC's Share page is also a Quick Share
+            // receiver, so the same file can go right now over plain Wi-Fi.
+            val pending = lastSent
+            if (!pcConnected && pending != null && sending == null && quickShareAvailable) {
+                Text(
+                    "Your PC isn't connected right now. Linc will deliver this when it reconnects — or send it now with Quick Share.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = { QuickShareLauncher.send(context, listOf(pending)) }) {
+                    Text("Send with Quick Share")
+                }
+            }
+
             if (sendStatus.isNotEmpty()) {
                 Text(
                     sendStatus,
@@ -631,6 +662,38 @@ private fun ShareSection() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+    }
+
+    // ---- Quick Share ----
+    if (quickShareAvailable) {
+        LincCard(title = "Quick Share") {
+            Text(
+                "Send to any phone, tablet or PC nearby — including your PC's Share page, even when Linc isn't connected.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = { quickShareNote = ""; quickSharePicker.launch("*/*") },
+                modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
+            ) { Text("Send with Quick Share") }
+            OutlinedButton(
+                onClick = {
+                    quickShareNote = if (QuickShareLauncher.becomeVisible(context)) {
+                        "This phone is visible for a few minutes — send from the PC's Share page now."
+                    } else {
+                        "Open Quick Share from the quick settings panel and choose Receive."
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
+            ) { Text("Receive from PC") }
+            if (quickShareNote.isNotEmpty()) {
+                Text(
+                    quickShareNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

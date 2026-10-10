@@ -161,6 +161,7 @@
             <tb:TaskbarIcon.ContextFlyout>
                 <MenuFlyout>
                     <MenuFlyoutItem Text="Open Linc" Command="{x:Bind ShowWindowCommand}" />
+                    <MenuFlyoutItem Text="Quick Share..." Command="{x:Bind ShowShareCommand}" />
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem Text="Exit" Command="{x:Bind ExitCommand}" />
                 </MenuFlyout>
@@ -227,6 +228,11 @@
                 <NavigationViewItem Content="Files" Tag="Files">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8B7;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Share" Tag="Share" ToolTipService.ToolTip="Quick Share with nearby devices">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE72D;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Sync" Tag="Sync">

@@ -9,6 +9,132 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-10 — Mirror PC no longer freezes on the bubble; faster start; Voice Access sets up its own microphone (D-071, D-072)
+
+- **Tapping the PC Remote bubble no longer kills Linc.** It was an ANR, not a crash: the bubble's
+  shadow followed its concave cookie shape, which Skia tessellates on the render thread for seconds
+  per frame. The same work was the lag before the tap. The shadow is now a circle.
+- **Mirror PC starts faster**: the phone races the PC's addresses when opening the video and sound
+  channels instead of waiting out a 4 s timeout on each unreachable one.
+- **Voice Access sets up the phone-as-microphone itself**: after you agree, the PC downloads VB-CABLE
+  from VB-Audio (pinned, SHA-256 checked) and opens VB-Audio's own installer (one Windows prompt,
+  then "Install Driver"); the phone shows "Setting up the microphone…". Not silent or bundled —
+  VB-CABLE's licence forbids integrating it into another installer without the author's agreement. Remove it from desktop Settings → Phone as microphone.
+- The PC's own default microphone is now really restored on Exit, and after a crash on next start.
+- **Wireless drops** (D-073): Settings → "Stay connected in the background" asks Android to stop
+  freezing Linc with the screen off; a Wi-Fi lock is held while connected; the phone logs Doze,
+  screen, battery saver and Wi-Fi events and why each link ended.
+- **Copy log** on both apps' Logs page — a report to paste to whoever is helping (phone: model,
+  Android, background settings, why Android ended Linc recently, the log across restarts).
+- Tests: `EndpointRaceTest`, `PcRemoteOverlayTest`, `PcVoiceAccessTest` (setup state); `mirrorsim`
+  "D-071 virtual cable".
+
+### Added — 2026-10-10 — Voice Access, Material 3 Expressive bubble, floating keyboard (protocol v21, D-069, D-070)
+
+- **Voice Access** (Tools, and the bubble): start Windows Voice Access from the phone and talk to the PC
+  through the phone's microphone (needs the free VB-CABLE on the PC; without it the PC's own mic is used).
+- The status bubble is **Material 3 Expressive**: a cookie-shaped button whose Wi-Fi icon shows the
+  connection, springing to the nearer edge; the panel has stats, connected Touch|Mouse and
+  Floating|Phone keyboard groups, and tonal toggles for sound, Voice Access, display, quality, fit,
+  Task view and Desktop.
+- **Floating PC keyboard** (drag, resize, sticky modifiers, Fn layer, multi-touch, key repeat) with
+  **voice typing** (🎤). "Pop up on text fields" can be switched off.
+- Removed before release: the "Remote PC (private)" curtain mode (D-068, withdrawn).
+- Fixed: every mirror session left a thread blocked inside the encoder (no `IMFShutdown` on dispose).
+- `mirrorsim`: compressible motion pattern; fresh-encoder and phone-mic scenarios. Android: 188 tests.
+
+### Added — 2026-10-09 — PC Remote, Windows-App style (protocol v20, D-067)
+
+- **The PC's mouse pointer now shows on the phone**, drawn by the phone so it moves the moment your
+  finger does (the mirror had no pointer at all before — Desktop Duplication never captures it).
+- **Touch and Mouse modes.** Mouse mode is a trackpad with acceleration; in both, press-and-hold or a
+  two-finger tap is a right click, two fingers scroll smoothly, pinch zooms; zoomed in Mouse mode the
+  view follows the pointer.
+- **Connection bar:** quality dot, round trip, Mb/s, fps, plus pointer mode, keyboard, extra keys,
+  sound, display picker, quality picker, fit and end. Stalls are healed (keyframe at 2 s, restart at
+  8 s); a dropped link shows "Reconnecting…" over the last frame instead of going black.
+- **Extra-keys row:** sticky Ctrl/Alt/Shift/Win (also apply to the phone keyboard), Esc, Tab, arrows,
+  Home/End/PgUp/PgDn/Del, Alt+Tab, Show desktop, Task Manager, Snip, F1–F12. Arrows and friends are
+  sent as true extended keys.
+- **PC sound on the phone** (pc-audio channel 6, AAC-LC 128 kb/s), on by default, toggle in the bar.
+- `mirrorsim`: 5 new scenarios (live pointer, system cursor shapes, monochrome I-beam decode,
+  buttons/extended keys, audio capture + AAC encode); `mirrorsim -- <text>` runs a subset. Android:
+  `PcRemoteV20Test`, 23 tests.
+
+### Added — 2026-09-26 — Quick Share, returning-phone recognition, NFC tap-to-connect
+
+No Linc protocol change (still v19). Quick Share is Google's Nearby Share wire format, spoken
+alongside the Linc link, not inside it. **Loopback- and unit-verified only; Android interop is an
+owner hardware check.**
+
+- **Quick Share on the PC** (`DESKTOP/Linc.Desktop/QuickShare/`). The PC is a Quick Share device like
+  Google's Windows app: it advertises `_FC9F5ED42C8A._tcp` so any nearby Android (no Linc needed) can
+  send to it, and it can send to phones, using the BLE `0xFE2C` wake beacon that makes Android start
+  advertising (Windows can publish service data; macOS cannot). UKEY2 P-256/SHA-512, AES-256-CBC +
+  HMAC-SHA256, PIN from Chromium's algorithm. Wi-Fi LAN medium only. Every incoming transfer needs
+  Accept (in-app dialog with the PIN, or toast buttons); files land in `Downloads\Quick Share`,
+  names sanitised and never overwritten. The protos are Google's (Apache-2.0,
+  `QuickShare/Proto/NOTICE.txt`), generated by Grpc.Tools, hooked before `MarkupCompilePass1` so the
+  WinUI XAML pre-compile sees them.
+- **Share page** (new nav item, tray "Quick Share..."): visibility toggle and name, nearby scan,
+  send files (picker or drag-drop), send text/links, transfer history with Open / Open link / Copy.
+- **Auto-accept from your own phone** (opt-in, default off): only when the sender's address equals
+  the live Linc Wi-Fi link's phone address AND the names match (`QsTrust`). A name alone is never
+  trusted; a USB link cannot qualify.
+- **Explorer "Send with Quick Share"** (opt-in, HKCU verb): a second Linc started by Explorer
+  forwards the paths over a per-user named pipe to the running one, which opens Share with them.
+- **Quick Share wakes the Linc link:** a Quick Share from a known phone while Linc is searching calls
+  `IConnectionSupervisor.NudgeReconnect` (scan now + adopt what ADB holds).
+- **Phone:** Share section gets a Quick Share card (send via the system Quick Share; "Receive from PC"
+  makes the phone visible) and offers Quick Share when a Linc send is staged while the PC is offline.
+  `<queries>` added for Android 11+ package visibility.
+- **NFC tap-to-connect (phone):** Settings writes `linc://tap` + an AAR to a blank NTAG sticker;
+  tapping it opens `NfcTapActivity`, which starts the companion and pokes `ReconnectSignal`, so
+  `PresenceClient` dials at once instead of waiting out its up-to-30 s backoff. Nothing secret on
+  the tag; trust is still the pinned TLS certificates.
+
+### Fixed — 2026-09-26 — a returning phone is recognised, not treated as new
+
+- Only the active phone was ever recognised. Any other known phone got the "new device" card on
+  USB, had its mDNS adverts ignored, and had its Direct-TLS dial-in rejected (only the active phone's
+  cert was pinned). All three now recognise any known phone (`DeviceAdmission.RecogniseKnown`) and
+  adopt it **only while idle** (`MayAdoptKnownPhone`) — never over a live link (D-037). The USB card
+  and the onboarding wizard now say "already known" vs "new phone".
+- **Cert pinned to the wrong phone:** `ConnectionManager` exchanged TLS certs before the supervisor
+  switched the active record, so connecting a second phone pinned its cert onto the first — the
+  source of 9 spurious "The phone has a new identity (it was reinstalled)" log lines. The record is
+  now switched as soon as `ro.serialno` is read.
+
+### Fixed — 2026-09-25 — preemptive failover and a stale standby link
+
+- The hotspot health loop redialled a dead endpoint forever after the phone changed networks (every
+  25-40 s for as long as the app ran). It now retires after 6 failed re-resolves
+  (`HotspotBackoff.RetireAfter`), reopens the race and sends `adb.arm` so the phone re-announces
+  its current address. A loop that dies no longer leaves `LinkedEndpoint` naming a dead link.
+- Recovery after a drop now tries the verified hotspot standby first, then `LastHostPort`, so a cable
+  pull fails over without waiting for an mDNS advert; the first failed health probe starts a
+  discovery scan straight away; a failed upgrade to a better transport falls back to what is still up
+  instead of stranding the link in Searching.
+
+
+### Fixed — 2026-09-25 — the reverse mirror over Wi-Fi, round 2 (D-066)
+
+The 2026-09-20 fix dropped frames to stay live, but a real session showed it looping: 184 drops in
+18 bursts, 11 frames every ~0.37 s, because nothing reduced what the encoder sent.
+
+- **The encoder no longer pads.** Its default (and our CBR) sent **7.2 Mb/s for an idle screen**, half
+  of it filler NALs, saturating Wi-Fi full-time. Now peak-constrained VBR with a QP floor of 20: idle
+  costs **0.55 Mb/s**.
+- **Congestion control.** The sender now adapts the encoder's bit rate to the link (AIMD on skip ratio
+  and send delay; the AMD MFT honours live changes) and **skips frames before encoding** instead of
+  dropping encoded ones, so no reference chain breaks and no IDR is needed. Simulated 2.5 Mb/s link:
+  0 drops, 2.09 Mb/s delivered. IDRs rationed to 1/s.
+- **No hidden buffering.** pc-video socket send buffer capped at 64 KB so congestion is visible within
+  a frame or two; the phone holds a low-latency Wi-Fi lock while PC Remote is on screen.
+- Frame PTS is wall-clock. A capture-loop path that could leak an encoder input slot is closed.
+- `mirrorsim`: 14 scenarios (idle cost, live bit-rate change, convergence on a throttled link) with a
+  noise window for motion.
+
 ### Fixed — 2026-09-20 — the reverse mirror over Wi-Fi (protocol v19)
 
 - **The encoder no longer writes to the socket.** Frames used to be written from the MFT pump

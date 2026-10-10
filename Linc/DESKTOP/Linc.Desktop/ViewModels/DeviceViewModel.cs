@@ -265,7 +265,11 @@ public partial class DeviceViewModel : ObservableObject
     /// </summary>
     public bool ShowUsbDeviceDetected => !PairingActive && _pendingUsbDevice is not null;
 
-    public string UsbDeviceText => _pendingUsbDevice is { } device ? $"{device.Model} ({device.Serial})" : "";
+    public string UsbDeviceText => _pendingUsbDevice is { } device
+        ? DeviceAdmission.RecogniseKnown(device.Serial, _registry.KnownDevices.Select(d => d.Serial)) is not null
+            ? $"{device.Model} ({device.Serial}) — a phone this PC already knows"
+            : $"{device.Model} ({device.Serial}) — new phone"
+        : "";
 
     /// <summary>The live phone as the user knows it, or null when nothing is connected.</summary>
     private string? LiveDeviceName =>

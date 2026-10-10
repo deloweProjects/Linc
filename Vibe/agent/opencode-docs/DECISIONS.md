@@ -708,3 +708,287 @@ mechanism that needs real measurement to tune honestly — and it does not remov
 of which bite at any bitrate. The quality picker stays the user's lever for now. If the drop counter
 in the log turns out to be busy at Smooth on a healthy link, that is the evidence that would justify
 building it.
+
+**Superseded 2026-09-25 by D-066** — the drop counter was busy, and the rejected alternative is built.
+
+## D-066: The mirror sheds load before encoding, follows the link's bit rate, and never pads
+
+**2026-09-25.** D-065 set its own test: "if the drop counter turns out to be busy, that is the evidence".
+The owner's first real Wi-Fi session after it (2026-09-25, 21:30–22:02) logged **184 drops in 18 bursts**,
+the worst **47 in 17 s** — always exactly 11 frames, every ~0.37 s. That signature is a loop, not noise:
+a link carrying less than the stream fills the queue, the backlog is dropped, an IDR is requested (the
+largest frame there is), sending it fills the queue again. Dropping was never going to catch up because
+nothing asked the encoder to send less. Four changes, each measured in `mirrorsim`:
+
+**1. The encoder never pads.** Measured on an idle screen at an 8 Mb/s target: **7.2 Mb/s on the wire,
+half of it filler NALs (type 12)** — and the encoder's *default* mode was identical, so the mirror had
+always done this. A screen nobody was touching kept Wi-Fi saturated full-time; every real change queued
+behind padding. D-065's claim that CBR "keeps the stream inside the bandwidth" was wrong: it keeps the
+stream *at* the bandwidth. Now peak-constrained VBR (mean = max = target) plus a **QP floor of 20**, which
+stops VBR spending headroom re-refining an unchanged image: idle **0.55 Mb/s** (VBR alone: 3.35; QP 26:
+0.38 but softer text). Low-delay VBR was tried and silently ignored by the AMD MFT.
+
+**2. Load is shed before encoding, not after.** The capture loop asks the sender before each encode and
+skips while two frames are still queued or on the wire. A frame never encoded breaks no reference, needs
+no IDR, and costs only smoothness. Post-encode dropping remains only for a link that stops dead (>1.5 s).
+The first controller dropped after encoding and, on a simulated 2.5 Mb/s link, **still dropped ~18
+frames/s after cutting to the floor**; skip-before-encode dropped **zero**.
+
+**3. The bit rate follows the link (AIMD).** Congestion = skip ratio >25% over a second, or send delay
+(EWMA) >150 ms: ×0.75, at most every 1.5 s (the encoder takes ~1 s to settle — cutting every 0.7 s
+overshot to the 600 kb/s floor on a link carrying four times that). Headroom = skip <5% and delay <60 ms
+for 4 s after any cut: ×1.15 every 2 s, up to the phone's chosen ceiling. The AMD MFT honours live
+changes (measured 6.7 → 1.53 Mb/s on motion). Result on the 2.5 Mb/s simulated link: steady target
+2.15 Mb/s, 2.09 Mb/s delivered, 0 drops. Frame PTS is now wall-clock, so with skipped frames "N kb/s"
+still means N per real second. IDRs are rationed to one per second, including the phone's v19 requests.
+
+**4. No hidden buffers on either end.** The pc-video socket's send buffer is capped at 64 KB — Windows
+otherwise auto-tunes to megabytes, which on a 3 Mb/s link is seconds of picture committed to being late
+*and* makes every write return instantly, blinding the controller. 64 KB over a 20 ms RTT still allows
+~26 Mb/s. On the phone, PC Remote holds a `WIFI_MODE_FULL_LOW_LATENCY` lock while visible: Wi-Fi power
+save parks packets at the AP between beacons (~100 ms+), which is both stutter and a false congestion
+signal. Android honours the lock only in the foreground with the screen on — exactly while mirroring.
+
+**Measurement note.** Rate control cannot be tested on an idle screen: a correct VBR encoder sends a
+fraction of any target, so "the output followed the target" is unfalsifiable. `mirrorsim` now shows a
+window of scrolling noise (`Motion.cs`) during those scenarios. **Not yet verified on the owner's link.**
+
+## D-067: PC Remote copies Windows App — the phone draws the pointer, and the session gets RDP's tools
+
+**2026-10-09.** The owner asked for the mirror to be as smooth over Wi-Fi as Microsoft's **Windows App**
+(the Remote Desktop client), and to take its features. Two routes were offered: use real RDP (Windows'
+own server + FreeRDP on the phone), or port RDP's tricks into Linc's own stream. **The owner chose to
+port.** Real RDP would be smoother still but locks the PC's own screen for the session and needs the
+Windows password (a PIN will not do) — it stops being a mirror.
+
+**What makes RDP feel instant is not its video.** It sends the pointer separately and lets the client
+draw it, so the thing your eye tracks moves with your finger even while the picture is a few frames
+behind. Linc's mirror had **no pointer at all**: Desktop Duplication never includes it in the captured
+image. So the biggest change is that one:
+
+1. **The phone draws the pointer.** The desktop samples `GetCursorInfo` at ~60 Hz on its own thread —
+   not the duplication's pointer metadata, which only arrives alongside a captured frame, and D-066
+   skips frames exactly when the link is congested — and sends position on change plus each distinct
+   cursor image once (`pc.mirror.cursor`). The control channel carries it, so it is never queued behind
+   video. While a finger is driving, the phone trusts its own position and ignores the PC's (older)
+   reports for 400 ms; after that the PC is authoritative again (its own mouse, a dialog that warps it).
+   Measured on this PC: arrow, I-beam and hand all render (32×32, 90–285 opaque px).
+2. **Two pointer modes,** as Windows App has: Touch (pointer where you touch) and Mouse (a trackpad
+   with acceleration). Right click is press-and-hold or a two-finger tap; two fingers scroll smoothly in
+   raw wheel units (`precise`), or pan when zoomed in Touch mode. Mouse-mode dragging is hold-then-drag,
+   not tap-then-drag: the latter either delays every click by a double-tap window or shows the PC a
+   click followed by a press — a double-click-drag, which maximises a window grabbed by its title bar.
+   The gesture engine is pure Kotlin (`PointerGestures`), 12 unit tests.
+3. **A connection bar:** quality dot (Good/Fair/Poor from the PC's send delay and skip ratio, the
+   phone's round trip and the frames actually shown), round trip, Mb/s, fps; pointer mode, keyboard,
+   extra keys, sound, display, quality, fit, end. A picture that stops for 2 s gets a keyframe request;
+   at 8 s the stream is restarted. A dropped stream keeps the last frame under "Reconnecting…" and the
+   first retry after a drop is 1.5 s, not 5.
+4. **Extra keys with sticky modifiers.** Ctrl/Alt/Shift/Win latch for one key (tap) or lock (tap
+   twice) and apply to the phone keyboard too, so Ctrl then "c" on Gboard is Ctrl+C. Arrow/Delete/
+   Home/End/Win are now sent as extended keys with scan codes — without the flag they arrive as their
+   numpad twins to apps that read scan codes.
+5. **The PC's sound plays on the phone** (pc-audio, channel 6). WASAPI loopback → Windows' in-box AAC
+   encoder MFT → raw AAC-LC; MediaCodec + a low-latency AudioTrack on the phone. AAC because both ends
+   ship a codec, so no library was taken on (the project already hand-rolls its Media Foundation
+   interop). Measured on this PC: 48 kHz, ~126 kb/s on the wire, ~44 packets/s while sound plays.
+
+**Not copied, deliberately.** RDP's dirty-region codecs: H.264 already spends almost nothing on
+unchanged macroblocks, and D-066's VBR + QP floor put an idle screen at 0.55 Mb/s — there is little
+left to win at the codec, and the perceived-latency win is the pointer. RDP's UDP transport with FEC is
+the remaining large lever if real-link testing shows TCP head-of-line stalls; it is not built.
+
+**Not yet verified on the owner's phone and Wi-Fi.** `mirrorsim` covers the desktop natives (pointer
+capture, buttons/extended keys, audio capture + encode); the phone side is unit-tested and builds.
+
+## D-068: "Remote PC (private)" blacks out the PC with capture-excluded windows, not RDP — **withdrawn 2026-10-10**
+
+**2026-10-09.** After D-067 the owner asked for "a Windows App type of use — not mirror but control
+without showing on screen": drive the PC from the phone while the PC's own monitor does not show it.
+RDP does this by moving the user into a remote session, which is why D-067 turned it down (it needs
+the Windows password and a full RDP client on the phone). The same *experience* is available inside
+Linc's own stream:
+
+- Each monitor gets a borderless topmost black window with `SetWindowDisplayAffinity(
+  WDA_EXCLUDEFROMCAPTURE)`. The compositor shows it on the glass but leaves it out of every capture,
+  Desktop Duplication included, so the phone sees the real desktop underneath. **Measured:** the
+  curtain drawn in magenta, 0 of 49 sampled captured pixels were magenta (`mirrorsim`).
+- It is layered + `WS_EX_TRANSPARENT` and answers `HTTRANSPARENT`, so the phone's injected clicks land
+  on the windows below. Topmost is re-asserted every second.
+- **Escape hatch:** a low-level keyboard hook lifts the curtain on a *physical* Esc (`LLKHF_INJECTED`
+  tells the phone's keys apart) and tells the phone. Ctrl+Alt+Del works as always. The windows die with
+  the process, so nothing can strand a PC black.
+- **Lock on exit**, default on, as RDP leaves a PC: when the stream ends while private, the PC locks.
+  A restart for a new display/quality keeps the curtain and does not lock; Linc exiting only restores.
+- Limitation: higher-band shell surfaces (Start menu, toasts) still draw over the curtain when opened.
+
+Same round, same owner request: the status pill became a draggable **bubble** (ring = link quality,
+number = fps) opening a panel of stats tiles (ping, frame rate, speed, picture) and a 4-column grid of
+controls; the extra-keys row became a **floating PC keyboard** — drawn by Linc, draggable and
+resizable, sticky modifiers, Fn layer, multi-touch typing, repeat on ⌫/Del/arrows. Characters are sent
+as Unicode text unless Ctrl/Alt/Win is latched, so symbols are right on any PC keyboard layout while
+shortcuts (Ctrl+/, Ctrl+Shift+T) are real key chords. The phone's own keyboard stays available.
+
+Not verified on the owner's phone yet.
+
+**Withdrawn 2026-10-10** at the owner's request ("remove remote pc feature"), before any release: the
+curtain, its v21 messages and the Home card are gone, and v21 was reused for D-070. The status bubble
+and the floating keyboard from the same round stay (phone-only, no wire change) and are reworked in D-069.
+
+## D-069: The bubble is Material 3 Expressive; the encoder was never ignoring its bit rate
+
+**2026-10-10.** Three owner requests, one finding.
+
+**1. Material 3 Expressive.** The status bubble and its panel are now Compose (`PcRemoteOverlay`) on
+`MaterialExpressiveTheme`: the bubble is a `MaterialShapes.Cookie9Sided` whose icon is the connection
+(full / half / broken Wi-Fi in green / amber / red — the owner asked for icons, not the fps number),
+springing to the nearer edge with the theme's motion scheme and turning as it opens; the panel uses
+connected `ToggleButton` groups (Touch | Mouse, Floating | Phone keyboard) and `TonalToggleButton`s.
+**Version choice:** `material3 1.4.0` stable ships only the Expressive *tokens* — the components were
+pulled before release; `1.5.0-beta01` has them but requires compileSdk 37 and an AGP newer than 8.7.
+`1.4.0-alpha18` is the last release exposing the components at compileSdk 35 / AGP 8.6+, so it is pinned
+(an alpha: its Expressive APIs are experimental). `material-icons-extended` grew the APK 26 → 61 MB for
+~20 icons, so the 21 Material Symbols (Rounded, filled) used are inlined as path data (`LincSymbols`);
+`material-icons-core` is added explicitly because 1.4 stopped pulling it in.
+
+**2. Keyboard.** "Pop up on text fields" is a setting (panel switch), default on. The floating keyboard
+gains a 🎤 key: the phone's own `SpeechRecognizer`, partial results shown on the keyboard, the final
+text typed on the PC. `RECORD_AUDIO` is requested at first use, never up front.
+
+**3. "Fix the encoder thing" — there was nothing to fix in the encoder.** After D-067 the AMD MFT
+appeared to ignore live bit-rate cuts. Measured properly, one target per process: under the mirrorsim
+motion pattern (per-pixel random noise) the encoder produced **~7.9 Mb/s at every target from 1.5 to
+6 Mb/s, but 12.1 at 12 and 15.9 at 16** — it follows its target exactly; per-pixel noise simply cannot
+be made smaller than ~8 Mb/s on this encoder. A rebuild-on-ignored-change scheme was built, worked
+mechanically, and was **reverted**: rebuilding cannot make incompressible content smaller and costs an
+IDR each time. What stays:
+- **`IMFShutdown` on encoder dispose.** Disposing never released a pump thread parked in `GetEvent`, so
+  every mirror session leaked a blocked thread. Found because the rebuild needed it.
+- **A compressible motion pattern** (`Motion.Start(block)`, coarse noise blocks). With it, the D-066
+  slow-link scenario passes on the unchanged D-066 code: 2.5 Mb/s link, steady target 1.54 Mb/s,
+  1.64 Mb/s delivered, 0 drops. The mid-stream-change scenario still cannot pass on this encoder: the
+  QP floor of 20 caps what any content asks for at high targets, while hard content cannot reach low
+  ones, so no single pattern exercises both ends. It is a test-content limit, recorded rather than
+  hidden.
+
+## D-070: Windows Voice Access, with the phone as the PC's microphone
+
+**2026-10-10.** Owner: "a tool under Tools to activate Voice Access on Windows and use the phone as mic
+… also an option in the Mirror PC bubble." Protocol v21, pc-mic channel 7.
+
+Windows only lets a **driver** create a microphone, and Voice Access listens to the default one. So the
+phone's audio (16 kHz mono PCM — speech needs no more, 256 kb/s) is played into a **virtual audio
+cable** (VB-CABLE, free; or any "Virtual … Input/Output" pair), and the cable's recording side is made
+the default microphone for the session through `IPolicyConfig` — the undocumented but long-stable
+interface Windows' own Sound settings use — and the user's own default is restored afterwards (and on
+app exit). Linc does not ship or install a driver: without a cable, Voice Access still starts on the
+PC's own microphone and the phone explains how to add one. *(Superseded 2026-10-10 by D-071: Linc now
+sets the cable up itself.)* At most ~150 ms of audio is buffered; older
+audio is dropped, because a voice command heard late is worse than one clipped.
+
+Tested: the upsampler and cable-name matching (`mirrorsim`); the state messages and the v21 gate
+(`PcVoiceAccessTest`). **Not** run here: switching the default microphone (it changes the owner's
+system setting) and the end-to-end path (this PC has no cable installed).
+
+## D-071: Linc sets up the virtual microphone itself — VB-CABLE, fetched from its maker, with consent
+
+**2026-10-10.** Owner, on D-070 needing a manual VB-CABLE install: "the app can very well get some
+drivers of that and do it itself." Supersedes D-070's "Linc does not ship or install a driver".
+
+**The constraint.** Windows only lets a kernel driver create a microphone, and on a Secure-Boot
+Windows 11 that driver must be Microsoft-signed (attestation or WHQL); test-signing is not something a
+user-facing app can ask for. Candidates evaluated:
+
+| Driver | Licence | Signed release? | Speaker → mic loopback? |
+|---|---|---|---|
+| VirtualDrivers/Virtual-Audio-Driver | MIT (+MS-PL SysVAD code) | **No** — README: "requires test signing"; no GitHub releases | **No** — stock SysVAD: the mic plays `ToneGenerator`, the speaker writes to a file (`SaveData`) |
+| JannesP/AudioMirror | MIT | No — "isn't finished … You've been warned"; no releases | Yes |
+| syams86/Virtual-Audio-Pipeline, amanison/OpenAudioCable | GPL-2.0 / GPL-3.0 | No | Yes / unclear |
+| VB-Audio VB-CABLE | Donationware; redistribution needs a licence | **Yes** | Yes |
+
+No open-source option installs on a normal PC. Signing our own (an AudioMirror fork) needs an EV
+certificate and a Partner Center hardware account — only the owner can get those; it stays the path to
+a fully self-owned driver later. Asked, the owner chose "do what most devs do": apps that turn a phone
+into a PC microphone almost all rely on VB-CABLE.
+
+**So:** Linc never bundles VB-CABLE. With the user's agreement — asked on the phone (Tools → Voice
+Access, or the bubble) with a plain explanation, or from desktop Settings → Phone as microphone — the PC
+downloads VB-Audio's own `VBCABLE_Driver_Pack45.zip` from `download.vb-audio.com`, **pinned by
+SHA-256** (`B950E39F…16BFB`, 1,318,877 bytes, served with Last-Modified 2025-12-05 — VB-Audio
+replaces packs in place, and a mismatch stops the install), extracts it under
+`%LOCALAPPDATA%\Linc\drivers`, and **opens VB-Audio's own setup, unmodified and visible** (one UAC
+prompt), where the user clicks *Install Driver* (or *Remove Driver*). Checked here without running
+it: the zip tests clean, `VBCABLE_Setup_x64.exe` has a valid Authenticode signature (VB-Audio's EV
+certificate) and the driver catalog is signed by *Microsoft Windows Hardware Compatibility
+Publisher*, so it installs under Secure Boot. Pack 45 has no ARM64 setup; its x64 setup carries the
+ARM64 driver.
+
+**Licence — an open question for the owner.** The pack's readme allows copying it "AS IS without
+any modification" but says "It is not allowed to integrate the VB-CABLE package in another software
+installation procedure without Author agreement." That is why Linc does not bundle it, does not run
+it silently (no unattended switches are documented anyway) and leaves the install to VB-Audio's own
+window. Whether fetching and opening it still counts as integration is VB-Audio's call; asking them
+(vb-audio.com contact) before wide distribution is recommended. It then waits up to 20 s for the CABLE endpoints and carries on
+into the phone-mic session. `pc.voiceaccess.state` gains `setup` (`ready` / `needed` / `installing` /
+`failed`) so the phone says "Setting up the microphone… approve the Windows prompt on the PC" instead
+of sending the user to vb-audio.com. A cable already installed (VB-CABLE or any "Virtual … Input/
+Output" pair) is used as before.
+
+**The default microphone is always put back.** The user's own default is written to
+`%LOCALAPPDATA%\Linc\voiceaccess-restore-mic.txt` before switching, restored when the session ends,
+when Linc exits (Exit in the tray — the DI container is never disposed, so D-070's "on app exit" was in
+fact not happening), and on the next start after a crash or kill.
+
+Tested: package pin and setup selection (`mirrorsim` "D-071 virtual cable"), phone state parsing and
+the old-PC fallback (`PcVoiceAccessTest`). **Not** run here: the install itself (it changes the
+owner's drivers) — an owner check.
+
+## D-072: The bubble "crash" was an ANR from a concave shadow; channels dial back by racing
+
+**2026-10-10.** Owner: Mirror PC "slow to load, laggy, and tapping the bubble crashes the app and
+drops the PC link".
+
+**It was not a crash and not Compose version skew.** The suspected skew (material3 1.4.0-alpha18 on a
+2024.12 BOM) does not exist at runtime: Gradle resolves every Compose module to the 1.8.1/1.8.2 line
+that alpha18's own metadata requires. The phone's crash buffer was empty; the system log had
+`am_anr … MirrorActivity is not responding. Waited 5000ms for MotionEvent`, then the kill that took the
+companion service — and the PC link — with it. All four ANR dumps of the day (`dumpsys dropbox
+data_app_anr`) show the main thread in `HardwareRenderer.syncAndDrawFrame` waiting on a RenderThread
+inside `SkBaseShadowTessellator::computeConcaveShadow`, 17–36 s of CPU each: the bubble's
+`Modifier.shadow(10.dp, Cookie9Sided)` asked Skia for an elevation shadow on a concave path, re-made
+every frame it rotated or recomposed. That same render-thread burn (Linc at 87–117 % CPU) was the lag
+the owner saw before ever tapping. **Fix:** the shadow is a circle under the cookie; Expressive
+shapes clip, never cast shadows — a unit test fails on any `shadow`/`Elevation` next to
+`MaterialShapes`.
+
+**Slow load.** The desktop log showed the encoder ready 1.9 s after the request, the video channel up
+at 7.1 s and PC sound 5.6 s after that. Each phone dial-back tried the PC's advertised addresses one
+by one with a 4 s timeout, and this PC advertises a LAN address the phone (on the PC's hotspot) can't
+reach. Now the phone races plain TCP probes to every candidate and does TLS once, to the first that
+answers (`EndpointRace`). Only probes race: a second TLS connection that closed without its channel
+header would look to the PC like a new control link.
+
+Also: the phone's activity log is mirrored to logcat (tag `Linc`) so timings can be read over adb.
+Unchanged: D-066 rate control, the 60 Hz cursor (cheap — a `View.invalidate()`), PC audio auto-start.
+
+## D-073: A log anyone can copy, and staying connected in the background
+
+**2026-10-10.** Owner: a friend's phone "connects and drops" over wireless; add a log the friend can
+copy, and a fix.
+
+The PC only declares a drop after ~30 s without a status reply (3 probes, 10 s reply timeout), so
+these are real link deaths, not impatience. Without the friend's log the cause can't be proven; the
+usual one is the phone's power saving: Linc never asked to be exempt from battery optimisation, so
+with the screen off Android (and harder still, makers' battery managers) can freeze it.
+
+- **Settings → Stay connected in the background** opens Android's own exemption prompt
+  (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`; Linc is sideloaded, so Play's policy on it does not
+  apply).
+- While the companion service runs, `ConnectionWatch` holds a high-performance Wi-Fi lock (honoured
+  up to Android 13) and logs screen off/on, Doze, battery saver and Wi-Fi lost/back. A Direct-TLS link
+  that ends is logged with how long it lasted and the socket error.
+- **Logs → Copy** (phone) builds a report: app version, phone model and Android version, connection
+  state, background setting, exemption, battery saver/Doze, standby bucket, Android's recorded
+  reasons for Linc's last process deaths (`getHistoricalProcessExitReasons`), and the log, which is
+  now also kept in a ~256 KB file so it survives the app being killed. **Logs → Copy log** (PC)
+  copies Linc's version, Windows and the last two days of the PC log.

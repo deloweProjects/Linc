@@ -196,6 +196,8 @@ fun ToolsScreen(onBack: () -> Unit) {
                 onAction = { action -> PresentationControl.send(action) },
             )
 
+            VoiceAccessCard()
+
             if (confirmAction != null) {
                 val restart = confirmAction == "restart"
                 AlertDialog(

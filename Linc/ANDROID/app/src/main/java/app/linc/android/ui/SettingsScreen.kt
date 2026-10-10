@@ -18,6 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +36,7 @@ import app.linc.android.service.AdbArmOutcome
 import app.linc.android.service.UpdateSettings
 import app.linc.android.service.AdbArmRules
 import app.linc.android.service.AdbArming
+import app.linc.android.service.ConnectionWatch
 import app.linc.android.service.CallProvider
 import app.linc.android.service.LincNotificationListener
 import app.linc.android.service.MirrorSettings
@@ -64,6 +67,7 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
     // M19 C3: "Keep Linc up to date", default ON. The manifest address is a build-time constant
     // now (UpdateSettings.MANIFEST_URL), so this flag is the only update setting there is.
     var updatesEnabled by remember { mutableStateOf(UpdateSettings.updatesEnabled(context)) }
+    var batteryExempt by remember { mutableStateOf(ConnectionWatch.isBatteryExempt(context)) }
     LaunchedEffect(Unit) {
         while (true) {
             notifAccess = LincNotificationListener.isEnabled(context)
@@ -73,6 +77,7 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
             callAccess = CallProvider.canReadLog(context)
             selfArmGranted = AdbArming.isPermissionHeld(context)
             adbArmed = AdbArming.isArmed(context)
+            batteryExempt = ConnectionWatch.isBatteryExempt(context)
             delay(2_000)
         }
     }
@@ -80,6 +85,15 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
     LincScreen(title = stringResource(R.string.nav_settings)) {
 
         LincCard(title = stringResource(R.string.settings_permissions_header)) {
+            // The usual cause of "connects, then drops" over Wi-Fi: with the screen off Android
+            // (and harder still, some makers' battery managers) freezes a non-exempt app.
+            GrantRow(
+                granted = batteryExempt,
+                onText = "Stay connected in the background: allowed.",
+                offText = "Stay connected in the background: Android may cut Linc's Wi-Fi link to the PC when the screen is off.",
+                actionLabel = "Allow",
+                onAction = { ConnectionWatch.requestBatteryExemption(context) },
+            )
             GrantRow(
                 granted = notifAccess,
                 onText = stringResource(R.string.notif_access_on),
@@ -178,6 +192,8 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        NfcTapCard()
 
         LincCard(title = stringResource(R.string.settings_mirror_header)) {
             Text(
@@ -282,6 +298,53 @@ private fun GrantRow(
                 onClick = onAction,
             ) {
                 Text(actionLabel)
+            }
+        }
+    }
+}
+
+/**
+ * Tap-to-connect: write a cheap NFC sticker once, put it by the PC, and tapping it connects Linc
+ * straight away. Hidden entirely on a phone with no NFC, rather than showing a dead button.
+ */
+@Composable
+private fun NfcTapCard() {
+    val activity = LocalContext.current as? android.app.Activity ?: return
+    if (!app.linc.android.service.NfcTap.isSupported(activity)) return
+    val state by app.linc.android.service.NfcTap.writeState.collectAsState()
+    DisposableEffect(Unit) {
+        onDispose { app.linc.android.service.NfcTap.cancelWrite(activity) }
+    }
+    LincCard(title = "Tap to connect (NFC)") {
+        Text(
+            when (val s = state) {
+                app.linc.android.service.NfcTap.WriteState.Idle ->
+                    "Stick a blank NFC tag (NTAG213 or bigger) by your PC. Write it once here, then tapping " +
+                        "your phone on it connects Linc instantly — no need to open the app."
+                app.linc.android.service.NfcTap.WriteState.Waiting ->
+                    "Hold the tag against the back of the phone…"
+                app.linc.android.service.NfcTap.WriteState.Written ->
+                    "Done. Put the tag by your PC and tap your phone on it to connect."
+                is app.linc.android.service.NfcTap.WriteState.Failed -> s.reason
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (state is app.linc.android.service.NfcTap.WriteState.Failed) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+            if (state == app.linc.android.service.NfcTap.WriteState.Waiting) {
+                OutlinedButton(
+                    modifier = Modifier.heightIn(min = Dimens.touchTarget),
+                    onClick = { app.linc.android.service.NfcTap.cancelWrite(activity) },
+                ) { Text("Cancel") }
+            } else {
+                OutlinedButton(
+                    modifier = Modifier.heightIn(min = Dimens.touchTarget),
+                    onClick = {
+                        app.linc.android.service.NfcTap.resetWriteState()
+                        app.linc.android.service.NfcTap.beginWrite(activity)
+                    },
+                ) { Text(if (state == app.linc.android.service.NfcTap.WriteState.Written) "Write another tag" else "Write a tag") }
             }
         }
     }

@@ -16,8 +16,10 @@ android {
         targetSdk = 35
         // M18 C1: the first production release identity — versionName must match the desktop's
         // InformationalVersion exactly, because M17b's update check compares against it.
-        versionCode = 2
-        versionName = "1.0.0-beta.1"
+        // Numeric four-part versions from 1.0.0.2 on (M20 A2): "1.0.0-beta.2" is only the display
+        // name; the update check compares these numbers, and a "-beta.N" suffix would be ignored.
+        versionCode = 3
+        versionName = "1.0.0.2"
     }
 
     buildTypes {
@@ -53,6 +55,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.kotlinx.serialization.json)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)

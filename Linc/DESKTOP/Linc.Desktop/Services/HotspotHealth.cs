@@ -42,6 +42,18 @@ public static class HotspotBackoff
 
     /// <summary>`adb devices` poll interval. M13c §3.2 asks for 3-5 s; 4 s is the middle.</summary>
     public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(4);
+
+    /// <summary>
+    /// Consecutive failed re-resolves after which the health loop stops redialling the same
+    /// endpoint and asks the phone where adbd is now. Measured 2026-09-25: the phone moved from
+    /// the home Wi-Fi to the PC's hotspot and the loop kept dialling the old address every
+    /// 25-40 s for as long as the app ran — a dead standby that also blocked a fresh race.
+    /// Six is ~30 s of backoff: longer than any real blip, far shorter than "forever".
+    /// </summary>
+    public const int RetireAfter = 6;
+
+    /// <summary>True when the health loop should give the endpoint up rather than dial it again.</summary>
+    public static bool ShouldRetire(int consecutiveFailures) => consecutiveFailures >= RetireAfter;
 }
 
 /// <summary>

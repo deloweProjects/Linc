@@ -8,12 +8,15 @@ import app.linc.android.service.CompanionStateHolder.ServiceState
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Standing presence over Direct TLS (PIPELINE.md, D-014/D-022): while the companion
@@ -87,8 +90,27 @@ class PresenceClient(
                 } else {
                     idleDelaysMs = 3_000L
                 }
-                delay(idleDelaysMs)
+                // Sleep out the backoff, but wake at once on a strong "the PC is right here"
+                // signal (an NFC tap, the screen coming on) instead of waiting up to 30 s.
+                val poked = withTimeoutOrNull(idleDelaysMs) { ReconnectSignal.await() }
+                if (poked != null) {
+                    LogStore.log(LogLevel.INFO, "Looking for the PC now ($poked)")
+                    idleDelaysMs = 3_000L
+                    restartDiscovery()
+                }
             }
+        }
+    }
+
+    /** A fresh mDNS browse: after a network change the old one can sit on a stale answer. */
+    private fun restartDiscovery() {
+        if (discovering) {
+            runCatching { nsd.stopServiceDiscovery(discoveryListener) }
+            discovering = false
+        }
+        runCatching {
+            nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            discovering = true
         }
     }
 
@@ -114,9 +136,12 @@ class PresenceClient(
                 TlsIdentity.connect(endpoint.first, endpoint.second, cert, DIAL_TIMEOUT_MS)
             }.getOrNull() ?: continue
             activeEndpoint = endpoint
-            LogStore.log(LogLevel.INFO, "Connected to the PC directly (no ADB)")
-            server.serveExternal(socket) // blocks until the desktop disconnects
+            LogStore.log(LogLevel.INFO, "Connected to the PC directly (no ADB) at ${endpoint.first}:${endpoint.second}")
+            val since = android.os.SystemClock.elapsedRealtime()
+            val why = server.serveExternal(socket) // blocks until the desktop disconnects
             activeEndpoint = null
+            LogStore.log(LogLevel.WARN, "Direct connection to the PC ended after " +
+                "${(android.os.SystemClock.elapsedRealtime() - since) / 1000} s (${why ?: "closed"})")
             return true
         }
         return false
@@ -150,10 +175,25 @@ class PresenceClient(
             addAll(candidateEndpoints())
         }.distinct()
 
-        val socket = endpoints.firstNotNullOfOrNull { endpoint ->
-            runCatching { TlsIdentity.connect(endpoint.first, endpoint.second, cert, DIAL_TIMEOUT_MS) }
-                .getOrNull()
+        // Find the reachable route by racing plain TCP probes, then do TLS once, to it: a dead
+        // advertised address used to cost a whole connect timeout per channel, and PC Remote
+        // opens two channels back to back. Only probes race — a second TLS connection that
+        // closed without its header would look to the PC like a new control link.
+        val started = android.os.SystemClock.elapsedRealtime()
+        val reachable = EndpointRace.first(
+            endpoints,
+            timeoutMs = DIAL_TIMEOUT_MS + 500L,
+            connect = { endpoint ->
+                Socket().use { it.connect(InetSocketAddress(endpoint.first, endpoint.second), DIAL_TIMEOUT_MS) }
+                endpoint
+            },
+            close = {},
+        )
+        val ordered = listOfNotNull(reachable) + (endpoints - setOfNotNull(reachable))
+        val socket = ordered.firstNotNullOfOrNull { (host, port) ->
+            runCatching { TlsIdentity.connect(host, port, cert, DIAL_TIMEOUT_MS) }.getOrNull()
         } ?: return false
+        LogStore.log(LogLevel.INFO, "Channel $channel: dialled back to the PC in ${android.os.SystemClock.elapsedRealtime() - started} ms")
 
         scope.launch(Dispatchers.IO) {
             try {

@@ -28,4 +28,63 @@ object MirrorSettings {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY, quality.name).apply()
     }
+
+    /**
+     * How a finger drives the PC's pointer (v20, D-067), after Windows App's two modes:
+     * [TOUCH] puts the pointer where you touch; [MOUSE] is a trackpad — the pointer stays put
+     * and a drag moves it, which is far more precise on a small screen.
+     */
+    enum class PointerMode { TOUCH, MOUSE }
+
+    fun pointerMode(context: Context): PointerMode {
+        val name = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_POINTER, null)
+        return PointerMode.entries.firstOrNull { it.name == name } ?: PointerMode.TOUCH
+    }
+
+    fun setPointerMode(context: Context, mode: PointerMode) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_POINTER, mode.name).apply()
+    }
+
+    /** Play the PC's sound on the phone while PC Remote is open (v20). On by default. */
+    fun audio(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AUDIO, true)
+
+    fun setAudio(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_AUDIO, on).apply()
+    }
+
+    /** Raise a keyboard by itself when a text field is focused on the PC. On by default. */
+    fun autoKeyboard(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AUTO_KB, true)
+
+    fun setAutoKeyboard(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_AUTO_KB, on).apply()
+    }
+
+    /** Voice Access hears through this phone's microphone (when the PC has a virtual cable). */
+    fun voicePhoneMic(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_VOICE_PHONE_MIC, true)
+
+    fun setVoicePhoneMic(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_VOICE_PHONE_MIC, on).apply()
+    }
+
+    /** Which keyboard PC Remote raises: the floating PC keyboard (default) or the phone's own. */
+    fun floatingKeyboard(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_FLOATING_KB, true)
+
+    fun setFloatingKeyboard(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_FLOATING_KB, on).apply()
+    }
+
+    private const val KEY_AUTO_KB = "mirror_auto_keyboard"
+    private const val KEY_VOICE_PHONE_MIC = "voice_access_phone_mic"
+    private const val KEY_FLOATING_KB = "mirror_floating_keyboard"
+    private const val KEY_POINTER = "mirror_pointer_mode"
+    private const val KEY_AUDIO = "mirror_audio"
 }

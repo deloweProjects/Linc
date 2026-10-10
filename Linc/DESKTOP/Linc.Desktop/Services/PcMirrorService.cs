@@ -96,8 +96,9 @@ public sealed class PcMirrorService(
 
             case MessageType.PcMirrorKeyframe:
                 // The phone lost sync (dropped packets, a decoder restart). Give it an IDR
-                // now rather than making it wait out the GOP. (v19)
-                _source?.RequestKeyFrame();
+                // rather than making it wait out the GOP (v19) — through the sender's ration,
+                // so a phone on a bad link cannot answer congestion with a keyframe storm.
+                if (_sender is { } s) s.RequestKeyFrame(); else _source?.RequestKeyFrame();
                 break;
 
             case MessageType.PcMirrorStop:
@@ -107,6 +108,124 @@ public sealed class PcMirrorService(
             case MessageType.PcInput:
                 RouteInput(envelope.Payload);
                 break;
+
+            case MessageType.PcMirrorPing:
+                // Echo straight back: the phone times the round trip for its connection bar (v20).
+                _ = connection.SendToPhoneAsync(
+                    Envelope.Create(MessageType.PcMirrorPong, envelope.Payload.DeepClone().AsObject()),
+                    CancellationToken.None);
+                break;
+
+            case MessageType.PcAudioStart:
+                _ = StartAudioAsync();
+                break;
+
+            case MessageType.PcAudioStop:
+                StopAudio();
+                break;
+
+            // v21 (D-070): Windows Voice Access, optionally hearing through the phone's mic.
+            case MessageType.PcVoiceAccessSet:
+                bool on = (bool?)envelope.Payload["on"] ?? false;
+                bool phoneMic = (bool?)envelope.Payload["phoneMic"] ?? true;
+                bool installCable = (bool?)envelope.Payload["installCable"] ?? false;
+                _ = Task.Run(() => VoiceAccess.SetAsync(on, phoneMic, installCable));
+                break;
+
+            case MessageType.PcVoiceAccessGet:
+                _ = Task.Run(() => VoiceAccess.SendStateAsync());
+                break;
+        }
+    }
+
+    private PcVoiceAccess? _voiceAccess;
+    private PcVoiceAccess VoiceAccess => _voiceAccess ??= new PcVoiceAccess(connection, log);
+
+    // ---- PC audio (v20, channel 6) ------------------------------------------
+
+    private PcAudioStreamer? _audio;
+    private int _audioStarting;
+
+    /// <summary>
+    /// Open the pc-audio channel and start streaming the PC's sound. Like the mirror's own
+    /// start, a repeat request while one is in flight or already running is ignored, so the
+    /// phone may simply re-ask after a reconnect.
+    /// </summary>
+    private async Task StartAudioAsync()
+    {
+        if (_audio is not null || Interlocked.CompareExchange(ref _audioStarting, 1, 0) == 1) return;
+        try
+        {
+            // Probe on an MTA thread (WASAPI is COM; see the encoder note in StartAsync).
+            int rate = await Task.Run(PcAudioStreamer.ProbeSampleRate);
+            var channel = await connection.OpenPhoneDialledChannelAsync(PcAudioStreamer.Channel, CancellationToken.None);
+            await Framing.WriteAsync(channel, PcAudioStreamer.Config(rate).ToJsonString(), CancellationToken.None);
+            var audio = PcAudioStreamer.Start(channel, rate, log);
+            audio.Ended += reason =>
+            {
+                log.Log(LogLevel.Info, $"PC audio ended: {reason}");
+                if (ReferenceEquals(_audio, audio)) StopAudio();
+            };
+            _audio = audio;
+            log.Log(LogLevel.Info, $"Playing this PC's sound on the phone (AAC, {rate} Hz)");
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Couldn't play this PC's sound on the phone: {ex.Message}");
+        }
+        finally { Interlocked.Exchange(ref _audioStarting, 0); }
+    }
+
+    private void StopAudio()
+    {
+        var audio = Interlocked.Exchange(ref _audio, null);
+        if (audio is null) return;
+        _ = Task.Run(audio.Dispose);
+        log.Log(LogLevel.Info, "Stopped playing this PC's sound on the phone");
+    }
+
+    // ---- cursor + link stats (v20) -------------------------------------------
+
+    /// <summary>
+    /// While streaming to a v20 phone: send the pointer whenever it changes (the phone draws
+    /// it, see <see cref="PcCursorWatcher"/>) and, once a second, how the link is doing.
+    /// </summary>
+    private void WatchCursorAndStats(PcDisplay display, CancellationToken token)
+    {
+        var stats = new Thread(() => SendStats(token)) { IsBackground = true, Name = "linc-mirror-stats" };
+        stats.Start();
+        PcCursorWatcher.Run(display, sample =>
+            connection.SendToPhoneAsync(
+                Envelope.Create(MessageType.PcMirrorCursor, PcCursorWatcher.ToPayload(sample)), token)
+                .GetAwaiter().GetResult(),
+            token);
+    }
+
+    private void SendStats(CancellationToken token)
+    {
+        long lastFrames = 0, lastBytes = 0, lastMs = Environment.TickCount64;
+        while (!token.WaitHandle.WaitOne(1000))
+        {
+            if (_sender is not { } sender) continue;
+            var snap = sender.Snapshot();
+            long now = Environment.TickCount64;
+            double seconds = Math.Max(0.001, (now - lastMs) / 1000.0);
+            var payload = new JsonObject
+            {
+                ["targetKbps"] = snap.Bitrate / 1000,
+                ["sentKbps"] = (int)((snap.SentBytes - lastBytes) * 8 / 1000 / seconds),
+                ["fps"] = Math.Round((snap.SentFrames - lastFrames) / seconds, 1),
+                ["delayMs"] = (int)snap.DelayMs,
+                ["skipPct"] = (int)(snap.SkipRatio * 100),
+                ["dropped"] = snap.Dropped,
+            };
+            lastFrames = snap.SentFrames; lastBytes = snap.SentBytes; lastMs = now;
+            try
+            {
+                connection.SendToPhoneAsync(Envelope.Create(MessageType.PcMirrorStats, payload), token)
+                    .GetAwaiter().GetResult();
+            }
+            catch { /* link hiccup; next second */ }
         }
     }
 
@@ -236,7 +355,7 @@ public sealed class PcMirrorService(
                 // Already giving the phone exactly this. Nudge a keyframe in case its
                 // decoder is the reason it asked again, and leave the stream alone.
                 log.Log(LogLevel.Info, "PC mirror: already streaming this display, sending a keyframe");
-                _source.RequestKeyFrame();
+                if (_sender is { } s) s.RequestKeyFrame(); else _source.RequestKeyFrame();
                 return;
             }
 
@@ -305,7 +424,8 @@ public sealed class PcMirrorService(
 
             // Frames leave through the sender's own thread; the encoder pump must never wait
             // on the socket (see PcMirrorSender).
-            var sender = new PcMirrorSender(channel, source.RequestKeyFrame, log);
+            var sender = new PcMirrorSender(channel, source.RequestKeyFrame, source.RequestBitrate,
+                useBitrate, log);
             sender.Ended += reason =>
             {
                 log.Log(LogLevel.Info, $"PC mirror stream ended: {reason}");
@@ -313,6 +433,10 @@ public sealed class PcMirrorService(
             };
             _sender = sender;
 
+            // Let the sender refuse frames before they are encoded when the link is busy —
+            // skipping an unencoded frame breaks nothing, dropping an encoded one breaks the
+            // reference chain (see PcMirrorSource.AcceptFrame).
+            source.AcceptFrame = sender.AcceptFrame;
             source.FrameEncoded += OnFrameEncoded;
             await Task.Run(source.Start, ct); // start streaming on an MTA thread too (see above)
 
@@ -320,8 +444,14 @@ public sealed class PcMirrorService(
             new Thread(() => WatchTextFocus(focusToken))
                 { IsBackground = true, Name = "linc-mirror-textfocus" }.Start();
 
+            // v20: the phone draws the pointer itself and shows link health.
+            if (connection.Current is { Companion.V: >= 20 } && _activeDisplay is { } shown)
+                new Thread(() => WatchCursorAndStats(shown, focusToken))
+                    { IsBackground = true, Name = "linc-mirror-cursor" }.Start();
+
             log.Log(LogLevel.Info,
-                $"Mirroring this PC to the phone: {source.Width}x{source.Height} on display {displayIndex}");
+                $"Mirroring this PC to the phone: {source.Width}x{source.Height} on display {displayIndex}, " +
+                $"{useFps} fps, up to {useBitrate / 1000} kb/s");
             return (source.Width, source.Height);
         }
         finally { _gate.Release(); }
@@ -356,6 +486,9 @@ public sealed class PcMirrorService(
         _active = null;
 
         // Stop the writer before the channel it writes to goes away.
+        if (_sender is { } ending)
+            log.Log(LogLevel.Info,
+                $"PC mirror: session ended at {ending.CurrentBitrate / 1000} kb/s, {ending.DroppedFrames} frames dropped");
         _sender?.Dispose();
         _sender = null;
 
@@ -376,6 +509,8 @@ public sealed class PcMirrorService(
     {
         if (_disposed) return;
         _disposed = true;
+        StopAudio();
+        _voiceAccess?.Dispose(); // puts the user's own default microphone back
         try { StopAsync().GetAwaiter().GetResult(); } catch { }
         _gate.Dispose();
     }

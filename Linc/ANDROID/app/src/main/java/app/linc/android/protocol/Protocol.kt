@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 19
+const val PROTOCOL_VERSION = 21
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -84,6 +84,15 @@ object MessageType {
     const val PC_MIRROR_KEYFRAME = "pc.mirror.keyframe" // phone → desktop: resend an IDR (v19)
     const val PC_INPUT = "pc.input"                  // phone → desktop
     const val PC_TEXT_FOCUS = "pc.textfocus"         // desktop → phone: a text field gained/lost focus
+    const val PC_MIRROR_CURSOR = "pc.mirror.cursor"  // desktop → phone: pointer position/shape (v20)
+    const val PC_MIRROR_STATS = "pc.mirror.stats"    // desktop → phone: link health, 1/s (v20)
+    const val PC_MIRROR_PING = "pc.mirror.ping"      // phone → desktop: round-trip probe (v20)
+    const val PC_MIRROR_PONG = "pc.mirror.pong"      // desktop → phone: echo of the ping (v20)
+    const val PC_AUDIO_START = "pc.audio.start"      // phone → desktop: stream PC sound on channel 6 (v20)
+    const val PC_AUDIO_STOP = "pc.audio.stop"        // phone → desktop (v20)
+    const val PC_VOICEACCESS_SET = "pc.voiceaccess.set"     // phone → desktop: start/stop Voice Access (v21)
+    const val PC_VOICEACCESS_GET = "pc.voiceaccess.get"     // phone → desktop (v21)
+    const val PC_VOICEACCESS_STATE = "pc.voiceaccess.state" // desktop → phone (v21)
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

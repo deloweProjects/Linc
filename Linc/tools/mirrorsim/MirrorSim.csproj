@@ -6,6 +6,9 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- For the Motion helper only: a window of scrolling noise, so rate control can be measured
+         against content that actually wants more bits than the target. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>linc-mirrorsim</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
@@ -21,6 +24,12 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSource.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSender.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+    <!-- v20 (D-067): the client-drawn cursor and PC audio, exercised against the real OS. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcCursorWatcher.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcAudioStreamer.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMicAudio.cs" />
+    <!-- D-071: the pinned VB-CABLE package and its setup selection (no download in the harness). -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\VirtualCable.cs" />
     <!-- For ILogService/LogLevel only; the harness supplies its own console implementation
          so no run ever writes to the app's real log. -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />

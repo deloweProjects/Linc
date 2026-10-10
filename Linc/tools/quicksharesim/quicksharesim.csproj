@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-quicksharesim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The production Quick Share engine, compiled verbatim (D-036 pattern): a harness that
+         re-implements the protocol it tests proves nothing. Both ends of the loopback are the
+         real QsConnection, so this proves the two roles agree with EACH OTHER; interop with
+         Android itself is a hardware check. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\QuickShare\QsCrypto.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\QuickShare\QsConnection.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\QuickShare\QsShellIntegration.cs" />
+    <Protobuf Include="..\..\DESKTOP\Linc.Desktop\QuickShare\Proto\*.proto"
+              ProtoRoot="..\..\DESKTOP\Linc.Desktop\QuickShare\Proto" GrpcServices="None" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.67.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

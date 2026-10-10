@@ -161,6 +161,70 @@ public static class DeviceAdmission
     }
 
     /// <summary>
+    /// The known serial <paramref name="candidate"/> belongs to, or null when it is a phone this
+    /// PC has never connected to. With <paramref name="contains"/> the candidate is an mDNS
+    /// instance name (<c>adb-&lt;serialno&gt;-XXXXXX</c>), which embeds the serial rather than
+    /// being it. This is the one rule for "have we seen this phone before" — USB, Wi-Fi discovery
+    /// and the onboarding wizard all ask it, so a returning phone is never offered as new.
+    /// </summary>
+    public static string? RecogniseKnown(string? candidate, IEnumerable<string> knownSerials, bool contains = false)
+    {
+        var text = (candidate ?? "").Trim();
+        if (text.Length == 0)
+        {
+            return null;
+        }
+        foreach (var serial in knownSerials)
+        {
+            if (string.IsNullOrWhiteSpace(serial))
+            {
+                continue;
+            }
+            var hit = contains
+                ? text.Contains(serial.Trim(), StringComparison.OrdinalIgnoreCase)
+                : string.Equals(text, serial.Trim(), StringComparison.OrdinalIgnoreCase);
+            if (hit)
+            {
+                return serial.Trim();
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Whether a known phone that is NOT the active one may be connected on Linc's own initiative.
+    /// Only when nothing is live or in flight: recognising a returning phone must never take the
+    /// link off the phone the user is already using (D-037 — that stays the confirmation card).
+    /// </summary>
+    public static bool MayAdoptKnownPhone(LinkActivity state) => state == LinkActivity.Idle;
+
+    /// <summary>Decodes the stored certificate pins, skipping missing or corrupt ones.</summary>
+    public static List<byte[]> PinnedCertificates(IEnumerable<string?> base64Pins)
+    {
+        var list = new List<byte[]>();
+        foreach (var pin in base64Pins)
+        {
+            if (string.IsNullOrWhiteSpace(pin))
+            {
+                continue;
+            }
+            try
+            {
+                list.Add(Convert.FromBase64String(pin));
+            }
+            catch (FormatException)
+            {
+                // A corrupt pin only disqualifies that one phone; the others still authenticate.
+            }
+        }
+        return list;
+    }
+
+    /// <summary>True when <paramref name="raw"/> is byte-for-byte one of <paramref name="pins"/>.</summary>
+    public static bool MatchesAny(byte[] raw, IEnumerable<byte[]> pins) =>
+        pins.Any(pin => raw.AsSpan().SequenceEqual(pin));
+
+    /// <summary>
     /// The standing line shown wherever a phone can be added while one is already connected
     /// (M15c A2) — stated BEFORE the collision, not after it. Null when nothing is live, so the
     /// note simply is not there rather than saying something untrue. Pure text: no state machine,
