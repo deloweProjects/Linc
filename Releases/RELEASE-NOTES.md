@@ -9,6 +9,41 @@ update manifest.
 
 Verify what you download against [`CHECKSUMS.txt`](CHECKSUMS.txt) before running it.
 
+**Version numbers.** From 1.0.0.2 on, the version both apps report and `update.json` compares is
+numeric and four-part (`1.0.0.2`, `1.0.0.3`, …) and strictly ordered. Names like "1.0.0-beta.2" are
+display names only — the update check ignores anything after a `-`.
+
+---
+
+## 1.0.0.2 ("1.0.0-beta.2") — 2026-10-10
+
+Everything since beta.1 that was only in local test builds, plus this round's fixes. Install both
+apps (protocol v21).
+
+**PC Remote (Mirror PC), Windows-App style** — D-066…D-070
+
+- Wi-Fi rate control: the PC follows the link's real bit rate and sheds frames before encoding
+  instead of queueing them (D-066).
+- The PC's pointer is drawn on the phone, so it moves the moment your finger does; Touch and Mouse
+  (trackpad) modes, press-and-hold / two-finger tap for right click, smooth two-finger scroll,
+  link stats and ping, and the PC's sound on the phone (D-067).
+- A Material 3 Expressive status bubble and panel, a floating PC keyboard with voice typing, and
+  the keyboard popping up on PC text fields (D-069). The "private session" mode was withdrawn (D-068).
+- Windows Voice Access from the phone, hearing through the phone's microphone (D-070).
+
+**This round** — D-071, D-072
+
+- **Tapping the bubble no longer freezes and kills Linc** (and drops the PC link). It was an
+  "app not responding": the bubble's shadow followed its cookie shape, which Android's renderer
+  takes seconds per frame to draw. That was also the lag before the tap.
+- **Mirror PC starts faster**: the phone no longer waits out a 4-second timeout on each PC address
+  it can't reach when opening the picture and sound channels.
+- **Voice Access sets up the phone-as-microphone itself.** After you agree on the phone, the PC
+  downloads VB-CABLE (VB-Audio's free virtual audio cable) from vb-audio.com, checks it against a
+  pinned SHA-256, and opens VB-Audio's own installer: approve Windows' prompt, click Install Driver. Remove it from desktop
+  Settings → Phone as microphone. Your own default microphone is put back after each session, on
+  Exit, and after a crash.
+
 ---
 
 ## 1.0.0-beta.1 — reissued 2026-09-20

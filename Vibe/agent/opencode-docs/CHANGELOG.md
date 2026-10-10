@@ -9,6 +9,21 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-10 — Mirror PC no longer freezes on the bubble; faster start; Voice Access sets up its own microphone (D-071, D-072)
+
+- **Tapping the PC Remote bubble no longer kills Linc.** It was an ANR, not a crash: the bubble's
+  shadow followed its concave cookie shape, which Skia tessellates on the render thread for seconds
+  per frame. The same work was the lag before the tap. The shadow is now a circle.
+- **Mirror PC starts faster**: the phone races the PC's addresses when opening the video and sound
+  channels instead of waiting out a 4 s timeout on each unreachable one.
+- **Voice Access sets up the phone-as-microphone itself**: after you agree, the PC downloads VB-CABLE
+  from VB-Audio (pinned, SHA-256 checked) and opens VB-Audio's own installer (one Windows prompt,
+  then "Install Driver"); the phone shows "Setting up the microphone…". Not silent or bundled —
+  VB-CABLE's licence forbids integrating it into another installer without the author's agreement. Remove it from desktop Settings → Phone as microphone.
+- The PC's own default microphone is now really restored on Exit, and after a crash on next start.
+- Tests: `EndpointRaceTest`, `PcRemoteOverlayTest`, `PcVoiceAccessTest` (setup state); `mirrorsim`
+  "D-071 virtual cable".
+
 ### Added — 2026-10-10 — Voice Access, Material 3 Expressive bubble, floating keyboard (protocol v21, D-069, D-070)
 
 - **Voice Access** (Tools, and the bubble): start Windows Voice Access from the phone and talk to the PC

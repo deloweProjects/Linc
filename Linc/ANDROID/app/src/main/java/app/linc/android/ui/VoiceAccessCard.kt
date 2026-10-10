@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,8 +47,33 @@ fun VoiceAccessCard() {
     val state by PcVoiceAccess.state.collectAsState()
     val micLive by PcVoiceAccess.micLive.collectAsState()
     var phoneMic by remember { mutableStateOf(MirrorSettings.voicePhoneMic(context)) }
+    var askSetup by remember { mutableStateOf(false) }
+    /** Start with the phone's mic; first offer to set the PC up for it if it can't hear one yet. */
+    fun startWithPhoneMic() {
+        if (PcVoiceAccess.state.value.canSetUp) askSetup = true
+        else PcVoiceAccess.set(context, true, phoneMic = true)
+    }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) PcVoiceAccess.set(context, true, phoneMic = true)
+        if (granted) startWithPhoneMic()
+    }
+    if (askSetup) {
+        AlertDialog(
+            onDismissRequest = { askSetup = false },
+            title = { Text("Set up the microphone on the PC?") },
+            text = { Text(PcVoiceAccess.SETUP_EXPLANATION) },
+            confirmButton = {
+                TextButton(onClick = {
+                    askSetup = false
+                    PcVoiceAccess.set(context, true, phoneMic = true, installCable = true)
+                }) { Text("Set up") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    askSetup = false
+                    PcVoiceAccess.set(context, true, phoneMic = false)
+                }) { Text("Use the PC's mic") }
+            },
+        )
     }
     LaunchedEffect(connection) { PcVoiceAccess.refresh(context) }
 
@@ -57,6 +84,7 @@ fun VoiceAccessCard() {
                 when {
                     !ready -> "Update Linc on the PC to use Voice Access from here."
                     !state.available -> "This PC doesn't have Windows Voice Access (Windows 11 22H2 or later)."
+                    state.settingUp -> "Setting up the microphone… on the PC, approve Windows' prompt (it may be flashing in the taskbar) and click Install Driver."
                     state.on && micLive -> "On — the PC is listening through this phone. Try \"open Edge\" or \"show numbers\"."
                     state.on -> "On — the PC is listening through its own microphone."
                     else -> "Control the PC by voice: \"click Start\", \"scroll down\", \"type hello\"."
@@ -67,9 +95,10 @@ fun VoiceAccessCard() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Use this phone as the microphone", style = MaterialTheme.typography.bodyLarge)
-                    if (phoneMic && ready && !state.cable) {
+                    if (phoneMic && ready && !state.cable && !state.settingUp) {
                         Text(
-                            "Needs a virtual audio cable on the PC: install the free VB-CABLE from vb-audio.com, then restart Voice Access.",
+                            if (state.canSetUp) "The PC needs a virtual microphone first — Linc sets it up when you start."
+                            else "Update Linc on the PC so it can set up the microphone by itself.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.tertiary,
                         )
@@ -81,13 +110,15 @@ fun VoiceAccessCard() {
                 })
             }
             Button(
-                enabled = ready && state.available,
+                enabled = ready && state.available && !state.settingUp,
                 modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
                 colors = if (state.on) ButtonDefaults.filledTonalButtonColors() else ButtonDefaults.buttonColors(),
                 onClick = {
                     val on = !state.on
                     if (on && phoneMic && !PcVoiceAccess.hasMicPermission(context)) {
                         askMic.launch(Manifest.permission.RECORD_AUDIO)
+                    } else if (on && phoneMic) {
+                        startWithPhoneMic()
                     } else {
                         PcVoiceAccess.set(context, on, phoneMic)
                     }

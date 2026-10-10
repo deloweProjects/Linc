@@ -167,6 +167,21 @@
                 </StackPanel>
             </Border>
 
+            <!-- Phone as microphone (D-071): the virtual cable Voice Access hears the phone through. -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Phone as microphone" Style="{StaticResource TitleText}" />
+                    <TextBlock
+                        Text="Windows Voice Access can hear you through your phone. Windows only accepts a microphone a driver provides, so Linc sets up VB-CABLE, VB-Audio&apos;s free virtual audio cable, downloaded from vb-audio.com. Your own microphone stays the default except while the phone is in use."
+                        Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                    <TextBlock x:Name="CableStatus" Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button x:Name="CableInstallButton" Content="Set up" Click="OnCableInstallClick" />
+                        <Button x:Name="CableRemoveButton" Content="Remove" Click="OnCableRemoveClick" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- Updates (M19 C3): one switch, default ON. There is no address to configure -
                  the manifest is Releases/update.json in Linc's own repo, baked in at build time. -->
             <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">

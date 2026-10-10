@@ -27,6 +27,13 @@ class UpdateDecisionTest {
     }
 
     @Test
+    fun `the first numeric build is offered to beta_1 installs, never forced`() {
+        // M20 A2: 1.0.0-beta.1 parses as 1.0.0, so 1.0.0.2 is newer; the minimum stays put.
+        assertEquals(UpdateAction.Optional, UpdateDecision.decide("1.0.0-beta.1", "1.0.0.2", "1.0.0-beta.1", null))
+        assertEquals(UpdateAction.None, UpdateDecision.decide("1.0.0.2", "1.0.0.2", "1.0.0-beta.1", null))
+    }
+
+    @Test
     fun `a newer latest is an optional update`() {
         assertEquals(UpdateAction.Optional, UpdateDecision.decide("1.0.0", "1.1.0", "1.0.0", null))
     }

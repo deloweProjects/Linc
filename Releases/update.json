@@ -29,15 +29,15 @@
     "",
     "Keys beginning with an underscore are ignored by both parsers."
   ],
-  "latest": "1.0.0-beta.1",
+  "latest": "1.0.0.2",
   "minimumSupported": "1.0.0-beta.1",
-  "notes": "Linc 1.0.0-beta.1 — the first public beta.",
+  "notes": "Linc 1.0.0-beta.2 — Mirror PC no longer freezes on the bubble, starts faster, and Voice Access can use your phone as the microphone.",
   "desktop": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0-beta.1/Linc-Desktop-1.0.0-beta.1.zip",
-    "sha256": "11E251A1DB9498F1B2DAFBCDB4D598AA34EF0DA7440D10957246129D6802FA65"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.2/Linc-Desktop-1.0.0.2-2026-10-10.zip",
+    "sha256": "7231598B6A6FF61960B080B257829B89F08B0A21C94653C868E9311D88E90B5D"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0-beta.1/Linc-Companion-1.0.0-beta.1.apk",
-    "sha256": "1DE9609F32EFD3E252FDD7CC60BF2F201FC68989BD84506B4E307D5CD16A5DCA"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.2/Linc-Companion-1.0.0.2-2026-10-10.apk",
+    "sha256": "6A39DA915A04911DE68C63F95B629077AC284E9B7AEC5D70D71396B277F8E5DC"
   }
 }

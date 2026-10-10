@@ -882,10 +882,91 @@ cable** (VB-CABLE, free; or any "Virtual … Input/Output" pair), and the cable'
 the default microphone for the session through `IPolicyConfig` — the undocumented but long-stable
 interface Windows' own Sound settings use — and the user's own default is restored afterwards (and on
 app exit). Linc does not ship or install a driver: without a cable, Voice Access still starts on the
-PC's own microphone and the phone explains how to add one. At most ~150 ms of audio is buffered; older
+PC's own microphone and the phone explains how to add one. *(Superseded 2026-10-10 by D-071: Linc now
+sets the cable up itself.)* At most ~150 ms of audio is buffered; older
 audio is dropped, because a voice command heard late is worse than one clipped.
 
 Tested: the upsampler and cable-name matching (`mirrorsim`); the state messages and the v21 gate
 (`PcVoiceAccessTest`). **Not** run here: switching the default microphone (it changes the owner's
 system setting) and the end-to-end path (this PC has no cable installed).
 
+## D-071: Linc sets up the virtual microphone itself — VB-CABLE, fetched from its maker, with consent
+
+**2026-10-10.** Owner, on D-070 needing a manual VB-CABLE install: "the app can very well get some
+drivers of that and do it itself." Supersedes D-070's "Linc does not ship or install a driver".
+
+**The constraint.** Windows only lets a kernel driver create a microphone, and on a Secure-Boot
+Windows 11 that driver must be Microsoft-signed (attestation or WHQL); test-signing is not something a
+user-facing app can ask for. Candidates evaluated:
+
+| Driver | Licence | Signed release? | Speaker → mic loopback? |
+|---|---|---|---|
+| VirtualDrivers/Virtual-Audio-Driver | MIT (+MS-PL SysVAD code) | **No** — README: "requires test signing"; no GitHub releases | **No** — stock SysVAD: the mic plays `ToneGenerator`, the speaker writes to a file (`SaveData`) |
+| JannesP/AudioMirror | MIT | No — "isn't finished … You've been warned"; no releases | Yes |
+| syams86/Virtual-Audio-Pipeline, amanison/OpenAudioCable | GPL-2.0 / GPL-3.0 | No | Yes / unclear |
+| VB-Audio VB-CABLE | Donationware; redistribution needs a licence | **Yes** | Yes |
+
+No open-source option installs on a normal PC. Signing our own (an AudioMirror fork) needs an EV
+certificate and a Partner Center hardware account — only the owner can get those; it stays the path to
+a fully self-owned driver later. Asked, the owner chose "do what most devs do": apps that turn a phone
+into a PC microphone almost all rely on VB-CABLE.
+
+**So:** Linc never bundles VB-CABLE. With the user's agreement — asked on the phone (Tools → Voice
+Access, or the bubble) with a plain explanation, or from desktop Settings → Phone as microphone — the PC
+downloads VB-Audio's own `VBCABLE_Driver_Pack45.zip` from `download.vb-audio.com`, **pinned by
+SHA-256** (`B950E39F…16BFB`, 1,318,877 bytes, served with Last-Modified 2025-12-05 — VB-Audio
+replaces packs in place, and a mismatch stops the install), extracts it under
+`%LOCALAPPDATA%\Linc\drivers`, and **opens VB-Audio's own setup, unmodified and visible** (one UAC
+prompt), where the user clicks *Install Driver* (or *Remove Driver*). Checked here without running
+it: the zip tests clean, `VBCABLE_Setup_x64.exe` has a valid Authenticode signature (VB-Audio's EV
+certificate) and the driver catalog is signed by *Microsoft Windows Hardware Compatibility
+Publisher*, so it installs under Secure Boot. Pack 45 has no ARM64 setup; its x64 setup carries the
+ARM64 driver.
+
+**Licence — an open question for the owner.** The pack's readme allows copying it "AS IS without
+any modification" but says "It is not allowed to integrate the VB-CABLE package in another software
+installation procedure without Author agreement." That is why Linc does not bundle it, does not run
+it silently (no unattended switches are documented anyway) and leaves the install to VB-Audio's own
+window. Whether fetching and opening it still counts as integration is VB-Audio's call; asking them
+(vb-audio.com contact) before wide distribution is recommended. It then waits up to 20 s for the CABLE endpoints and carries on
+into the phone-mic session. `pc.voiceaccess.state` gains `setup` (`ready` / `needed` / `installing` /
+`failed`) so the phone says "Setting up the microphone… approve the Windows prompt on the PC" instead
+of sending the user to vb-audio.com. A cable already installed (VB-CABLE or any "Virtual … Input/
+Output" pair) is used as before.
+
+**The default microphone is always put back.** The user's own default is written to
+`%LOCALAPPDATA%\Linc\voiceaccess-restore-mic.txt` before switching, restored when the session ends,
+when Linc exits (Exit in the tray — the DI container is never disposed, so D-070's "on app exit" was in
+fact not happening), and on the next start after a crash or kill.
+
+Tested: package pin and setup selection (`mirrorsim` "D-071 virtual cable"), phone state parsing and
+the old-PC fallback (`PcVoiceAccessTest`). **Not** run here: the install itself (it changes the
+owner's drivers) — an owner check.
+
+## D-072: The bubble "crash" was an ANR from a concave shadow; channels dial back by racing
+
+**2026-10-10.** Owner: Mirror PC "slow to load, laggy, and tapping the bubble crashes the app and
+drops the PC link".
+
+**It was not a crash and not Compose version skew.** The suspected skew (material3 1.4.0-alpha18 on a
+2024.12 BOM) does not exist at runtime: Gradle resolves every Compose module to the 1.8.1/1.8.2 line
+that alpha18's own metadata requires. The phone's crash buffer was empty; the system log had
+`am_anr … MirrorActivity is not responding. Waited 5000ms for MotionEvent`, then the kill that took the
+companion service — and the PC link — with it. All four ANR dumps of the day (`dumpsys dropbox
+data_app_anr`) show the main thread in `HardwareRenderer.syncAndDrawFrame` waiting on a RenderThread
+inside `SkBaseShadowTessellator::computeConcaveShadow`, 17–36 s of CPU each: the bubble's
+`Modifier.shadow(10.dp, Cookie9Sided)` asked Skia for an elevation shadow on a concave path, re-made
+every frame it rotated or recomposed. That same render-thread burn (Linc at 87–117 % CPU) was the lag
+the owner saw before ever tapping. **Fix:** the shadow is a circle under the cookie; Expressive
+shapes clip, never cast shadows — a unit test fails on any `shadow`/`Elevation` next to
+`MaterialShapes`.
+
+**Slow load.** The desktop log showed the encoder ready 1.9 s after the request, the video channel up
+at 7.1 s and PC sound 5.6 s after that. Each phone dial-back tried the PC's advertised addresses one
+by one with a 4 s timeout, and this PC advertises a LAN address the phone (on the PC's hotspot) can't
+reach. Now the phone races plain TCP probes to every candidate and does TLS once, to the first that
+answers (`EndpointRace`). Only probes race: a second TLS connection that closed without its channel
+header would look to the PC like a new control link.
+
+Also: the phone's activity log is mirrored to logcat (tag `Linc`) so timings can be read over adb.
+Unchanged: D-066 rate control, the 60 Hz cursor (cheap — a `View.invalidate()`), PC audio auto-start.

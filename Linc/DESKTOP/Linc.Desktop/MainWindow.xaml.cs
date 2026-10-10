@@ -43,6 +43,9 @@ public sealed partial class MainWindow : Window
         ShowShareCommand = new RelayCommand(ShowSharePage);
         ExitCommand = new RelayCommand(() =>
         {
+            // Never leave the phone's virtual cable as the PC's default microphone (D-071).
+            var log = App.Services.GetRequiredService<ILogService>();
+            Task.Run(() => PcVoiceAccess.RestorePendingDefaultMic(log)).Wait(TimeSpan.FromSeconds(3));
             TrayIcon.Dispose();
             Application.Current.Exit();
         });

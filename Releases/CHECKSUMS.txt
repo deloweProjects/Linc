@@ -1,5 +1,5 @@
-﻿Linc 1.0.0-beta.1 - SHA256 checksums
-====================================
+﻿Linc - SHA256 checksums
+=======================
 
 Verify a download on Windows with:
 
@@ -13,11 +13,20 @@ The hash you get must match the line below exactly. If it does not, the file is
 damaged or has been tampered with - do not run it.
 
 
+1.0.0.2 ("1.0.0-beta.2", 2026-10-10, release v1.0.0.2):
+
+7231598B6A6FF61960B080B257829B89F08B0A21C94653C868E9311D88E90B5D  Linc-Desktop-1.0.0.2-2026-10-10.zip
+6A39DA915A04911DE68C63F95B629077AC284E9B7AEC5D70D71396B277F8E5DC  Linc-Companion-1.0.0.2-2026-10-10.apk
+
+1.0.0-beta.1 (release v1.0.0-beta.1):
+
 11E251A1DB9498F1B2DAFBCDB4D598AA34EF0DA7440D10957246129D6802FA65  Linc-Desktop-1.0.0-beta.1.zip
 1DE9609F32EFD3E252FDD7CC60BF2F201FC68989BD84506B4E307D5CD16A5DCA  Linc-Companion-1.0.0-beta.1.apk
 
 
 File sizes (bytes), as a second check:
 
+    Linc-Desktop-1.0.0.2-2026-10-10.zip     173157516
+    Linc-Companion-1.0.0.2-2026-10-10.apk    29745881
     Linc-Desktop-1.0.0-beta.1.zip     170997273
     Linc-Companion-1.0.0-beta.1.apk   25584537

@@ -128,7 +128,8 @@ public sealed class PcMirrorService(
             case MessageType.PcVoiceAccessSet:
                 bool on = (bool?)envelope.Payload["on"] ?? false;
                 bool phoneMic = (bool?)envelope.Payload["phoneMic"] ?? true;
-                _ = Task.Run(() => VoiceAccess.SetAsync(on, phoneMic));
+                bool installCable = (bool?)envelope.Payload["installCable"] ?? false;
+                _ = Task.Run(() => VoiceAccess.SetAsync(on, phoneMic, installCable));
                 break;
 
             case MessageType.PcVoiceAccessGet:

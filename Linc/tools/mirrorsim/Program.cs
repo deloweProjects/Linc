@@ -467,6 +467,23 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
             "real speakers and microphones are never mistaken for a cable");
     });
 
+    yield return ("D-071 virtual cable: the pinned VB-CABLE pack is verified and the right setup is chosen", a =>
+    {
+        byte[] data = System.Text.Encoding.ASCII.GetBytes("abc");
+        const string abc = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD";
+        a.True(VirtualCablePackage.HashMatches(data, abc), "a matching SHA-256 passes");
+        a.True(VirtualCablePackage.HashMatches(data, abc.ToLowerInvariant()), "...in either case");
+        a.True(!VirtualCablePackage.HashMatches("abd"u8, abc), "a different file is refused");
+        a.True(!VirtualCablePackage.HashMatches(data, "PENDING"), "an unpinned hash refuses everything");
+        a.True(VirtualCablePackage.Sha256.Length == 64, "the shipped pin is a real SHA-256");
+        string[] pack = [@"x\VBCABLE_Setup.exe", @"x\VBCABLE_Setup_x64.exe", @"x\readme.txt"];
+        a.Equal(@"x\VBCABLE_Setup_x64.exe", VirtualCablePackage.SetupFor(pack, System.Runtime.InteropServices.Architecture.X64), "x64 Windows runs the x64 setup");
+        a.Equal(@"x\VBCABLE_Setup.exe", VirtualCablePackage.SetupFor(pack, System.Runtime.InteropServices.Architecture.X86), "32-bit Windows runs the plain one");
+        a.Equal(@"x\VBCABLE_Setup_x64.exe", VirtualCablePackage.SetupFor(pack, System.Runtime.InteropServices.Architecture.Arm64), "ARM64 runs the x64 setup, which carries the ARM64 driver");
+        a.True(VirtualCablePackage.SetupFor([@"x\readme.txt"], System.Runtime.InteropServices.Architecture.X64) is null, "no setup in the pack means no guess");
+        a.True(VirtualCablePackage.Url.StartsWith("https://download.vb-audio.com/"), "fetched from the maker over HTTPS, never bundled");
+    });
+
     yield return ("v20 audio: PC sound is captured and AAC-encoded live", a =>
     {
         int rate;

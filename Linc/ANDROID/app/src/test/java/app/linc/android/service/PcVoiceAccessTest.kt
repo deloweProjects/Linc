@@ -35,6 +35,24 @@ class PcVoiceAccessTest {
     }
 
     @Test
+    fun `a PC that can set up the microphone itself says so (D-071)`() {
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("cable", false); put("setup", "needed") })
+        assertTrue(PcVoiceAccess.state.value.canSetUp)
+        assertFalse(PcVoiceAccess.state.value.settingUp)
+
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("setup", "installing") })
+        assertTrue(PcVoiceAccess.state.value.settingUp)
+        assertFalse(PcVoiceAccess.state.value.canSetUp)
+
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("cable", true); put("setup", "ready") })
+        assertFalse(PcVoiceAccess.state.value.canSetUp)
+
+        // An older PC never sends "setup": the phone must not offer what it can't do.
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("cable", false) })
+        assertFalse(PcVoiceAccess.state.value.canSetUp)
+    }
+
+    @Test
     fun `asking for state needs a v21 desktop`() {
         regs += CompanionOutbox.register(20) { sent += it }
         assertFalse(PcVoiceAccess.ready())

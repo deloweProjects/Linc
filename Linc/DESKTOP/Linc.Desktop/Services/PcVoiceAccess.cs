@@ -19,7 +19,13 @@ namespace Linc.Desktop.Services;
 /// cable's playback side (VB-CABLE's "CABLE Input", or any endpoint pair named like one), the
 /// cable's recording side is made the default microphone for the session, and the user's own
 /// default is put back afterwards. With no cable installed Voice Access still starts, on the PC's
-/// own microphone, and the phone is told why its mic is not in use.</para>
+/// own microphone, and the phone is told why its mic is not in use. With the user's agreement
+/// (given on the phone) Linc installs the cable itself — see <see cref="VirtualCableSetup"/>,
+/// D-071 — and reports how that is going in the state's <c>setup</c> field.</para>
+///
+/// <para>The user's own default microphone is written to disk before it is switched, so it is
+/// put back after the session, when Linc exits, and on the next start if Linc was killed
+/// mid-session (<see cref="RestorePendingDefaultMic"/>).</para>
 ///
 /// <para>The phone sends 16 kHz mono 16-bit PCM — speech needs no more, and 256 kb/s is nothing
 /// next to the mirror — which is upsampled to the cable's mix format here. At most ~150 ms is
@@ -46,7 +52,13 @@ public sealed class PcVoiceAccess : IDisposable
     {
         _connection = connection;
         _log = log;
+        CableSetup = new VirtualCableSetup(log, CablePresent);
     }
+
+    public VirtualCableSetup CableSetup { get; }
+
+    /// <summary>"failed" after a setup attempt that didn't work, until the next one.</summary>
+    private string? _setupState;
 
     public static string VoiceAccessPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "VoiceAccess.exe");
@@ -56,11 +68,12 @@ public sealed class PcVoiceAccess : IDisposable
     public static bool Running => Process.GetProcessesByName("VoiceAccess").Length > 0;
 
     /// <summary>Handle the phone's <c>pc.voiceaccess.set</c>; always answers with the resulting state.</summary>
-    public async Task SetAsync(bool on, bool phoneMic)
+    public async Task SetAsync(bool on, bool phoneMic, bool installCable = false)
     {
         string mic = "pc";
         bool cable = false;
         string? error = null;
+        string? setup = null;
         try
         {
             if (!on)
@@ -75,11 +88,25 @@ public sealed class PcVoiceAccess : IDisposable
             else
             {
                 var pair = FindCable();
+                if (phoneMic && pair is null && installCable)
+                {
+                    // The user agreed on the phone: set the cable up now (D-071). The phone
+                    // shows "setting up the microphone…" while Windows asks on the PC.
+                    await SendStateAsync("pc", cable: false, setup: "installing");
+                    var result = await CableSetup.InstallAsync();
+                    _setupState = result.Ok ? null : "failed";
+                    if (result.Ok) pair = FindCable();
+                    else error = result.Message;
+                }
                 cable = pair is not null;
                 if (phoneMic && pair is { } p)
                 {
                     await StartMicAsync(p.Render, p.CaptureId);
                     mic = "phone";
+                }
+                else if (pair is { } unused)
+                {
+                    Marshal.ReleaseComObject(unused.Render);
                 }
                 StartVoiceAccess();
             }
@@ -89,18 +116,21 @@ public sealed class PcVoiceAccess : IDisposable
             error = ex.Message;
             _log.Log(LogLevel.Warn, $"Voice Access: {ex.Message}");
         }
-        await SendStateAsync(mic, cable, error);
+        await SendStateAsync(mic, cable, error, setup);
     }
 
-    public Task SendStateAsync(string? mic = null, bool? cable = null, string? error = null)
+    public Task SendStateAsync(string? mic = null, bool? cable = null, string? error = null, string? setup = null)
     {
         bool running = Running;
+        bool hasCable = cable ?? CablePresent();
         var payload = new JsonObject
         {
             ["available"] = Available,
             ["on"] = running,
             ["mic"] = mic ?? (_channel is not null ? "phone" : "pc"),
-            ["cable"] = cable ?? FindCable() is not null,
+            ["cable"] = hasCable,
+            // v21 addition (D-071): whether the PC can set the cable up itself, and how it's going.
+            ["setup"] = setup ?? (CableSetup.IsBusy ? "installing" : hasCable ? "ready" : _setupState ?? "needed"),
         };
         if (error is not null) payload["error"] = error;
         return _connection.SendToPhoneAsync(Envelope.Create(MessageType.PcVoiceAccessState, payload), CancellationToken.None);
@@ -141,7 +171,10 @@ public sealed class PcVoiceAccess : IDisposable
             _restoreCaptureId = DefaultCaptureId();
             _ring.Clear();
         }
-        SetDefaultCapture(captureId);
+        // Remember the user's own microphone on disk first, so a crash can't strand the PC on
+        // the cable as its default.
+        if (_restoreCaptureId is { } own && own != captureId) WriteRestoreFile(own);
+        SetDefaultCapture(captureId, _log);
         _reader = new Thread(() => Read(channel, stop.Token)) { IsBackground = true, Name = "linc-mic-reader" };
         _renderer = new Thread(() => Render(render, stop.Token)) { IsBackground = true, Name = "linc-mic-render" };
         _reader.Start();
@@ -164,7 +197,8 @@ public sealed class PcVoiceAccess : IDisposable
         try { channel?.Dispose(); } catch { }
         _reader?.Join(1000);
         _renderer?.Join(1000);
-        if (restore is not null) SetDefaultCapture(restore);
+        if (restore is not null) SetDefaultCapture(restore, _log);
+        DeleteRestoreFile();
         _log.Log(LogLevel.Info, "Voice Access: the phone's microphone is off; this PC's own is back");
     }
 
@@ -291,6 +325,47 @@ public sealed class PcVoiceAccess : IDisposable
 
     // ---- finding the cable, and the default microphone -----------------------------
 
+    /// <summary>Whether a virtual cable pair is installed and active.</summary>
+    public static bool CablePresent()
+    {
+        if (FindCable() is not { } pair) return false;
+        Marshal.ReleaseComObject(pair.Render);
+        return true;
+    }
+
+    private static string RestoreFile => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Linc", "voiceaccess-restore-mic.txt");
+
+    private static void WriteRestoreFile(string id)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(RestoreFile)!);
+            File.WriteAllText(RestoreFile, id);
+        }
+        catch { /* best effort; StopMic still restores in-process */ }
+    }
+
+    private static void DeleteRestoreFile()
+    {
+        try { File.Delete(RestoreFile); } catch { }
+    }
+
+    /// <summary>
+    /// Put back the user's own default microphone if a phone-mic session left the cable as the
+    /// default — called when Linc exits, and when it starts (after a crash or a kill).
+    /// </summary>
+    public static void RestorePendingDefaultMic(ILogService log)
+    {
+        string? id;
+        try { id = File.Exists(RestoreFile) ? File.ReadAllText(RestoreFile).Trim() : null; }
+        catch { return; }
+        if (string.IsNullOrEmpty(id)) return;
+        SetDefaultCapture(id, log);
+        DeleteRestoreFile();
+        log.Log(LogLevel.Info, "Voice Access: put this PC's own microphone back as the default");
+    }
+
     /// <summary>
     /// A virtual cable: an active playback endpoint named "CABLE Input" (VB-CABLE) or containing
     /// "Virtual" and "Input", and the active recording endpoint that pairs with it. Null if absent.
@@ -362,7 +437,7 @@ public sealed class PcVoiceAccess : IDisposable
     /// the interface Windows' own Sound settings use; it is undocumented but has been stable
     /// since Windows 7, and it is the only way to switch the default device.
     /// </summary>
-    private void SetDefaultCapture(string id)
+    private static void SetDefaultCapture(string id, ILogService log)
     {
         try
         {
@@ -372,7 +447,7 @@ public sealed class PcVoiceAccess : IDisposable
         }
         catch (Exception ex)
         {
-            _log.Log(LogLevel.Warn, $"Voice Access: couldn't switch the default microphone: {ex.Message}");
+            log.Log(LogLevel.Warn, $"Voice Access: couldn't switch the default microphone: {ex.Message}");
         }
     }
 

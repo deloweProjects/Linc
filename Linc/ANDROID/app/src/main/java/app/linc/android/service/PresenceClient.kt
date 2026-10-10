@@ -8,6 +8,8 @@ import app.linc.android.service.CompanionStateHolder.ServiceState
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -170,10 +172,25 @@ class PresenceClient(
             addAll(candidateEndpoints())
         }.distinct()
 
-        val socket = endpoints.firstNotNullOfOrNull { endpoint ->
-            runCatching { TlsIdentity.connect(endpoint.first, endpoint.second, cert, DIAL_TIMEOUT_MS) }
-                .getOrNull()
+        // Find the reachable route by racing plain TCP probes, then do TLS once, to it: a dead
+        // advertised address used to cost a whole connect timeout per channel, and PC Remote
+        // opens two channels back to back. Only probes race — a second TLS connection that
+        // closed without its header would look to the PC like a new control link.
+        val started = android.os.SystemClock.elapsedRealtime()
+        val reachable = EndpointRace.first(
+            endpoints,
+            timeoutMs = DIAL_TIMEOUT_MS + 500L,
+            connect = { endpoint ->
+                Socket().use { it.connect(InetSocketAddress(endpoint.first, endpoint.second), DIAL_TIMEOUT_MS) }
+                endpoint
+            },
+            close = {},
+        )
+        val ordered = listOfNotNull(reachable) + (endpoints - setOfNotNull(reachable))
+        val socket = ordered.firstNotNullOfOrNull { (host, port) ->
+            runCatching { TlsIdentity.connect(host, port, cert, DIAL_TIMEOUT_MS) }.getOrNull()
         } ?: return false
+        LogStore.log(LogLevel.INFO, "Channel $channel: dialled back to the PC in ${android.os.SystemClock.elapsedRealtime() - started} ms")
 
         scope.launch(Dispatchers.IO) {
             try {

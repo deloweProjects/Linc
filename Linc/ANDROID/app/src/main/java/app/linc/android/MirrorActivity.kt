@@ -298,8 +298,10 @@ class MirrorActivity : ComponentActivity() {
             val on = !PcVoiceAccess.state.value.on
             val phoneMic = MirrorSettings.voicePhoneMic(this@MirrorActivity)
             if (on && phoneMic && !PcVoiceAccess.hasMicPermission(this@MirrorActivity)) {
-                afterMicGranted = { PcVoiceAccess.set(this@MirrorActivity, true, phoneMic = true) }
+                afterMicGranted = { startVoiceWithPhoneMic() }
                 askMic.launch(Manifest.permission.RECORD_AUDIO)
+            } else if (on && phoneMic) {
+                startVoiceWithPhoneMic()
             } else {
                 PcVoiceAccess.set(this@MirrorActivity, on, phoneMic)
             }
@@ -318,6 +320,24 @@ class MirrorActivity : ComponentActivity() {
             ui.bubbleY = y
             getPreferences(MODE_PRIVATE).edit().putBoolean(PREF_BUBBLE_RIGHT, right).putFloat(PREF_BUBBLE_Y, y).apply()
         }
+    }
+
+    /**
+     * Voice Access through this phone's mic. A PC with no virtual microphone yet can set one up
+     * itself (D-071) — explained and agreed to here first, since Windows will then ask on the PC.
+     */
+    private fun startVoiceWithPhoneMic() {
+        if (!PcVoiceAccess.state.value.canSetUp) {
+            PcVoiceAccess.set(this, true, phoneMic = true)
+            return
+        }
+        ui.panelOpen = false
+        AlertDialog.Builder(this)
+            .setTitle("Set up the microphone on the PC?")
+            .setMessage(PcVoiceAccess.SETUP_EXPLANATION)
+            .setPositiveButton("Set up") { _, _ -> PcVoiceAccess.set(this, true, phoneMic = true, installCable = true) }
+            .setNegativeButton("Use the PC's mic") { _, _ -> PcVoiceAccess.set(this, true, phoneMic = false) }
+            .show()
     }
 
     /** Keep the panel open while it is being used; close it after a quiet spell. */
@@ -405,8 +425,11 @@ class MirrorActivity : ComponentActivity() {
             PcVoiceAccess.state.collectLatest { state ->
                 refreshUi()
                 state.error?.let { toast(it) }
-                if (state.on && state.mic != "phone" && MirrorSettings.voicePhoneMic(this@MirrorActivity) && !state.cable) {
-                    toast("Voice Access is using the PC's own microphone. To use this phone's, install VB-CABLE on the PC (see Tools).")
+                if (state.settingUp) {
+                    toast("Setting up the microphone… on the PC, approve Windows' prompt (it may be flashing in the taskbar) and click Install Driver.")
+                } else if (state.on && state.mic != "phone" && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
+                    !state.cable && !state.canSetUp) {
+                    toast("Voice Access is using the PC's own microphone. Update Linc on the PC so it can set up this phone as its microphone.")
                 }
             }
         }

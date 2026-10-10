@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
@@ -179,14 +180,20 @@ fun PcRemoteOverlay(state: RemoteUiState, actions: RemoteActions) {
             }
 
             // ---- the bubble ------------------------------------------------------------------
+            // The shadow is a circle under the cookie, never the cookie itself: an elevation
+            // shadow on a concave outline sends Skia down its concave tessellator, which on a
+            // Pixel 7 spent whole seconds per frame on the render thread — the main thread
+            // blocked behind it, input timed out, and Android killed Linc as "not responding"
+            // the moment the bubble was tapped (and it was the steady lag before that too).
+            val cookie = MaterialShapes.Cookie9Sided.toShape()
             Surface(
-                shape = MaterialShapes.Cookie9Sided.toShape(),
+                shape = cookie,
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier
                     .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
                     .size(bubble)
+                    .shadow(8.dp, CircleShape)
                     .rotate(spin)
-                    .shadow(10.dp, MaterialShapes.Cookie9Sided.toShape())
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = { dragging = true; dragX = x; dragY = y },

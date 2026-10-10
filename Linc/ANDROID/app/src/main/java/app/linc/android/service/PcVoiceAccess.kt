@@ -31,8 +31,18 @@ data class VoiceAccessState(
     val mic: String = "pc",
     /** A virtual audio cable is installed, so the phone's mic can be used. */
     val cable: Boolean = false,
+    /**
+     * Setting the cable up (D-071): "ready", "needed" (the PC can install it once the user
+     * agrees), "installing" (Windows is asking on the PC), "failed", or "" from a PC too old to
+     * install it itself.
+     */
+    val setup: String = "",
     val error: String? = null,
-)
+) {
+    /** The PC could set up the phone-as-microphone itself if asked. */
+    val canSetUp: Boolean get() = available && !cable && setup in setOf("needed", "failed")
+    val settingUp: Boolean get() = setup == "installing"
+}
 
 /**
  * Windows Voice Access from the phone, with the phone as the PC's microphone (v21, D-070).
@@ -52,7 +62,19 @@ object PcVoiceAccess {
 
     fun ready(): Boolean = CompanionOutbox.canSend(21)
 
-    fun set(context: Context, on: Boolean, phoneMic: Boolean) {
+    /**
+     * The explanation shown before the PC installs the virtual microphone (D-071). Windows
+     * only lets a driver create a microphone, so the PC needs one; VB-CABLE is the free one
+     * nearly every "use your phone as a mic" app relies on, fetched from its maker.
+     */
+    const val SETUP_EXPLANATION =
+        "Windows can only hear a microphone that a driver provides, so to use this phone as the " +
+            "PC's microphone Linc sets one up on the PC: it downloads VB-CABLE, VB-Audio's free " +
+            "virtual audio cable (donationware, vb-audio.com), checks it, and opens VB-Audio's " +
+            "installer.\n\nOn the PC: approve Windows' prompt, then click \"Install Driver\". " +
+            "You can remove it again from Linc's Settings on the PC."
+
+    fun set(context: Context, on: Boolean, phoneMic: Boolean, installCable: Boolean = false) {
         appContext = context.applicationContext
         CompanionOutbox.trySend(
             Envelope(
@@ -60,6 +82,8 @@ object PcVoiceAccess {
                 payload = buildJsonObject {
                     put("on", on)
                     put("phoneMic", phoneMic && hasMicPermission(context))
+                    // v21 addition (D-071): the user agreed to have the PC set up the cable.
+                    if (installCable) put("installCable", true)
                 },
             ),
             requiredVersion = 21,
@@ -81,6 +105,7 @@ object PcVoiceAccess {
             on = bool("on"),
             mic = (payload["mic"] as? JsonPrimitive)?.contentOrNull ?: "pc",
             cable = bool("cable"),
+            setup = (payload["setup"] as? JsonPrimitive)?.contentOrNull ?: "",
             error = (payload["error"] as? JsonPrimitive)?.contentOrNull,
         )
     }

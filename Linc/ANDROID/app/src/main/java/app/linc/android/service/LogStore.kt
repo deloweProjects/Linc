@@ -19,6 +19,14 @@ object LogStore {
     val entries: StateFlow<List<LogEntry>> = _entries
 
     fun log(level: LogLevel, message: String) {
+        // Mirrored to logcat (tag "Linc") so timings can be read over adb next to the
+        // system's own events; harmless no-op in JVM unit tests.
+        runCatching {
+            android.util.Log.println(
+                when (level) { LogLevel.INFO -> android.util.Log.INFO; LogLevel.WARN -> android.util.Log.WARN; LogLevel.ERROR -> android.util.Log.ERROR },
+                "Linc", message,
+            )
+        }
         _entries.value = (_entries.value + LogEntry(System.currentTimeMillis(), level, message))
             .takeLast(MAX_ENTRIES)
     }
