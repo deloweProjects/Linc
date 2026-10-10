@@ -29,9 +29,11 @@ class CompanionService : Service() {
     private var presence: PresenceClient? = null
     private var blePresence: BlePresenceAdvertiser? = null
     private var callWatcher: CallStateWatcher? = null
+    private var watch: ConnectionWatch? = null
 
     override fun onCreate() {
         super.onCreate()
+        LogStore.init(this)
         createNotificationChannel()
     }
 
@@ -119,11 +121,14 @@ class CompanionService : Service() {
             blePresence = BlePresenceAdvertiser(this, scope).also { it.start() }
             callWatcher = CallStateWatcher(this).also { it.start() }
             LogStore.log(LogLevel.INFO, "Companion service started")
+            watch = ConnectionWatch(this).also { it.start() }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        watch?.stop()
+        watch = null
         callWatcher?.stop()
         callWatcher = null
         presence?.stop()

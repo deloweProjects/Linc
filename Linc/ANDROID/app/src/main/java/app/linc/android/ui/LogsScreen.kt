@@ -27,6 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import app.linc.android.R
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import app.linc.android.service.ConnectionWatch
 import app.linc.android.service.LogLevel
 import app.linc.android.service.LogStore
 import app.linc.android.ui.theme.Dimens
@@ -38,6 +43,7 @@ private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 @Composable
 fun LogsScreen(onBack: () -> Unit = {}) {
     val entries by LogStore.entries.collectAsState()
+    val context = LocalContext.current
 
     LincScreen(
         title = stringResource(R.string.nav_logs),
@@ -50,6 +56,13 @@ fun LogsScreen(onBack: () -> Unit = {}) {
             }
         },
         actions = {
+            // A report someone else can read: phone, background settings, why Android ended
+            // Linc recently, and the log including earlier runs (ConnectionWatch.report).
+            TextButton(onClick = {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                clipboard.setPrimaryClip(ClipData.newPlainText("Linc log", ConnectionWatch.report(context)))
+                Toast.makeText(context, "Log copied — paste it to whoever is helping you", Toast.LENGTH_LONG).show()
+            }) { Text("Copy") }
             TextButton(onClick = { LogStore.clear() }) { Text(stringResource(R.string.logs_clear)) }
         },
         // The list scrolls itself (LazyColumn): 500 entries in a plain Column would measure

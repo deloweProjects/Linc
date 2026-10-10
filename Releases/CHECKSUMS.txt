@@ -15,8 +15,8 @@ damaged or has been tampered with - do not run it.
 
 1.0.0.2 ("1.0.0-beta.2", 2026-10-10, release v1.0.0.2):
 
-7231598B6A6FF61960B080B257829B89F08B0A21C94653C868E9311D88E90B5D  Linc-Desktop-1.0.0.2-2026-10-10.zip
-6A39DA915A04911DE68C63F95B629077AC284E9B7AEC5D70D71396B277F8E5DC  Linc-Companion-1.0.0.2-2026-10-10.apk
+46B4226886EFA0674DA7418E772FA940C97D006A5FD2C01EEFB6CC6C55D856FA  Linc-Desktop-1.0.0.2-2026-10-10.zip
+AB2039D25C8DABAA22ADCBC18FC087AF63D4B52958FF42C1E7B5FF361F203B33  Linc-Companion-1.0.0.2-2026-10-10.apk
 
 1.0.0-beta.1 (release v1.0.0-beta.1):
 
@@ -26,7 +26,7 @@ damaged or has been tampered with - do not run it.
 
 File sizes (bytes), as a second check:
 
-    Linc-Desktop-1.0.0.2-2026-10-10.zip     173157516
-    Linc-Companion-1.0.0.2-2026-10-10.apk    29745881
+    Linc-Desktop-1.0.0.2-2026-10-10.zip     173163761
+    Linc-Companion-1.0.0.2-2026-10-10.apk    29762309
     Linc-Desktop-1.0.0-beta.1.zip     170997273
     Linc-Companion-1.0.0-beta.1.apk   25584537

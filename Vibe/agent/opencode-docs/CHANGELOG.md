@@ -21,6 +21,11 @@ first.
   then "Install Driver"); the phone shows "Setting up the microphone…". Not silent or bundled —
   VB-CABLE's licence forbids integrating it into another installer without the author's agreement. Remove it from desktop Settings → Phone as microphone.
 - The PC's own default microphone is now really restored on Exit, and after a crash on next start.
+- **Wireless drops** (D-073): Settings → "Stay connected in the background" asks Android to stop
+  freezing Linc with the screen off; a Wi-Fi lock is held while connected; the phone logs Doze,
+  screen, battery saver and Wi-Fi events and why each link ended.
+- **Copy log** on both apps' Logs page — a report to paste to whoever is helping (phone: model,
+  Android, background settings, why Android ended Linc recently, the log across restarts).
 - Tests: `EndpointRaceTest`, `PcRemoteOverlayTest`, `PcVoiceAccessTest` (setup state); `mirrorsim`
   "D-071 virtual cable".
 

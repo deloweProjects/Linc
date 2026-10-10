@@ -43,6 +43,10 @@ apps (protocol v21).
   pinned SHA-256, and opens VB-Audio's own installer: approve Windows' prompt, click Install Driver. Remove it from desktop
   Settings → Phone as microphone. Your own default microphone is put back after each session, on
   Exit, and after a crash.
+- **Wi-Fi link dropping**: Settings → "Stay connected in the background" on the phone stops Android
+  freezing Linc when the screen is off — the usual cause. Linc also keeps Wi-Fi awake while connected.
+- **Copy log** on the Logs page of both apps: paste it to whoever is helping you. The phone's
+  includes why Android ended Linc recently and survives restarts.
 
 ---
 

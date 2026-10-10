@@ -36,6 +36,7 @@ import app.linc.android.service.AdbArmOutcome
 import app.linc.android.service.UpdateSettings
 import app.linc.android.service.AdbArmRules
 import app.linc.android.service.AdbArming
+import app.linc.android.service.ConnectionWatch
 import app.linc.android.service.CallProvider
 import app.linc.android.service.LincNotificationListener
 import app.linc.android.service.MirrorSettings
@@ -66,6 +67,7 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
     // M19 C3: "Keep Linc up to date", default ON. The manifest address is a build-time constant
     // now (UpdateSettings.MANIFEST_URL), so this flag is the only update setting there is.
     var updatesEnabled by remember { mutableStateOf(UpdateSettings.updatesEnabled(context)) }
+    var batteryExempt by remember { mutableStateOf(ConnectionWatch.isBatteryExempt(context)) }
     LaunchedEffect(Unit) {
         while (true) {
             notifAccess = LincNotificationListener.isEnabled(context)
@@ -75,6 +77,7 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
             callAccess = CallProvider.canReadLog(context)
             selfArmGranted = AdbArming.isPermissionHeld(context)
             adbArmed = AdbArming.isArmed(context)
+            batteryExempt = ConnectionWatch.isBatteryExempt(context)
             delay(2_000)
         }
     }
@@ -82,6 +85,15 @@ fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
     LincScreen(title = stringResource(R.string.nav_settings)) {
 
         LincCard(title = stringResource(R.string.settings_permissions_header)) {
+            // The usual cause of "connects, then drops" over Wi-Fi: with the screen off Android
+            // (and harder still, some makers' battery managers) freezes a non-exempt app.
+            GrantRow(
+                granted = batteryExempt,
+                onText = "Stay connected in the background: allowed.",
+                offText = "Stay connected in the background: Android may cut Linc's Wi-Fi link to the PC when the screen is off.",
+                actionLabel = "Allow",
+                onAction = { ConnectionWatch.requestBatteryExemption(context) },
+            )
             GrantRow(
                 granted = notifAccess,
                 onText = stringResource(R.string.notif_access_on),

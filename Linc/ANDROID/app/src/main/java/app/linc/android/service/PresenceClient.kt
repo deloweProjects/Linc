@@ -136,9 +136,12 @@ class PresenceClient(
                 TlsIdentity.connect(endpoint.first, endpoint.second, cert, DIAL_TIMEOUT_MS)
             }.getOrNull() ?: continue
             activeEndpoint = endpoint
-            LogStore.log(LogLevel.INFO, "Connected to the PC directly (no ADB)")
-            server.serveExternal(socket) // blocks until the desktop disconnects
+            LogStore.log(LogLevel.INFO, "Connected to the PC directly (no ADB) at ${endpoint.first}:${endpoint.second}")
+            val since = android.os.SystemClock.elapsedRealtime()
+            val why = server.serveExternal(socket) // blocks until the desktop disconnects
             activeEndpoint = null
+            LogStore.log(LogLevel.WARN, "Direct connection to the PC ended after " +
+                "${(android.os.SystemClock.elapsedRealtime() - since) / 1000} s (${why ?: "closed"})")
             return true
         }
         return false

@@ -140,8 +140,11 @@ class SocketServer(
         }
     }
 
-    /** Serves a Direct-TLS connection the presence loop dialed (v9). Blocks until it ends. */
-    fun serveExternal(socket: Socket) {
+    /**
+     * Serves a Direct-TLS connection the presence loop dialed (v9). Blocks until it ends, and
+     * says why it ended (null for a clean close) so a dropped link shows up in the log.
+     */
+    fun serveExternal(socket: Socket): String? {
         val peer = Peer(
             DataInputStream(socket.getInputStream()),
             DataOutputStream(socket.getOutputStream()),
@@ -149,9 +152,13 @@ class SocketServer(
         )
         try {
             dispatch(peer)
-        } catch (_: IOException) {
+            return null
+        } catch (e: IOException) {
+            return "${e.javaClass.simpleName}: ${e.message}"
         } catch (_: SerializationException) {
+            return "bad message"
         } catch (_: IllegalArgumentException) {
+            return "bad message"
         } finally {
             runCatching { socket.close() }
         }

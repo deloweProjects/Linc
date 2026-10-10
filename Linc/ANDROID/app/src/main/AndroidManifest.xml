@@ -26,6 +26,9 @@
          PC Remote screen holds while it is visible, which stops the radio's power-save mode
          from sleeping between beacons and delaying the mirror's packets (D-066). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Lets Settings show Android's own "allow Linc to run in the background" prompt. Without
+         the exemption many phones freeze the app with the screen off and the PC link drops. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Special grant, sideload builds only (D-021): lets the desktop show the phone's
          wallpaper (as a tiny blurred thumbnail) behind the Home widgets. The user
          gives it explicitly from the Settings screen; everything works without it. -->

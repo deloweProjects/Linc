@@ -970,3 +970,25 @@ header would look to the PC like a new control link.
 
 Also: the phone's activity log is mirrored to logcat (tag `Linc`) so timings can be read over adb.
 Unchanged: D-066 rate control, the 60 Hz cursor (cheap — a `View.invalidate()`), PC audio auto-start.
+
+## D-073: A log anyone can copy, and staying connected in the background
+
+**2026-10-10.** Owner: a friend's phone "connects and drops" over wireless; add a log the friend can
+copy, and a fix.
+
+The PC only declares a drop after ~30 s without a status reply (3 probes, 10 s reply timeout), so
+these are real link deaths, not impatience. Without the friend's log the cause can't be proven; the
+usual one is the phone's power saving: Linc never asked to be exempt from battery optimisation, so
+with the screen off Android (and harder still, makers' battery managers) can freeze it.
+
+- **Settings → Stay connected in the background** opens Android's own exemption prompt
+  (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`; Linc is sideloaded, so Play's policy on it does not
+  apply).
+- While the companion service runs, `ConnectionWatch` holds a high-performance Wi-Fi lock (honoured
+  up to Android 13) and logs screen off/on, Doze, battery saver and Wi-Fi lost/back. A Direct-TLS link
+  that ends is logged with how long it lasted and the socket error.
+- **Logs → Copy** (phone) builds a report: app version, phone model and Android version, connection
+  state, background setting, exemption, battery saver/Doze, standby bucket, Android's recorded
+  reasons for Linc's last process deaths (`getHistoricalProcessExitReasons`), and the log, which is
+  now also kept in a ~256 KB file so it survives the app being killed. **Logs → Copy log** (PC)
+  copies Linc's version, Windows and the last two days of the PC log.

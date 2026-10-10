@@ -34,10 +34,10 @@
   "notes": "Linc 1.0.0-beta.2 — Mirror PC no longer freezes on the bubble, starts faster, and Voice Access can use your phone as the microphone.",
   "desktop": {
     "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.2/Linc-Desktop-1.0.0.2-2026-10-10.zip",
-    "sha256": "7231598B6A6FF61960B080B257829B89F08B0A21C94653C868E9311D88E90B5D"
+    "sha256": "46B4226886EFA0674DA7418E772FA940C97D006A5FD2C01EEFB6CC6C55D856FA"
   },
   "android": {
     "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.2/Linc-Companion-1.0.0.2-2026-10-10.apk",
-    "sha256": "6A39DA915A04911DE68C63F95B629077AC284E9B7AEC5D70D71396B277F8E5DC"
+    "sha256": "AB2039D25C8DABAA22ADCBC18FC087AF63D4B52958FF42C1E7B5FF361F203B33"
   }
 }
