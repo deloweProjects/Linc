@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import app.linc.android.service.CallProvider
 import app.linc.android.service.ConnectionWatch
 import app.linc.android.service.LincNotificationListener
+import app.linc.android.service.ProjectLinks
 import app.linc.android.service.SmsProvider
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
@@ -222,6 +223,13 @@ private fun PageContent(page: Page) {
             Illustration(LincSymbols.CheckCircle, MaterialShapes.Cookie12Sided.toShape())
             Title("You're set")
             Body("Linc connects by itself whenever your PC is nearby. Everything is in Home, Remote, Clipboard and Share.")
+            OutlinedButton(onClick = { open(context, Intent(Intent.ACTION_VIEW, android.net.Uri.parse(ProjectLinks.TELEGRAM))) },
+                shapes = ButtonDefaults.shapes(), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                Icon(LincSymbols.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text("Join the Linc Telegram channel")
+            }
+            HelperText("News, new versions and help from the developer. Also in Settings → About.", textAlign = TextAlign.Center)
         }
     }
 }
