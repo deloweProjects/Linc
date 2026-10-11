@@ -15,6 +15,23 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.12 ("1.0.0-beta.12") — 2026-10-11
+
+Install both apps. Phones and settings are kept.
+
+- **Mirror PC works on Intel graphics.** When the graphics chip's video encoder won't start, Linc
+  tries it again with basic settings and then falls back to Windows' own software encoder, so
+  mirroring always starts. If the encoder stops partway, Linc switches over without dropping the
+  mirror. To use the software encoder from the start: Settings → Mirror PC → Use software encoding.
+  Mirroring also survives UAC prompts and the lock screen, and uses the right graphics chip on PCs
+  with two.
+- **The phone remembers each PC.** Phone: Connection → PCs lists every PC you've paired with. Pick
+  the one to connect to, or "Any of my PCs" (whichever finds the phone first). Linc is with one PC at
+  a time — another PC is told the phone is busy and by whom — and picking a PC switches straight to
+  it. Forget a PC you no longer use.
+- **Setup can skip installing the phone app.** Add a phone → "Linc is already on my phone — don't
+  install it".
+
 ## 1.0.0.11 ("1.0.0-beta.11") — 2026-10-11
 
 Install both apps (protocol v24). **New: a proper Windows installer**, `Linc-Setup-1.0.0.11.exe` —

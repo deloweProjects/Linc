@@ -98,6 +98,13 @@
                                 </Button>
                             </StackPanel>
 
+                            <CheckBox IsChecked="{x:Bind ViewModel.SkipCompanionInstall, Mode=TwoWay}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Linc is already on my phone — don't install it" />
+                                    <TextBlock Text="Linc connects to the app that's there instead of installing its own copy." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </CheckBox>
+
                             <Border
                                 Background="{ThemeResource SecondaryContainerBrush}"
                                 CornerRadius="12"

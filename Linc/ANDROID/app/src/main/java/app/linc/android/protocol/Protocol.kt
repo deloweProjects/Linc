@@ -134,6 +134,9 @@ object Topic {
 
 object ErrorCode {
     const val VERSION_MISMATCH = "version-mismatch"
+
+    // D-088: the phone is with another PC, or the owner picked another PC. Message says which.
+    const val BUSY = "busy"
     const val BAD_FRAME = "bad-frame"
     const val INTERNAL = "internal"
 

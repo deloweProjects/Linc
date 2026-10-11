@@ -71,6 +71,7 @@ class CompanionService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
         if (server == null) {
+            val gate = PcGate(this).also { PcGate.instance = it }
             val mediaBridge = MediaBridge(this).also { it.start() }
             media = mediaBridge
             server = SocketServer(
@@ -103,10 +104,8 @@ class CompanionService : Service() {
                 // v15 display control (D-055): a DisplayControl owns the Settings.System writes.
                 onSetRotation = { mode -> DisplayControl(this).setRotation(mode) },
                 onSetBrightness = { auto, level -> DisplayControl(this).setBrightness(auto, level) },
-                onTlsExchange = { certB64, tlsPort, reversePort ->
-                    TransportStore.saveExchange(this, certB64, tlsPort, reversePort)
-                    TlsIdentity.certificateBase64()
-                },
+                // The PC's certificate is stored by the gate (D-088), which knows which PC sent it.
+                onTlsExchange = { _, _, _ -> TlsIdentity.certificateBase64() },
                 onChannelOpen = { channel, token ->
                     presence?.openChannel(channel, token) ?: false
                 },
@@ -141,8 +140,9 @@ class CompanionService : Service() {
                     AdbArming.arm(this)
                     AdbAnnouncer.announceNow(this, reason)
                 },
+                gate = gate,
             ).also { it.start() }
-            presence = PresenceClient(this, scope, server!!).also { it.start() }
+            presence = PresenceClient(this, scope, server!!, gate).also { it.start() }
             // A BLE hint costs nothing when it fails: no radio, no grant or no certificate all
             // just mean the PC never hears it (M04, D-034).
             blePresence = BlePresenceAdvertiser(this, scope).also { it.start() }
@@ -163,6 +163,7 @@ class CompanionService : Service() {
         blePresence?.stop()
         blePresence = null
         server?.stop()
+        PcGate.instance = null
         server = null
         media?.stop()
         media = null

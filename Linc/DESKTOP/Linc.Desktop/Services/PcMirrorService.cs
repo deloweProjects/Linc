@@ -47,6 +47,7 @@ public interface IPcMirrorService : IDisposable
 public sealed class PcMirrorService(
     IConnectionManager connection,
     IPcInputService input,
+    IDeviceRegistry registry,
     ILogService log) : IPcMirrorService
 {
     private const int VideoChannel = 5;
@@ -423,7 +424,7 @@ public sealed class PcMirrorService(
             // thread, burying the message pump at 30 fps and hanging the whole app (AppHangB1).
             // Keeping the encoder in the MTA lets those calls run directly on the worker threads.
             var source = await Task.Run(
-                () => new PcMirrorSource(displayIndex, useFps, useBitrate, log), ct);
+                () => new PcMirrorSource(displayIndex, useFps, useBitrate, log, registry.ForceSoftwareEncoding), ct);
 
             Stream channel;
             try

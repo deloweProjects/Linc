@@ -136,6 +136,14 @@ public interface IDeviceRegistry
 
     /// <summary>Raised after <see cref="SaveShowExplanations"/>.</summary>
     event Action? ShowExplanationsChanged;
+
+    /// <summary>
+    /// Settings → Mirror PC → Use software encoding (D-087). Default off. Skips the graphics
+    /// chip's encoder and uses Windows' own: slower and heavier on the CPU, but it always works.
+    /// </summary>
+    bool ForceSoftwareEncoding { get; }
+
+    void SaveForceSoftwareEncoding(bool enabled);
     void SaveNotificationSyncEnabled(bool enabled);
     void SaveAllowUsbConnections(bool enabled);
     void SavePhoneCert(string certBase64);
@@ -277,7 +285,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // 1.0.0.11 (D-083/D-084): appended at the end like every field above it.
         bool? ClipboardHistoryEnabled = null,
         int? ClipboardHistorySize = null,
-        bool? ShowExplanations = null);
+        bool? ShowExplanations = null,
+        // D-087: appended at the end like every field above it; missing reads back as off.
+        bool? ForceSoftwareEncoding = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -331,6 +341,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public bool ClipboardHistoryEnabled { get; private set; } = true;
     public int ClipboardHistorySize { get; private set; } = 500;
     public bool ShowExplanations { get; private set; } = true;
+    public bool ForceSoftwareEncoding { get; private set; }
     public event Action? ShowExplanationsChanged;
 
     /// <summary>Raised when <see cref="UsePhoneColours"/> changes, so the theme can re-derive.</summary>
@@ -431,6 +442,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 ClipboardHistoryEnabled = settings?.ClipboardHistoryEnabled ?? true;
                 ClipboardHistorySize = ClampHistorySize(settings?.ClipboardHistorySize ?? 500);
                 ShowExplanations = settings?.ShowExplanations ?? true;
+                ForceSoftwareEncoding = settings?.ForceSoftwareEncoding ?? false;
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -651,6 +663,12 @@ public sealed class DeviceRegistry : IDeviceRegistry
         ShowExplanationsChanged?.Invoke();
     }
 
+    public void SaveForceSoftwareEncoding(bool enabled)
+    {
+        ForceSoftwareEncoding = enabled;
+        Persist();
+    }
+
     public void SaveStartWithWindows(bool enabled)
     {
         StartWithWindows = enabled;
@@ -732,7 +750,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 null, null, _knownDevices,
                 NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
                 null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
-                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations)));
+                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding)));
         }
         catch (IOException)
         {

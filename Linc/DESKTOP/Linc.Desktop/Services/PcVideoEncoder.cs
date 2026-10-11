@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -37,18 +38,47 @@ public readonly record struct EncodedFrame(byte[] Data, bool Keyframe, long Time
 /// </summary>
 public sealed class PcVideoEncoder : IDisposable
 {
-    private readonly IMFTransform _transform = null!;
-    private readonly IMFMediaEventGenerator _events = null!;
-    private readonly ICodecAPI? _codecApi;
-    private readonly IMFDXGIDeviceManager _deviceManager = null!;
-    private readonly IntPtr _deviceManagerPtr;
+    private IMFTransform _transform = null!;
+    /// <summary>The async MFT's event queue; null for the software encoder, which is synchronous.</summary>
+    private IMFMediaEventGenerator? _events;
+    private ICodecAPI? _codecApi;
+    private IMFDXGIDeviceManager? _deviceManager;
+    private IntPtr _deviceManagerPtr;
     /// <summary>Set when this encoder only took NV12: captured frames are converted first.</summary>
     private PcNv12Converter? _nv12;
     private readonly int _framesPerSecond;
     private bool _disposed;
 
+    // The software encoder is a synchronous MFT: there is no event queue, so Submit encodes in
+    // place and these stand in for METransformNeedInput / METransformHaveOutput (D-087).
+    private BlockingCollection<int>? _syncEvents;
+    private readonly ConcurrentQueue<EncodedFrame> _syncOutput = new();
+    private int _syncOutputBytes;
+
     /// <summary>Friendly name of the selected MFT, e.g. "AMDh264Encoder". For logs.</summary>
-    public string EncoderName { get; } = "";
+    public string EncoderName { get; private set; } = "";
+
+    /// <summary>True when no hardware encoder would start and Windows' software encoder is in use.</summary>
+    public bool IsSoftware => _syncEvents is not null;
+
+    /// <summary>
+    /// Hardware encoders that started but then stopped producing frames in this run (D-087). They
+    /// are not offered again until Linc restarts: "it initialised" proved nothing about them.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, byte> Distrusted = new();
+    private string _candidateName = "";
+
+    /// <summary>True once disposed — a pump that then fails is ending normally, not faulting.</summary>
+    public bool Disposed => _disposed;
+
+    /// <summary>Test harness only: forget every <see cref="Distrust"/>.</summary>
+    public static void TrustAllAgain() => Distrusted.Clear();
+
+    /// <summary>Mark this hardware encoder as unusable for the rest of this run.</summary>
+    public void Distrust()
+    {
+        if (!IsSoftware && _candidateName.Length > 0) Distrusted[_candidateName] = 0;
+    }
 
     /// <summary>
     /// Open the first hardware encoder that accepts the stream. Encoders on the graphics chip that
@@ -60,90 +90,149 @@ public sealed class PcVideoEncoder : IDisposable
     ///
     /// <para><b>Input format (D-077).</b> Each encoder is offered the captured BGRA frames as ARGB32
     /// first — no conversion at all — and, if it refuses, NV12 made on the GPU by
-    /// <see cref="PcNv12Converter"/>. Intel Quick Sync shut itself down at START_OF_STREAM (most likely refusing ARGB32);
-    /// NV12 is the one input every hardware H.264 encoder takes. <paramref name="preferNv12"/>
-    /// forces the NV12 path (the test harness uses it to prove the conversion on any GPU).</para>
+    /// <see cref="PcNv12Converter"/>. <paramref name="preferNv12"/> forces the NV12 path (the test
+    /// harness uses it to prove the conversion on any GPU).</para>
+    ///
+    /// <para><b>Basic settings, then software (D-087).</b> Intel Quick Sync still shut itself down at
+    /// START_OF_STREAM with NV12 (two Intel PCs, 2026-10-11), without queueing any error — the
+    /// signature of its own parameter check failing. So each encoder gets one more try with none of
+    /// the low-latency/rate-control tuning, only the media types; and if every hardware encoder
+    /// refuses, Windows' built-in software H.264 encoder takes the NV12 frames. It costs CPU, but a
+    /// mirror that works beats a refusal. <paramref name="softwareOnly"/> forces it (test harness).</para>
     /// </summary>
-    public PcVideoEncoder(ID3D11Device device, int width, int height, int framesPerSecond, int bitrate, bool preferNv12 = false)
+    public PcVideoEncoder(ID3D11Device device, int width, int height, int framesPerSecond, int bitrate,
+        bool preferNv12 = false, bool softwareOnly = false)
     {
         _framesPerSecond = framesPerSecond;
         var failures = new List<string>();
-        var candidates = HardwareEncoders(AdapterLuid(device));
-        Guid[] formats = preferNv12 ? [MFVideoFormat_NV12] : [MFVideoFormat_ARGB32, MFVideoFormat_NV12];
+        var candidates = softwareOnly ? [] : HardwareEncoders(AdapterLuid(device));
+        (Guid Format, bool Tuned)[] attempts = preferNv12
+            ? [(MFVideoFormat_NV12, true), (MFVideoFormat_NV12, false)]
+            : [(MFVideoFormat_ARGB32, true), (MFVideoFormat_NV12, true), (MFVideoFormat_NV12, false)];
         try
         {
-            if (candidates.Count == 0)
-                throw new LincException(
-                    "This PC has no hardware H.264 video encoder, so it can't stream its screen to your phone.");
             foreach (var candidate in candidates)
-            foreach (var format in formats)
+            foreach (var (format, tuned) in attempts)
             {
-                bool nv12 = format == MFVideoFormat_NV12;
-                IMFTransform? transform = null;
-                IMFDXGIDeviceManager? manager = null;
-                IntPtr managerPtr = IntPtr.Zero;
-                try
+                var activate = candidate.Activate;
+                IMFTransform Create()
                 {
                     var iid = typeof(IMFTransform).GUID;
-                    Check(candidate.Activate.ActivateObject(ref iid, out object activated), "ActivateObject");
-                    transform = (IMFTransform)activated;
-
-                    // Unlock first: until this is set the transform rejects everything else.
-                    Check(transform.GetAttributes(out IMFAttributes attributes), "GetAttributes");
-                    var key = MF_TRANSFORM_ASYNC_UNLOCK;
-                    Check(attributes.SetUINT32(ref key, 1), "MF_TRANSFORM_ASYNC_UNLOCK");
-                    key = MF_LOW_LATENCY;
-                    attributes.SetUINT32(ref key, 1);   // advisory — encoders may ignore it
-                    Marshal.ReleaseComObject(attributes);
-
-                    // Share our D3D device so the encoder reads captured textures in place.
-                    Check(MFCreateDXGIDeviceManager(out int resetToken, out manager), "MFCreateDXGIDeviceManager");
-                    Check(manager.ResetDevice(device.NativePointer, resetToken), "ResetDevice");
-                    managerPtr = Marshal.GetIUnknownForObject(manager);
-                    Check(transform.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, managerPtr), "SET_D3D_MANAGER");
-
-                    _transform = transform;
-                    _events = (IMFMediaEventGenerator)transform;
-                    _codecApi = transform as ICodecAPI;
-                    _deviceManager = manager;
-                    _deviceManagerPtr = managerPtr;
-
-                    // Encoders require the output type before the input type.
-                    SetOutputType(width, height, framesPerSecond, bitrate);
-                    SetInputType(width, height, framesPerSecond, format);
-                    // Rate control and GOP length live on ICodecAPI, not on the media type.
-                    ConfigureRateControl(framesPerSecond, bitrate);
-
-                    Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, IntPtr.Zero), "BEGIN_STREAMING");
-                    Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, IntPtr.Zero), "START_OF_STREAM");
-                    if (nv12) _nv12 = new PcNv12Converter(device, width, height, framesPerSecond);
-                    string label = $"{candidate.Name}{(nv12 ? ", NV12" : "")}";
-                    EncoderName = failures.Count == 0 ? label : $"{label} (after: {string.Join("; ", failures)})";
+                    Check(activate.ActivateObject(ref iid, out object activated), "ActivateObject");
+                    return (IMFTransform)activated;
+                }
+                if (TryOpen(candidate.Name, Create, () => activate.ShutdownObject(), device,
+                        width, height, framesPerSecond, bitrate, format, tuned, software: false, failures))
                     return;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"{candidate.Name} ({(nv12 ? "NV12" : "ARGB32")}) — {ex.Message}{ReportedError(transform)}");
-                    try { _nv12?.Dispose(); } catch { }
-                    _nv12 = null;
-                    // Give the hardware session back before trying the next encoder.
-                    if (transform is not null)
-                    {
-                        try { transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
-                        try { if (transform is IMFShutdown shutdown) shutdown.Shutdown(); } catch { }
-                        try { candidate.Activate.ShutdownObject(); } catch { }
-                        try { Marshal.ReleaseComObject(transform); } catch { }
-                    }
-                    try { if (managerPtr != IntPtr.Zero) Marshal.Release(managerPtr); } catch { }
-                    try { if (manager is not null) Marshal.ReleaseComObject(manager); } catch { }
-                    _transform = null!; _events = null!; _codecApi = null; _deviceManager = null!; _deviceManagerPtr = IntPtr.Zero;
-                }
             }
+
+            if (TryOpen("Windows software encoder", CreateSoftwareEncoder, null, device,
+                    width, height, framesPerSecond, bitrate, MFVideoFormat_NV12, tuned: true, software: true, failures))
+                return;
             throw new LincException("None of this PC's video encoders would start: " + string.Join("; ", failures));
         }
         finally
         {
             foreach (var candidate in candidates) { try { Marshal.ReleaseComObject(candidate.Activate); } catch { } }
+        }
+    }
+
+    private static IMFTransform CreateSoftwareEncoder()
+    {
+        var type = Type.GetTypeFromCLSID(CLSID_MSH264EncoderMFT)
+            ?? throw new LincException("Windows' H.264 encoder isn't installed (Media Feature Pack missing?).");
+        return (IMFTransform)(Activator.CreateInstance(type)
+            ?? throw new LincException("Windows' H.264 encoder couldn't be created."));
+    }
+
+    /// <summary>
+    /// One attempt to bring up an encoder. On success the instance fields hold it and this returns
+    /// true; on failure everything it built is shut down and released, the reason is added to
+    /// <paramref name="failures"/>, and the fields are back to empty.
+    /// </summary>
+    private bool TryOpen(string name, Func<IMFTransform> create, Action? shutdownActivate, ID3D11Device device,
+        int width, int height, int fps, int bitrate, Guid format, bool tuned, bool software, List<string> failures)
+    {
+        bool nv12 = format == MFVideoFormat_NV12;
+        string variant = (nv12 ? "NV12" : "ARGB32") + (tuned ? "" : ", basic settings");
+        if (!software && Distrusted.ContainsKey(name))
+        {
+            if (!failures.Any(f => f.StartsWith(name + " (skipped", StringComparison.Ordinal)))
+                failures.Add($"{name} (skipped: it stopped working earlier this run)");
+            return false;
+        }
+        IMFTransform? transform = null;
+        IMFDXGIDeviceManager? manager = null;
+        IntPtr managerPtr = IntPtr.Zero;
+        try
+        {
+            transform = create();
+            if (!software)
+            {
+                // Unlock first: until this is set the transform rejects everything else.
+                Check(transform.GetAttributes(out IMFAttributes attributes), "GetAttributes");
+                var key = MF_TRANSFORM_ASYNC_UNLOCK;
+                Check(attributes.SetUINT32(ref key, 1), "MF_TRANSFORM_ASYNC_UNLOCK");
+                if (tuned)
+                {
+                    key = MF_LOW_LATENCY;
+                    attributes.SetUINT32(ref key, 1);   // advisory — encoders may ignore it
+                }
+                Marshal.ReleaseComObject(attributes);
+
+                // Share our D3D device so the encoder reads captured textures in place.
+                Check(MFCreateDXGIDeviceManager(out int resetToken, out manager), "MFCreateDXGIDeviceManager");
+                Check(manager.ResetDevice(device.NativePointer, resetToken), "ResetDevice");
+                managerPtr = Marshal.GetIUnknownForObject(manager);
+                Check(transform.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, managerPtr), "SET_D3D_MANAGER");
+            }
+
+            _transform = transform;
+            _events = software ? null : (IMFMediaEventGenerator)transform;
+            _codecApi = transform as ICodecAPI;
+            _deviceManager = manager;
+            _deviceManagerPtr = managerPtr;
+
+            // Encoders require the output type before the input type. The software encoder gets
+            // Baseline: no B-frames to reorder, whatever its low-latency setting does.
+            SetOutputType(width, height, fps, bitrate, software ? eAVEncH264VProfile_Base : eAVEncH264VProfile_High);
+            SetInputType(width, height, fps, format);
+            // Rate control and GOP length live on ICodecAPI, not on the media type.
+            if (tuned) ConfigureRateControl(fps, bitrate);
+            if (software) TrySet(CODECAPI_AVEncCommonQualityVsSpeed, 0u);   // fastest: it runs on the CPU
+
+            Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, IntPtr.Zero), "BEGIN_STREAMING");
+            Check(transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, IntPtr.Zero), "START_OF_STREAM");
+            if (nv12) _nv12 = new PcNv12Converter(device, width, height, fps);
+            if (software)
+            {
+                _syncOutputBytes = width * height * 3 / 2;
+                _syncEvents = new BlockingCollection<int>();
+                _syncEvents.Add(METransformNeedInput);
+            }
+            _candidateName = software ? "" : name;
+            string label = name + (nv12 ? ", NV12" : "") + (tuned ? "" : ", basic settings");
+            EncoderName = failures.Count == 0 ? label : $"{label} (after: {string.Join("; ", failures)})";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"{name} ({variant}) — {ex.Message}{ReportedError(transform)}");
+            try { _nv12?.Dispose(); } catch { }
+            _nv12 = null;
+            _syncEvents = null;
+            // Give the hardware session back before trying the next encoder.
+            if (transform is not null)
+            {
+                try { transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
+                try { if (transform is IMFShutdown shutdown) shutdown.Shutdown(); } catch { }
+                try { shutdownActivate?.Invoke(); } catch { }
+                try { Marshal.ReleaseComObject(transform); } catch { }
+            }
+            try { if (managerPtr != IntPtr.Zero) Marshal.Release(managerPtr); } catch { }
+            try { if (manager is not null) Marshal.ReleaseComObject(manager); } catch { }
+            _transform = null!; _events = null; _codecApi = null; _deviceManager = null; _deviceManagerPtr = IntPtr.Zero;
+            return false;
         }
     }
 
@@ -221,6 +310,17 @@ public sealed class PcVideoEncoder : IDisposable
             .OrderBy(x => x.rank).ThenBy(x => x.i).Select(x => x.c).ToList();
     }
 
+    /// <summary>", driver 31.0.101.2125" — what an encoder failure on one vendor's PC needs first.</summary>
+    private static string DriverVersion(IDXGIAdapter adapter)
+    {
+        try
+        {
+            if (adapter.CheckInterfaceSupport(typeof(IDXGIDevice).GUID, out long v).Failure) return "";
+            return $", driver {(v >> 48) & 0xFFFF}.{(v >> 32) & 0xFFFF}.{(v >> 16) & 0xFFFF}.{v & 0xFFFF}";
+        }
+        catch { return ""; }
+    }
+
     /// <summary>For logs: this PC's graphics adapters and hardware H.264 encoders.</summary>
     public static IEnumerable<string> Describe()
     {
@@ -236,7 +336,7 @@ public sealed class PcVideoEncoder : IDisposable
                     long luid = ((long)d.Luid.HighPart << 32) | d.Luid.LowPart;
                     int outputs = 0;
                     while (adapter.EnumOutputs((uint)outputs, out IDXGIOutput o).Success) { o.Dispose(); outputs++; }
-                    lines.Add($"GPU {a}: {d.Description} (luid {luid:X}, {outputs} display(s))");
+                    lines.Add($"GPU {a}: {d.Description} (luid {luid:X}, {outputs} display(s){DriverVersion(adapter)})");
                 }
             }
             foreach (var c in HardwareEncoders(0))
@@ -320,7 +420,7 @@ public sealed class PcVideoEncoder : IDisposable
         catch { return false; /* the encoder is entitled to refuse; the mirror runs without it */ }
     }
 
-    private void SetOutputType(int width, int height, int fps, int bitrate)
+    private void SetOutputType(int width, int height, int fps, int bitrate, int profile)
     {
         Check(MFCreateMediaType(out IMFMediaType type), "MFCreateMediaType(output)");
         var key = MF_MT_MAJOR_TYPE; var value = MFMediaType_Video;
@@ -331,7 +431,7 @@ public sealed class PcVideoEncoder : IDisposable
         key = MF_MT_FRAME_RATE; type.SetUINT64(ref key, Pack(fps, 1));
         key = MF_MT_PIXEL_ASPECT_RATIO; type.SetUINT64(ref key, Pack(1, 1));
         key = MF_MT_INTERLACE_MODE; type.SetUINT32(ref key, MFVideoInterlace_Progressive);
-        key = MF_MT_MPEG2_PROFILE; type.SetUINT32(ref key, eAVEncH264VProfile_High);
+        key = MF_MT_MPEG2_PROFILE; type.SetUINT32(ref key, profile);
         Check(_transform.SetOutputType(0, type, 0), "SetOutputType");
         Marshal.ReleaseComObject(type);
     }
@@ -355,7 +455,10 @@ public sealed class PcVideoEncoder : IDisposable
     /// <summary>Block until the encoder next wants input or has output. Returns an ME* constant.</summary>
     public int NextEvent()
     {
-        Check(_events.GetEvent(0, out IMFMediaEvent mediaEvent), "GetEvent");
+        // Software encoder: Submit posts these itself. Take throws once Dispose completes the
+        // queue, which is what ends the pump thread — the same as GetEvent's MF_E_SHUTDOWN.
+        if (_syncEvents is { } syncEvents) return syncEvents.Take();
+        Check(_events!.GetEvent(0, out IMFMediaEvent mediaEvent), "GetEvent");
         Check(mediaEvent.GetTypeInfo(out int eventType), "GetTypeInfo");
         Marshal.ReleaseComObject(mediaEvent);
         return eventType;
@@ -372,12 +475,69 @@ public sealed class PcVideoEncoder : IDisposable
         Check(MFCreateDXGISurfaceBuffer(ref iid, texture.NativePointer, 0, false,
             out IMFMediaBuffer buffer), "MFCreateDXGISurfaceBuffer");
         Check(MFCreateSample(out IMFSample sample), "MFCreateSample");
-        Check(sample.AddBuffer(buffer), "AddBuffer");
-        Check(sample.SetSampleTime(sampleTime), "SetSampleTime");
-        Check(sample.SetSampleDuration(10_000_000L / _framesPerSecond), "SetSampleDuration");
-        Check(_transform.ProcessInput(0, sample, 0), "ProcessInput");
-        Marshal.ReleaseComObject(sample);
-        Marshal.ReleaseComObject(buffer);
+        try
+        {
+            Check(sample.AddBuffer(buffer), "AddBuffer");
+            Check(sample.SetSampleTime(sampleTime), "SetSampleTime");
+            Check(sample.SetSampleDuration(10_000_000L / _framesPerSecond), "SetSampleDuration");
+            if (_syncEvents is not { } syncEvents)
+            {
+                Check(_transform.ProcessInput(0, sample, 0), "ProcessInput");
+                return;
+            }
+
+            // Software encoder: it reads the surface through the buffer's own copy to system
+            // memory, encodes on this thread, and everything that came out goes to the pump.
+            int hr = _transform.ProcessInput(0, sample, 0);
+            if ((uint)hr == MF_E_NOTACCEPTING)
+            {
+                DrainSync(syncEvents);
+                hr = _transform.ProcessInput(0, sample, 0);
+            }
+            Check(hr, "ProcessInput");
+            DrainSync(syncEvents);
+            syncEvents.Add(METransformNeedInput);
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(sample);
+            Marshal.ReleaseComObject(buffer);
+        }
+    }
+
+    /// <summary>Collect everything the synchronous encoder has ready, announcing each to the pump.</summary>
+    private void DrainSync(BlockingCollection<int> syncEvents)
+    {
+        Check(_transform.GetOutputStreamInfo(0, out MFT_OUTPUT_STREAM_INFO info), "GetOutputStreamInfo");
+        bool provides = (info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) != 0;
+        while (true)
+        {
+            IMFSample? own = null;
+            IMFMediaBuffer? ownBuffer = null;
+            if (!provides)
+            {
+                Check(MFCreateSample(out own), "MFCreateSample");
+                Check(MFCreateMemoryBuffer((int)Math.Max(info.cbSize, (uint)_syncOutputBytes), out ownBuffer), "MFCreateMemoryBuffer");
+                own.AddBuffer(ownBuffer);
+            }
+            var buffers = new MFT_OUTPUT_DATA_BUFFER { dwStreamID = 0, pSample = own! };
+            int hr = _transform.ProcessOutput(0, 1, ref buffers, out _);
+            try
+            {
+                if ((uint)hr is MF_E_TRANSFORM_NEED_MORE_INPUT or MF_E_TRANSFORM_STREAM_CHANGE) return;
+                Check(hr, "ProcessOutput");
+                if (buffers.pSample is null) return;
+                _syncOutput.Enqueue(ReadFrame(buffers.pSample));
+                syncEvents.Add(METransformHaveOutput);
+            }
+            finally
+            {
+                if (buffers.pEvents is not null) Marshal.ReleaseComObject(buffers.pEvents);
+                if (provides && buffers.pSample is not null) Marshal.ReleaseComObject(buffers.pSample);
+                if (ownBuffer is not null) Marshal.ReleaseComObject(ownBuffer);
+                if (own is not null) Marshal.ReleaseComObject(own);
+            }
+        }
     }
 
     /// <summary>
@@ -386,6 +546,8 @@ public sealed class PcVideoEncoder : IDisposable
     /// </summary>
     public EncodedFrame? Receive()
     {
+        if (_syncEvents is not null) return _syncOutput.TryDequeue(out var ready) ? ready : null;
+
         var buffers = new MFT_OUTPUT_DATA_BUFFER { dwStreamID = 0 };
         int hr = _transform.ProcessOutput(0, 1, ref buffers, out _);
         if ((uint)hr is MF_E_TRANSFORM_NEED_MORE_INPUT or MF_E_TRANSFORM_STREAM_CHANGE) return null;
@@ -394,24 +556,28 @@ public sealed class PcVideoEncoder : IDisposable
 
         try
         {
-            buffers.pSample.GetSampleTime(out long sampleTime);
-            Check(buffers.pSample.ConvertToContiguousBuffer(out IMFMediaBuffer buffer),
-                "ConvertToContiguousBuffer");
-            try
-            {
-                Check(buffer.Lock(out IntPtr pointer, out _, out int length), "Lock");
-                var data = new byte[length];
-                Marshal.Copy(pointer, data, 0, length);
-                buffer.Unlock();
-                return new EncodedFrame(data, ContainsKeyframe(data), sampleTime / 10);
-            }
-            finally { Marshal.ReleaseComObject(buffer); }
+            return ReadFrame(buffers.pSample);
         }
         finally
         {
             Marshal.ReleaseComObject(buffers.pSample);
             if (buffers.pEvents is not null) Marshal.ReleaseComObject(buffers.pEvents);
         }
+    }
+
+    private static EncodedFrame ReadFrame(IMFSample sample)
+    {
+        sample.GetSampleTime(out long sampleTime);
+        Check(sample.ConvertToContiguousBuffer(out IMFMediaBuffer buffer), "ConvertToContiguousBuffer");
+        try
+        {
+            Check(buffer.Lock(out IntPtr pointer, out _, out int length), "Lock");
+            var data = new byte[length];
+            Marshal.Copy(pointer, data, 0, length);
+            buffer.Unlock();
+            return new EncodedFrame(data, ContainsKeyframe(data), sampleTime / 10);
+        }
+        finally { Marshal.ReleaseComObject(buffer); }
     }
 
     /// <summary>
@@ -445,9 +611,11 @@ public sealed class PcVideoEncoder : IDisposable
         // this, Dispose left that thread blocked for good — harmless-looking at the end of a
         // session, fatal when the encoder is rebuilt mid-stream (D-069).
         try { if (_transform is IMFShutdown shutdown) shutdown.Shutdown(); } catch { }
+        // The software encoder's pump waits on this queue instead; completing it wakes that.
+        try { _syncEvents?.CompleteAdding(); } catch { }
         try { if (_deviceManagerPtr != IntPtr.Zero) Marshal.Release(_deviceManagerPtr); } catch { }
         try { Marshal.ReleaseComObject(_transform); } catch { }
-        try { Marshal.ReleaseComObject(_deviceManager); } catch { }
+        try { if (_deviceManager is not null) Marshal.ReleaseComObject(_deviceManager); } catch { }
         try { _nv12?.Dispose(); } catch { }
     }
 }

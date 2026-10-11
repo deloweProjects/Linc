@@ -89,6 +89,8 @@ class SocketServer(
     // announceAdb because the handshake path must never arm on its own — arming is a visible
     // change to the user's device and only happens when the desktop explicitly asks.
     private val onAdbArm: (reason: String) -> Unit,
+    // D-088: one PC at a time, and the PC the owner picked.
+    private val gate: PcGate,
 ) {
     /** One connection, transport-agnostic: LocalSocket over ADB or SSLSocket over LAN. */
     class Peer(
@@ -97,6 +99,8 @@ class SocketServer(
         val setTimeout: (Int) -> Unit,
         /** Where this connection came from: null over ADB, the PC's address over Direct TLS. */
         val tlsAddress: String? = null,
+        /** Ends the connection from outside — when the owner picks another PC (D-088). */
+        val close: () -> Unit = {},
     )
 
     private var serverSocket: LocalServerSocket? = null
@@ -129,6 +133,7 @@ class SocketServer(
                         DataInputStream(client.inputStream),
                         DataOutputStream(client.outputStream),
                         { millis -> client.soTimeout = millis },
+                        close = { runCatching { client.shutdownInput() }; runCatching { client.close() } },
                     )
                     try {
                         dispatch(peer)
@@ -156,6 +161,7 @@ class SocketServer(
             DataOutputStream(socket.getOutputStream()),
             { millis -> socket.soTimeout = millis },
             tlsAddress = socket.inetAddress?.hostAddress,
+            close = { runCatching { socket.close() } },
         )
         try {
             dispatch(peer)
@@ -266,19 +272,42 @@ class SocketServer(
 
         peer.setTimeout(0) // idle is fine after the handshake; the desktop pings
 
+        // D-088: is this PC allowed the phone right now? One PC at a time, and the picked one.
+        val pcId = (hello.payload["pcId"] as? JsonPrimitive)?.contentOrNull
+        val pcHost = (hello.payload["host"] as? JsonPrimitive)?.contentOrNull
+        val ticket = when (val answer = gate.admit(pcId, pcHost, peer.close)) {
+            is PcGate.Answer.Refuse -> {
+                send(Envelope(
+                    type = MessageType.ERROR,
+                    replyTo = hello.id,
+                    payload = buildJsonObject {
+                        put("code", ErrorCode.BUSY)
+                        put("message", answer.message)
+                    },
+                ))
+                return
+            }
+            is PcGate.Answer.Admit -> answer.ticket
+        }
+
         // v5: hand the desktop a session token so it can open channel connections.
         val sessionToken = if (negotiated >= 5) SessionRegistry.issue() else null
         var outboxRegistration: CompanionOutbox.Registration? = null
-        send(Envelope(
-            type = MessageType.HELLO,
-            replyTo = hello.id,
-            payload = buildJsonObject {
-                put("app", "linc-android")
-                put("appVersion", BuildConfig.VERSION_NAME)
-                put("v", negotiated)
-                if (sessionToken != null) put("sessionToken", sessionToken)
-            },
-        ))
+        try {
+            send(Envelope(
+                type = MessageType.HELLO,
+                replyTo = hello.id,
+                payload = buildJsonObject {
+                    put("app", "linc-android")
+                    put("appVersion", BuildConfig.VERSION_NAME)
+                    put("v", negotiated)
+                    if (sessionToken != null) put("sessionToken", sessionToken)
+                },
+            ))
+        } catch (e: Exception) {
+            gate.release(ticket)
+            throw e
+        }
 
         liveControls.incrementAndGet()
         try {
@@ -427,7 +456,10 @@ class SocketServer(
                         val cert = (message.payload["cert"] as? JsonPrimitive)?.contentOrNull
                         val tlsPort = (message.payload["tlsPort"] as? JsonPrimitive)?.intOrNull ?: 0
                         val reversePort = (message.payload["reversePort"] as? JsonPrimitive)?.intOrNull ?: 0
-                        val ownCert = if (cert != null) onTlsExchange(cert, tlsPort, reversePort) else null
+                        val ownCert = if (cert != null) {
+                            gate.exchanged(ticket, pcHost, cert, tlsPort, reversePort)
+                            onTlsExchange(cert, tlsPort, reversePort)
+                        } else null
                         send(if (ownCert != null) {
                             Envelope(
                                 type = MessageType.TLS_EXCHANGE,
@@ -678,6 +710,7 @@ class SocketServer(
             // every unsolicited send until the next handshake.
             outboxRegistration?.let { CompanionOutbox.release(it) }
             SessionRegistry.clear(sessionToken)
+            gate.release(ticket)
             // Only report a disconnect when the peer left, not when we're shutting down — and not
             // while another control connection is still live: the PC moves the link between USB
             // and Wi-Fi by opening the new one before closing the old (D-081).

@@ -196,6 +196,52 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         finally { PcMirrorSource.PreferNv12 = false; }
     });
 
+    yield return ("D-087 software fallback: Windows' own encoder streams a decodable picture", a =>
+    {
+        // Intel Quick Sync refused every setup on two PCs; the last resort is the synchronous
+        // software MFT fed the GPU-converted NV12. Forced here so it is proven on any PC.
+        var (direct, _) = Run(Config.TargetFrames);
+        PcMirrorSource.PreferSoftware = true;
+        try
+        {
+            var (frames, source) = Run(Config.TargetFrames);
+            Console.WriteLine($"    encoder: {source.Encoder}; {source.Fps:F1} fps");
+            a.True(source.Encoder.Contains("software"), "the software encoder was really used");
+            a.Equal(Config.TargetFrames, frames.Count, "every requested frame arrived");
+            var nals = ParseNals(frames.SelectMany(f => f.Data).ToArray());
+            a.True(nals.Any(n => n.Type == 7) && nals.Any(n => n.Type == 8) && nals.Any(n => n.Type == 5),
+                "SPS, PPS and an IDR — decodable from the start");
+            a.True(nals.Count(n => n.Type == 1) > 0, "P slices follow, so the picture is moving through");
+            a.True(frames.Any(f => f.Keyframe), "the keyframe flag is set on an IDR");
+            // Kept for a look with ffmpeg/ffplay: the picture itself is the real evidence.
+            var dump = Path.Combine(Path.GetTempPath(), "mirrorsim-software.h264");
+            File.WriteAllBytes(dump, frames.SelectMany(f => f.Data).ToArray());
+            Console.WriteLine($"    stream written to {dump}");
+            long soft = frames.Sum(f => (long)f.Data.Length), hard = direct.Sum(f => (long)f.Data.Length);
+            Console.WriteLine($"    bytes: hardware {hard:N0}, software {soft:N0}");
+            a.True(soft > hard / 10, "a real picture, not a blank one");
+            a.True(source.Fps > Config.Fps * 0.6, "keeps up with the frame rate on this PC");
+        }
+        finally { PcMirrorSource.PreferSoftware = false; }
+    });
+
+    yield return ("D-087 watchdog: a hardware encoder that dies mid-stream is replaced in place", a =>
+    {
+        PcMirrorSource.SimulateEncoderFailureAfter = 20;
+        try
+        {
+            var (frames, source) = Run(Config.TargetFrames);
+            Console.WriteLine($"    encoder at the end: {source.Encoder}");
+            a.True(source.Encoder.Contains("software"), "the stream finished on the software encoder");
+            a.Equal(Config.TargetFrames, frames.Count, "frames kept coming after the failure");
+            int idrFrames = frames.Count(f => f.Keyframe);
+            a.True(idrFrames >= 2, "the new encoder opened with its own keyframe (a clean boundary)");
+            var nals = ParseNals(frames.SelectMany(f => f.Data).ToArray());
+            a.True(nals.Count(n => n.Type == 7) >= 2, "a fresh SPS arrived with the switch");
+        }
+        finally { PcMirrorSource.SimulateEncoderFailureAfter = 0; PcVideoEncoder.TrustAllAgain(); }
+    });
+
     yield return ("keyframe flag matches the bitstream", a =>
     {
         var (frames, _) = Run(Config.TargetFrames);

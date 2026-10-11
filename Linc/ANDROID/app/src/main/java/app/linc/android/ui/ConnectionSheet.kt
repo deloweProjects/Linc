@@ -81,6 +81,7 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
                 link?.let { l -> { s -> SettingsRow("Connected", s, LincSymbols.History,
                     value = DateUtils.getRelativeTimeSpanString(l.since, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()) } },
             ))
+            PcsSection()
             if (state is ServiceState.Listening) {
                 HelperText(
                     "Linc finds your PC on the same Wi-Fi, over the USB cable, or on the PC's hotspot. Keep Linc open on the PC.",

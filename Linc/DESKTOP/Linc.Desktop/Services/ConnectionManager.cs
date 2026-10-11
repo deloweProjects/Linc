@@ -235,7 +235,7 @@ public sealed class ConnectionManager(
     public async Task<ConnectedDevice> AdoptTlsConnectionAsync(
         System.IO.Stream stream, System.Net.IPEndPoint? peer, CancellationToken ct)
     {
-        var companion = new CompanionClient();
+        var companion = new CompanionClient { PcId = tls.PcId };
         try
         {
             var appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
@@ -315,7 +315,7 @@ public sealed class ConnectionManager(
                 "Turn Wireless debugging off and on again on the phone, then retry.", ex);
         }
 
-        var companion = new CompanionClient();
+        var companion = new CompanionClient { PcId = tls.PcId };
         try
         {
             var appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
@@ -324,7 +324,7 @@ public sealed class ConnectionManager(
             {
                 hello = await companion.ConnectAsync(localPort, appVersion, ct);
             }
-            catch (LincException)
+            catch (LincException ex) when (ex is not PhoneBusyException)
             {
                 // The companion isn't answering — after an install, a reboot, a crash, or a
                 // force-stop. We hold an ADB link, so start it ourselves rather than asking the

@@ -183,6 +183,12 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     // ---- Appearance → Show explanations (D-084) ----
+    public bool ForceSoftwareEncoding
+    {
+        get => _registry.ForceSoftwareEncoding;
+        set { _registry.SaveForceSoftwareEncoding(value); OnPropertyChanged(); }
+    }
+
     public bool ShowExplanations
     {
         get => _registry.ShowExplanations;

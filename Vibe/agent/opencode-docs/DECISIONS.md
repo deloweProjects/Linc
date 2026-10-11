@@ -1384,3 +1384,71 @@ is likely unavailable to an individual in Zimbabwe; commercial OV/EV is the expe
 with More info → Run anyway (README). Free routes to revisit later: the Microsoft Store (free
 individual account, Microsoft signs MSIX — needs Store packaging) or SignPath Foundation (needs a CI
 build). Certum stays documented as the cheapest paid option.
+
+## D-087: Mirror PC never just refuses — basic settings, then Windows' software encoder, and a watchdog
+
+**2026-10-11.** The owner's second PC (Intel HD Graphics 620, Quick Sync H.264 MFT, 1.0.0.11): every
+Mirror PC start failed with `START_OF_STREAM failed 0xC00D3E85` (MF_E_SHUTDOWN) for ARGB32 and for
+D-077's NV12 alike, and the encoder queued no MEError. Two Intel PCs now fail the same way, which
+points at Quick Sync's own parameter check rejecting something in the tuned setup, not the input.
+
+**Encoder ladder (`PcVideoEncoder`).** Per hardware encoder: ARGB32 tuned, NV12 tuned, then **NV12
+with basic settings** (media types only — no MF_LOW_LATENCY, no ICodecAPI rate control/GOP/QP). If
+every hardware encoder refuses, **Windows' own software H.264 encoder** (CLSID_MSH264EncoderMFT, a
+synchronous MFT, Baseline profile, fastest speed) takes the GPU-converted NV12 through the DXGI
+buffer's own copy to system memory. This reverses D-039's "hardware only": the objection was an
+untestable path, and `mirrorsim` now forces it on any PC. Measured here (Ryzen, 1080p): 26 fps,
+decodes with ffmpeg to the correct picture, about 3x the bytes of the AMD encoder at the same target.
+The synchronous encoder is driven through the same pump/feeder threads: `Submit` encodes in place and
+posts the NeedInput/HaveOutput events the async MFT would have.
+
+**Watchdog (`PcMirrorSource`).** "It initialised" is not proof. The feeder swaps a hardware encoder
+for the software one in place — same channel, the new encoder opens with SPS/PPS + IDR — when its
+pump fails, it hasn't asked for a frame in 5 s, or a second's worth of submitted frames produced
+nothing. A swapped-out encoder is distrusted for the rest of the run. `mirrorsim` "D-087 watchdog"
+kills the AMD encoder at frame 20 and checks the stream carries on.
+
+**Settings → Mirror PC → Use software encoding** (off by default) skips the hardware encoders.
+
+**Capture.** The D3D device is now created on the adapter that owns the chosen display (numbered as
+`Enumerate` numbers them for the phone), not the default adapter — capture, NV12 conversion and
+encoding stay on one GPU on hybrid/multi-card PCs. `DXGI_ERROR_ACCESS_LOST` (UAC, lock screen, mode
+change) re-creates the duplication instead of ending capture; the last frame is resent meanwhile. A
+resolution change ends the stream with a plain message (the encoder is sized at start).
+The Copy log GPU lines include the driver version.
+
+Not done (noted for later): Windows Graphics Capture / GDI capture fallbacks, a JPEG-tile codec for
+phones or PCs with no usable H.264, even-dimension cropping for odd-sized displays, and caching the
+winning encoder across runs. Untested here on Intel — the owner's next log says which rung worked.
+
+## D-088: The phone knows several PCs; you pick one; one PC at a time
+
+**2026-10-11.** Owner: "save connection to diff pcs so i can select pc to connect to and no conflict
+with other pc". Until now the phone kept one pinned PC certificate: pairing with a second PC
+overwrote the first, and both PCs then grabbed the phone over ADB.
+
+- **Store.** `TransportStore` keeps a list of PCs (id, name, certificate, ports, last good address,
+  last seen) and the picked PC (none = "Any of my PCs"). A PC's id is the first 16 hex digits of the
+  SHA-256 of its certificate; the PC sends it as `pcId` in `hello` and `id` in its mDNS TXT. The old
+  single-PC keys migrate into the list on first read.
+- **Gate (`PcGate`).** Every control link asks after `hello`: while one PC is connected another is
+  refused with error `busy` and a plain message naming the PC that has the phone; the same PC is
+  always admitted (D-081 handoff). With a PC picked, other known PCs are refused even when the phone
+  is free; a never-paired PC is admitted (setting up on a new PC is a choice) and becomes the picked
+  PC once it has paired. Picking a PC on the phone drops any other PC's link at once.
+- **Dialling.** `PresenceClient` dials the picked PC, or every known PC on automatic, each address
+  only with the certificate of a PC that could be there; channel dial-backs go to the connected PC.
+- **UI.** Connection sheet → PCs: "Any of my PCs" or a PC (radio), last connected, Forget.
+- **Desktop.** `PhoneBusyException` for `busy`: logged as-is, and the ADB path no longer tries to
+  restart a companion that is running fine. Older PCs (no `pcId`) are matched by name.
+
+Build-checked and unit tests pass; the two-PC behaviour needs both PCs (owner's hand test).
+
+## D-089: Setup can skip installing the companion
+
+**2026-10-11.** Owner: "in setup add skip to installing linc companion app maybe i already have it".
+Add a phone → Choose has "Linc is already on my phone — don't install it". While the wizard is open
+it stops `PhoneSetupService` pushing the APK (the Checking text changes to match); if the app turns
+out not to be there, the log says to install and open it. The box resets when the wizard closes. The
+install was already skipped when the package is present; this covers a phone whose copy came from
+elsewhere and the PC with no bundled APK (the "Heads up" banner hides when it's ticked).

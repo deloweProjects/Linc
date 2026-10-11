@@ -17,6 +17,13 @@ public interface ITlsTransportService : IDisposable
     /// <summary>This PC's certificate, base64 DER — sent in `tls.exchange`.</summary>
     string CertificateBase64 { get; }
 
+    /// <summary>
+    /// This PC's stable id for the phone (D-088): the first 16 hex digits of the SHA-256 of its
+    /// certificate. Sent in `hello` and the mDNS advert so a phone that knows several PCs can tell
+    /// them apart; the phone computes the same value from the certificate it pinned.
+    /// </summary>
+    string PcId { get; }
+
     int TlsPort { get; }
     int ReversePort { get; }
 
@@ -78,6 +85,8 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     private DateTime _lastAdvertiseUtc = DateTime.MinValue;
 
     public string CertificateBase64 => Convert.ToBase64String(_identity.Value.Export(X509ContentType.Cert));
+
+    public string PcId => Convert.ToHexString(SHA256.HashData(_identity.Value.Export(X509ContentType.Cert)))[..16].ToLowerInvariant();
 
     public event Action<Stream, IPEndPoint?>? ControlArrived;
 
@@ -162,6 +171,8 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         {
             profile.AddProperty("addrs", string.Join(",", lan.Select(a => a.ToString())));
         }
+        // Which PC this is, for a phone that knows several (D-088).
+        profile.AddProperty("id", PcId);
         _advertiser.Advertise(profile);
         var shown = lan.Count > 0 ? string.Join(", ", lan) : "no LAN address found";
         log.Log(LogLevel.Info, $"Direct connection ready on {shown} — waiting for the phone to find this PC");

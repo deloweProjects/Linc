@@ -210,6 +210,26 @@
                 </StackPanel>
             </Border>
 
+            <!-- Mirror PC (D-087): the always-works switch for PCs whose graphics encoder misbehaves. -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Mirror PC" Style="{StaticResource TitleText}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Use software encoding" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="Turn on if Mirror PC won't start or freezes. Uses more CPU, but works on any PC. Linc already switches by itself when the graphics chip's encoder fails."
+                                       Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.ForceSoftwareEncoding, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- Phone as microphone (D-071): the virtual cable Voice Access hears the phone through. -->
             <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
                 <StackPanel Spacing="12">

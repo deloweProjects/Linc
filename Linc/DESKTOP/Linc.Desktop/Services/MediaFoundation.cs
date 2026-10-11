@@ -64,8 +64,14 @@ public static class Mf
     public const uint MF_E_TRANSFORM_STREAM_CHANGE = 0xC00D6D61;
     public const uint MF_E_INVALIDMEDIATYPE = 0xC00D36B4;
     public const uint MF_E_NO_MORE_TYPES = 0xC00D36B9;
+    public const uint MF_E_NOTACCEPTING = 0xC00D36B5;
+    public const uint MFT_OUTPUT_STREAM_PROVIDES_SAMPLES = 0x100;
+
+    /// <summary>Windows' own software H.264 encoder (sync MFT, NV12 in system memory).</summary>
+    public static readonly Guid CLSID_MSH264EncoderMFT = new("6ca50344-051a-4ded-9779-a43305165e35");
 
     public const int MFVideoInterlace_Progressive = 2;
+    public const int eAVEncH264VProfile_Base = 66;
     public const int eAVEncH264VProfile_Main = 77;
     public const int eAVEncH264VProfile_High = 100;
 
@@ -366,6 +372,7 @@ public static class Mf
     public static readonly Guid CODECAPI_AVEncNumWorkerThreads = new("b0c8bf60-16f7-4951-a30b-1db1609293d6");
 
     public static readonly Guid CODECAPI_AVEncVideoMinQP = new("0ee22c6a-a37c-4568-b5f1-9d4c2b3ab886");
+    public static readonly Guid CODECAPI_AVEncCommonQualityVsSpeed = new("98332df8-03cd-476b-89fa-3f9e442dec9f");
 
     public const int eAVEncCommonRateControlMode_CBR = 0;
     public const int eAVEncCommonRateControlMode_PeakConstrainedVBR = 1;

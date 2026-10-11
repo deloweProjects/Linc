@@ -92,11 +92,11 @@ fun HomeScreen(
     val updateProgress by app.linc.android.service.UpdateCheck.progress.collectAsState()
     val updateProblem by app.linc.android.service.UpdateCheck.problem.collectAsState()
     var exempt by remember { mutableStateOf(ConnectionWatch.isBatteryExempt(context)) }
-    var paired by remember { mutableStateOf(TransportStore.desktopCert(context) != null) }
+    var paired by remember { mutableStateOf(TransportStore.hasAnyPc(context)) }
     LaunchedEffect(Unit) {
         while (true) {
             exempt = ConnectionWatch.isBatteryExempt(context)
-            paired = TransportStore.desktopCert(context) != null
+            paired = TransportStore.hasAnyPc(context)
             kotlinx.coroutines.delay(2_000)
         }
     }

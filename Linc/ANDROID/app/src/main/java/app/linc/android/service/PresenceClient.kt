@@ -21,28 +21,36 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Standing presence over Direct TLS (PIPELINE.md, D-014/D-022): while the companion
  * service runs, the "Background connection" setting is on, and no desktop is
- * connected, watch mDNS for the desktop's `_linc._tcp` advert (plus the adb-reverse
+ * connected, watch mDNS for the desktops' `_linc._tcp` adverts (plus the adb-reverse
  * loopback port when one was exchanged) and dial out with mutual TLS. A successful
  * dial is handed to [SocketServer.serveExternal] — the same protocol code serves it.
  * The scan interval widens while the PC is absent (battery).
+ *
+ * D-088: the phone knows several PCs. It dials only the PC the owner picked, or, on automatic,
+ * every PC it knows — each with that PC's own pinned certificate, so a dial can only ever land
+ * on the PC it was meant for.
  */
 class PresenceClient(
     private val context: Context,
     private val scope: CoroutineScope,
     private val server: SocketServer,
+    private val gate: PcGate,
 ) {
     private var loopJob: Job? = null
     private var discovering = false
 
-    @Volatile
-    private var advertised: List<Pair<String, Int>> = emptyList() // candidate host:port from mDNS
+    /** One `_linc._tcp` advert: the PC's id (from its TXT record; null from older PCs) and addresses. */
+    private data class Advert(val pcId: String?, val endpoints: List<Pair<String, Int>>)
+
+    /** Live adverts by mDNS service name — one per PC on the network. */
+    private val advertised = java.util.concurrent.ConcurrentHashMap<String, Advert>()
 
     /** Where the current control connection was dialed to — channel dial-backs reuse it. */
     @Volatile
     private var activeEndpoint: Pair<String, Int>? = null
 
-    /** Misses in a row for the remembered last-good address ([ReconnectPolicy.FORGET_AFTER]). */
-    private var lastGoodFailures = 0
+    /** Misses in a row for each PC's remembered last-good address ([ReconnectPolicy.FORGET_AFTER]). */
+    private val lastGoodFailures = mutableMapOf<String, Int>()
 
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(serviceType: String) {}
@@ -50,7 +58,7 @@ class PresenceClient(
         override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
         override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
         override fun onServiceLost(info: NsdServiceInfo) {
-            advertised = emptyList()
+            advertised.remove(info.serviceName)
         }
         override fun onServiceFound(info: NsdServiceInfo) {
             if (info.serviceType.startsWith(SERVICE_TYPE)) {
@@ -68,7 +76,8 @@ class PresenceClient(
                             info.attributes["addrs"]?.let { bytes ->
                                 String(bytes).split(",").forEach { if (it.isNotBlank()) hosts += it.trim() }
                             }
-                            advertised = hosts.map { it to port }
+                            val pcId = info.attributes["id"]?.let { String(it) }?.takeIf { it.isNotBlank() }
+                            advertised[info.serviceName] = Advert(pcId, hosts.map { it to port })
                         }
                     })
                 }
@@ -138,17 +147,23 @@ class PresenceClient(
 
     private fun shouldDial(): Boolean =
         TransportStore.presenceEnabled(context) &&
-            TransportStore.desktopCert(context) != null &&
+            TransportStore.dialTargets(context).isNotEmpty() &&
             CompanionStateHolder.state.value is ServiceState.Listening
 
     /**
-     * Dials the USB reverse tunnel, then the address that worked last time, then whatever mDNS
-     * advertised ([ReconnectPolicy.order]). Blocks while connected.
+     * Dials, for every PC it may ([TransportStore.dialTargets]), the USB reverse tunnel, then the
+     * address that worked last time, then whatever that PC advertised on mDNS
+     * ([ReconnectPolicy.order]). Blocks while connected.
      */
     private fun dialControl(): Boolean {
-        val cert = TransportStore.desktopCert(context) ?: return false
-        val lastGood = ReconnectPolicy.parse(TransportStore.lastEndpoint(context))
-        val candidates = candidateEndpoints(lastGood)
+        val targets = TransportStore.dialTargets(context)
+        // Which PCs each address may belong to: an address is only ever TLS-dialled with the
+        // certificates of the PCs that could be there.
+        val owners = linkedMapOf<Pair<String, Int>, MutableList<TransportStore.KnownPc>>()
+        for (pc in targets) {
+            for (endpoint in candidateEndpoints(pc)) owners.getOrPut(endpoint) { mutableListOf() } += pc
+        }
+        val candidates = owners.keys.toList()
         if (candidates.isEmpty()) return false
         // Race plain TCP probes to every candidate and do TLS once, to the first that answers
         // (D-072's channel rule, now for control too): a dead remembered address or an
@@ -162,24 +177,30 @@ class PresenceClient(
             },
             close = {},
         )
-        if (lastGood != null && reachable != lastGood) {
-            lastGoodFailures++
-            if (ReconnectPolicy.shouldForget(lastGoodFailures)) {
-                TransportStore.saveLastEndpoint(context, null)
-                lastGoodFailures = 0
-                LogStore.log(LogLevel.INFO, "Forgot ${ReconnectPolicy.format(lastGood)}: it failed ${ReconnectPolicy.FORGET_AFTER} times in a row")
+        for (pc in targets) {
+            val lastGood = ReconnectPolicy.parse(pc.lastEndpoint) ?: continue
+            if (reachable == lastGood) continue
+            val failures = (lastGoodFailures[pc.id] ?: 0) + 1
+            lastGoodFailures[pc.id] = failures
+            if (ReconnectPolicy.shouldForget(failures)) {
+                TransportStore.saveLastEndpoint(context, pc.id, null)
+                lastGoodFailures.remove(pc.id)
+                LogStore.log(LogLevel.INFO, "Forgot ${ReconnectPolicy.format(lastGood)} for ${pc.name}: it failed ${ReconnectPolicy.FORGET_AFTER} times in a row")
             }
         }
         for (endpoint in listOfNotNull(reachable)) {
-            val socket = runCatching {
-                TlsIdentity.connect(endpoint.first, endpoint.second, cert, DIAL_TIMEOUT_MS)
-            }.getOrNull() ?: continue
+            var dialled: TransportStore.KnownPc? = null
+            val socket = owners[endpoint].orEmpty().firstNotNullOfOrNull { pc ->
+                runCatching { TlsIdentity.connect(endpoint.first, endpoint.second, pc.cert, DIAL_TIMEOUT_MS) }
+                    .getOrNull()?.also { dialled = pc }
+            } ?: continue
+            val pc = dialled!!
             if (endpoint.first != "127.0.0.1") {
-                TransportStore.saveLastEndpoint(context, ReconnectPolicy.format(endpoint))
+                TransportStore.saveLastEndpoint(context, pc.id, ReconnectPolicy.format(endpoint))
             }
-            if (endpoint == lastGood) lastGoodFailures = 0
+            if (endpoint == ReconnectPolicy.parse(pc.lastEndpoint)) lastGoodFailures.remove(pc.id)
             activeEndpoint = endpoint
-            LogStore.log(LogLevel.INFO, "Connected to the PC directly (no ADB) at ${endpoint.first}:${endpoint.second}")
+            LogStore.log(LogLevel.INFO, "Connected to ${pc.name} directly (no ADB) at ${endpoint.first}:${endpoint.second}")
             val since = android.os.SystemClock.elapsedRealtime()
             val why = server.serveExternal(socket) // blocks until the desktop disconnects
             activeEndpoint = null
@@ -203,11 +224,13 @@ class PresenceClient(
         return false
     }
 
-    private fun candidateEndpoints(lastGood: Pair<String, Int>? = null): List<Pair<String, Int>> {
+    /** Where [pc] might be: its USB reverse tunnel, its last good address, then its adverts. */
+    private fun candidateEndpoints(pc: TransportStore.KnownPc): List<Pair<String, Int>> {
         // adb-reverse (USB cable) path first: loopback is always reachable when it exists.
-        val reversePort = TransportStore.reversePort(context)
-        val reverse = if (reversePort > 0) "127.0.0.1" to reversePort else null
-        return ReconnectPolicy.order(reverse, lastGood, advertised) // + every LAN address advertised
+        val reverse = if (pc.reversePort > 0) "127.0.0.1" to pc.reversePort else null
+        // Its own advert, or one from an older PC that doesn't say which PC it is.
+        val adverts = advertised.values.filter { it.pcId == null || it.pcId == pc.id }.flatMap { it.endpoints }
+        return ReconnectPolicy.order(reverse, ReconnectPolicy.parse(pc.lastEndpoint), adverts)
     }
 
     /**
@@ -221,10 +244,12 @@ class PresenceClient(
      * list the control dialer uses.
      */
     fun openChannel(channel: Int, token: String): Boolean {
-        val cert = TransportStore.desktopCert(context) ?: return false
+        // The channel goes back to the PC that is connected now, pinned to that PC's certificate.
+        val pc = TransportStore.pc(context, gate.currentPcId) ?: return false
+        val cert = pc.cert
         val endpoints = buildList {
             activeEndpoint?.let { add(it) }
-            addAll(candidateEndpoints())
+            addAll(candidateEndpoints(pc))
         }.distinct()
 
         // Find the reachable route by racing plain TCP probes, then do TLS once, to it: a dead

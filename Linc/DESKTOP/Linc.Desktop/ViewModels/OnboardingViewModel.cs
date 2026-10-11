@@ -140,7 +140,20 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
 
     public bool ShowOneAtATimeNote => OneAtATimeText.Length > 0;
 
-    public bool ApkMissing => _setup.LocateApk() is null;
+    public bool ApkMissing => _setup.LocateApk() is null && !SkipCompanionInstall;
+
+    /// <summary>"Linc is already on my phone — don't install it" (D-089).</summary>
+    public bool SkipCompanionInstall
+    {
+        get => _setup.SkipCompanionInstall;
+        set
+        {
+            if (_setup.SkipCompanionInstall == value) return;
+            _setup.SkipCompanionInstall = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ApkMissing));
+        }
+    }
 
     // ---- Wi-Fi pairing ----
 
@@ -355,7 +368,9 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
             await _pairing.PairAsync(phone.IpAddress, phone.Port, code, CancellationToken.None);
             _supervisor.ExpectNextDevice(newPhoneOnly: true); // adopt the first advert this phone now sends
             CheckingTitle = "Paired — connecting to your phone…";
-            CheckingDetail = "Linc is setting up its companion app on the phone. Nothing to tap.";
+            CheckingDetail = SkipCompanionInstall
+                ? "Connecting to the Linc app on your phone. Open it there if it's closed."
+                : "Linc is setting up its companion app on the phone. Nothing to tap.";
             EnterChecking(OnboardingFlow.PhoneFound(Step));
         }
         catch (LincException ex)
@@ -378,7 +393,9 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         {
             case LinkState.Connecting:
                 CheckingTitle = "Connecting — setting up your phone…";
-                CheckingDetail = "Installing or starting the Linc companion and turning on its permissions. Nothing to tap.";
+                CheckingDetail = SkipCompanionInstall
+                    ? "Starting the Linc app on your phone. Nothing to tap."
+                    : "Installing or starting the Linc companion and turning on its permissions. Nothing to tap.";
                 break;
             case LinkState.Connected:
                 CheckConnected();
@@ -421,6 +438,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _setup.SkipCompanionInstall = false;
         if (_disposed) return;
         _disposed = true;
         _slowTimer.Stop();

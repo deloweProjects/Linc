@@ -9,6 +9,25 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-11 — Mirror PC on Intel graphics, for real this time (1.0.0.12, D-087)
+
+- When the graphics chip's encoder won't start, Linc retries it with basic settings and then uses
+  Windows' own software encoder, so Mirror PC always starts. If the encoder stops mid-stream, Linc
+  switches without dropping the mirror.
+- Settings → Mirror PC → Use software encoding, for PCs where the graphics encoder misbehaves.
+- Mirroring keeps going through UAC prompts and the lock screen, and uses the right graphics chip on
+  PCs with two.
+
+### Added — 2026-10-11 — The phone remembers each PC; pick which one it connects to (1.0.0.12, D-088)
+
+- Phone: Connection → PCs lists every PC you've paired with. Pick one, or "Any of my PCs".
+- Linc is with one PC at a time: another PC is told the phone is busy, and by whom.
+- Forget a PC you no longer use.
+
+### Added — 2026-10-11 — Setup can skip installing Linc on the phone (1.0.0.12, D-089)
+
+- Add a phone → "Linc is already on my phone — don't install it".
+
 ### Added — 2026-10-11 — A Windows installer (1.0.0.11, D-085, D-086)
 
 - `Linc-Setup-<version>.exe`: installs for your account without an admin prompt, with Start menu and
