@@ -181,9 +181,13 @@ object AdbAnnouncer {
                 val candidate = pending.poll() ?: break
                 val resolveDone = CountDownLatch(1)
                 try {
+                    // resolveService/host are deprecated from API 34 for registerServiceInfoCallback,
+                    // which minSdk 30 can't use; the old API still works everywhere.
+                    @Suppress("DEPRECATION")
                     nsd.resolveService(candidate, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) = resolveDone.countDown()
                         override fun onServiceResolved(info: NsdServiceInfo?) {
+                            @Suppress("DEPRECATION")
                             val host = info?.host?.hostAddress
                             val port = info?.port ?: 0
                             if (port in 1..65535 && AdbPortRules.isOwnAddress(host, ownAddresses)) {

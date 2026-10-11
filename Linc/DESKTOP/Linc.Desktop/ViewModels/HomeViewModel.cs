@@ -163,7 +163,7 @@ public sealed partial class AppVm(AppInfo info, System.Windows.Input.ICommand? l
     }
 }
 
-public sealed partial class PhotoVm(PhotoItem item, IConnectionManager connection, IFileService files, ILogService log) : ObservableObject
+public sealed partial class PhotoVm(PhotoItem item, IFileService files, ILogService log) : ObservableObject
 {
     public string Id => item.Id;
 
@@ -450,7 +450,7 @@ public partial class HomeViewModel : ObservableObject
             }
             foreach (var photo in cached.Photos ?? [])
             {
-                var vm = new PhotoVm(new PhotoItem(photo.Id, photo.Path, 0), _connection, _files, _log);
+                var vm = new PhotoVm(new PhotoItem(photo.Id, photo.Path, 0), _files, _log);
                 Photos.Add(vm);
                 _ = LoadThumbAsync(vm); // falls back to the remembered thumbnail while offline
             }
@@ -1012,7 +1012,7 @@ RefreshGradient();
             Photos.Clear();
             foreach (var item in recent)
             {
-                var vm = new PhotoVm(item, _connection, _files, _log);
+                var vm = new PhotoVm(item, _files, _log);
                 Photos.Add(vm);
                 _ = LoadThumbAsync(vm);
             }
@@ -1253,7 +1253,7 @@ RefreshGradient();
                 {
                     continue;
                 }
-                var vm = new PhotoVm(new PhotoItem(cached.Id, cached.Path, cached.TakenAt), _connection, _files, _log);
+                var vm = new PhotoVm(new PhotoItem(cached.Id, cached.Path, cached.TakenAt), _files, _log);
                 Photos.Add(vm);
                 _ = LoadThumbAsync(vm); // thumbnail bytes still come from the M6c/M02 file cache, unchanged
             }

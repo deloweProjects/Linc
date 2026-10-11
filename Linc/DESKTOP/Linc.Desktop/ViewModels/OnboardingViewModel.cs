@@ -134,11 +134,11 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     public bool HasKnownPhones => KnownPhones.Count > 0;
 
     /// <summary>"Adding another phone disconnects Pixel 7" — said before anything is chosen.</summary>
-    public string ConnectedNowText => _supervisor.State == LinkState.Connected && _supervisor.Device is { } d
-        ? $"{d.Model} is connected now. Linc works with one phone at a time, so connecting another disconnects {d.Model} (it stays paired)."
+    public string OneAtATimeText => _supervisor.State == LinkState.Connected
+        ? DeviceAdmission.OneAtATimeNotice(_supervisor.Device?.Model) ?? ""
         : "";
 
-    public bool ShowConnectedNow => ConnectedNowText.Length > 0;
+    public bool ShowOneAtATimeNote => OneAtATimeText.Length > 0;
 
     public bool ApkMissing => _setup.LocateApk() is null;
 
@@ -371,8 +371,8 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     private void OnSupervisorStateChanged() => _dispatcher.TryEnqueue(() =>
     {
         if (_disposed) return;
-        OnPropertyChanged(nameof(ConnectedNowText));
-        OnPropertyChanged(nameof(ShowConnectedNow));
+        OnPropertyChanged(nameof(OneAtATimeText));
+        OnPropertyChanged(nameof(ShowOneAtATimeNote));
         if (Step != OnboardingStep.Checking) return;
         switch (_supervisor.State)
         {

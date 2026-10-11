@@ -627,6 +627,10 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         a.True(AdbSerial.IsNetwork("adb-131722549O000808-hiwood._adb-tls-connect._tcp"), "the mDNS name from wireless pairing is network");
         a.True(AdbSerial.IsNetwork("adb-2C141FDH20089M-abc._adb._tcp"), "the older mDNS form is network");
         a.True(!AdbSerial.IsNetwork("emulator-5554") && !AdbSerial.IsNetwork("") && !AdbSerial.IsNetwork(null), "everything else is not");
+        // 1.0.0.11: the one place a network serial's host is read (was a hand-rolled split).
+        a.True(AdbSerial.HostOf("192.168.1.61:34521") == "192.168.1.61", "IPv4 host");
+        a.True(AdbSerial.HostOf("[2605:59c1:343f:b210:bca1:fdff:fee0:d6cf]:33705") == "2605:59c1:343f:b210:bca1:fdff:fee0:d6cf", "IPv6 host, unbracketed");
+        a.True(AdbSerial.HostOf("adb-131722549O000808-hiwood._adb-tls-connect._tcp") is null && AdbSerial.HostOf("131722549O000808") is null, "mDNS and USB serials have no host");
     });
 
     yield return ("v20 audio: PC sound is captured and AAC-encoded live", a =>

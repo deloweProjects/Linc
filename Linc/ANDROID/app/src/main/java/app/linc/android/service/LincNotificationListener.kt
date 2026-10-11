@@ -146,6 +146,9 @@ class LincNotificationListener : NotificationListenerService() {
 
     /** Renders the large icon (sender avatar etc.) to PNG and caches it for bulk fetch. */
     private fun cacheLargeIcon(sbn: StatusBarNotification): String? {
+        // EXTRA_LARGE_ICON is deprecated for getLargeIcon(), which returns the same Icon; the
+        // extra is what apps still fill in, so it stays.
+        @Suppress("DEPRECATION")
         val icon = sbn.notification.extras.getParcelable(
             Notification.EXTRA_LARGE_ICON, Icon::class.java) ?: return null
         val png = runCatching {

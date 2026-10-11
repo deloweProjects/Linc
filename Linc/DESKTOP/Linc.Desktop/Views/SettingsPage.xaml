@@ -151,7 +151,6 @@
                             Command="{x:Bind ViewModel.ResumeAutomaticCommand}"
                             Visibility="{x:Bind ViewModel.IsPaused, Mode=OneWay}" />
                         <Button Content="Clear saved phone data" Command="{x:Bind ViewModel.ClearDeviceDataCommand}" ToolTipService.ToolTip="Drops the offline copy of this phone (stats, wallpaper, photo thumbnails) without unpairing it" />
-                        <Button Content="Forget paired device" Command="{x:Bind ViewModel.ForgetDeviceCommand}" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -264,7 +263,7 @@
                     <TextBlock Text="Devices" Style="{StaticResource TitleText}" />
                     <TextBlock
                         Style="{StaticResource BodyText}"
-                        Text="Every phone paired with this PC. Set active switches the tabs and pages to it (and re-opens a closed tab); Forget unpairs it and deletes its saved copy." />
+                        Text="Every phone paired with this PC. Open switches to it (and re-opens a closed tab); Remove unpairs it and deletes its saved copy — the same as Remove completely on its tab." />
                     <!-- M15c A2: the limit, stated where a phone gets added rather than after. -->
                     <TextBlock
                         Style="{StaticResource BodyText}"
@@ -290,16 +289,16 @@
                                     </StackPanel>
                                     <Button
                                         Grid.Column="1"
-                                        Content="Set active"
+                                        Content="Open"
                                         VerticalAlignment="Center"
                                         Command="{x:Bind SetActiveCommand}"
                                         Visibility="{x:Bind IsNotActive}" />
                                     <Button
                                         Grid.Column="2"
-                                        Content="Forget"
+                                        Content="Remove…"
                                         VerticalAlignment="Center"
                                         Command="{x:Bind ForgetCommand}"
-                                        ToolTipService.ToolTip="Unpair this phone and delete its saved copy" />
+                                        ToolTipService.ToolTip="Unpair this phone and delete its saved copy (asks first)" />
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

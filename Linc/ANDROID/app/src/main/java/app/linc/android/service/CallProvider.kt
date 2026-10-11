@@ -80,7 +80,8 @@ object CallProvider {
             return false
         }
         return runCatching {
-            @Suppress("MissingPermission")
+            // Deprecated (API 29) with no replacement for a non-dialer app; still honoured.
+            @Suppress("MissingPermission", "DEPRECATION")
             context.getSystemService(TelecomManager::class.java).endCall()
             LogStore.log(LogLevel.INFO, "Declined a call from the PC")
         }.isSuccess

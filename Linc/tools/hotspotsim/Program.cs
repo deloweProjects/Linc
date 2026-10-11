@@ -1193,7 +1193,7 @@ Console.WriteLine("--- M15c A1/A2: the one-phone limit is a CHOICE stated up fro
         "...blank counts as nothing live, not as a phone named with a space");
 
     var note = DeviceAdmission.OneAtATimeNotice("Pixel 7");
-    True(note == "Linc connects to one phone at a time. Adding another will disconnect Pixel 7.",
+    True(note == "Linc connects to one phone at a time. Adding another will disconnect Pixel 7 (it stays paired).",
         "the standing line says the limit AND what adding another costs (A2)");
     True(DeviceAdmission.OneAtATimeNotice(null) is null,
         "...and says nothing at all when no phone is live, rather than something untrue");

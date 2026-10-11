@@ -20,4 +20,17 @@ public static class AdbSerial
         (HostPort.IsMatch(serial) ||
          serial.Contains("._adb-tls-connect.", StringComparison.OrdinalIgnoreCase) ||
          serial.Contains("._adb._tcp", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The host of a <c>host:port</c> network serial (IPv6 without its brackets), or null for USB
+    /// and mDNS-named serials, which carry no address.
+    /// </summary>
+    public static string? HostOf(string? serial)
+    {
+        if (string.IsNullOrEmpty(serial) || !HostPort.IsMatch(serial))
+        {
+            return null;
+        }
+        return serial[..serial.LastIndexOf(':')].Trim('[', ']');
+    }
 }

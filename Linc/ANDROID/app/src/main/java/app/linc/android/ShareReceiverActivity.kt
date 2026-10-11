@@ -52,6 +52,15 @@ class ShareReceiverActivity : ComponentActivity() {
     }
 
     private fun sendText(text: String) {
+        // Not connected: Quick Share instead of a dead end (D-083 — one model on both apps).
+        if (!CompanionOutbox.canSend(SHARE_ITEM_VERSION)) {
+            if (app.linc.android.service.QuickShareLauncher.sendText(this, text)) {
+                Toast.makeText(this, R.string.share_via_quick_share, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         val kind = if (URL_REGEX.matches(text)) "url" else "text"
         // The PC puts shared text on its clipboard, so it belongs in the clipboard history too —
         // and sharing to Linc is how text copied in other apps reaches the PC (D-083).
@@ -72,7 +81,12 @@ class ShareReceiverActivity : ComponentActivity() {
 
     private fun handleFiles(uris: List<Uri>) {
         if (!CompanionOutbox.canSend(SHARE_ITEM_VERSION)) {
-            Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
+            // Not connected: Quick Share instead of a dead end (D-083).
+            if (app.linc.android.service.QuickShareLauncher.send(this, uris)) {
+                Toast.makeText(this, R.string.share_via_quick_share, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
+            }
             return
         }
 

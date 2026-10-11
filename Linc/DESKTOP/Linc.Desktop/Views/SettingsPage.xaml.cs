@@ -13,8 +13,28 @@ public sealed partial class SettingsPage : Page
     {
         ViewModel = App.Services.GetRequiredService<SettingsViewModel>();
         InitializeComponent();
+        ViewModel.RemoveRequested += vm => _ = ConfirmRemoveAsync(vm);
         _cable = new VirtualCableSetup(App.Services.GetRequiredService<ILogService>(), PcVoiceAccess.CablePresent);
         Loaded += async (_, _) => await RefreshCableAsync();
+    }
+
+    /// <summary>The same question as the tab's X "Remove completely" (D-079).</summary>
+    private async Task ConfirmRemoveAsync(KnownDeviceVm vm)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = $"Remove {vm.Model}?",
+            Content = $"Linc will unpair {vm.Model} and delete its saved copy on this PC. You'd pair it again to use it.\n\n" +
+                "To just put it away, close its tab instead — it stays paired.",
+            PrimaryButtonText = "Remove completely",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            ViewModel.RemoveDevice(vm);
+        }
     }
 
     // ---- phone as microphone (D-071) ----------------------------------------------

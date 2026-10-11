@@ -19,12 +19,12 @@
                                 Background="{ThemeResource SecondaryContainerBrush}"
                                 CornerRadius="12"
                                 Padding="16,12"
-                                Visibility="{x:Bind ViewModel.ShowConnectedNow, Mode=OneWay}">
+                                Visibility="{x:Bind ViewModel.ShowOneAtATimeNote, Mode=OneWay}">
                                 <TextBlock
                                     Style="{StaticResource BodyText}"
                                     Foreground="{ThemeResource OnSecondaryContainerBrush}"
                                     TextWrapping="Wrap"
-                                    Text="{x:Bind ViewModel.ConnectedNowText, Mode=OneWay}" />
+                                    Text="{x:Bind ViewModel.OneAtATimeText, Mode=OneWay}" />
                             </Border>
 
                             <StackPanel Spacing="10" Visibility="{x:Bind ViewModel.HasKnownPhones, Mode=OneWay}">
