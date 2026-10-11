@@ -129,6 +129,7 @@ public partial class App : Application
             .AddSingleton<IShareService, ShareService>()
             .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()
             .AddSingleton<QuickShareViewModel>()
+            .AddSingleton<ClipboardViewModel>()
             .AddSingleton<HomeViewModel>()
             .AddSingleton<SyncViewModel>()
             .AddSingleton<FilesViewModel>()

@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 23;
+    public const int Version = 24;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -34,6 +34,7 @@ public static class MessageType
     public const string Ok = "ok";
     public const string ClipboardSet = "clipboard.set";
     public const string ClipboardChanged = "clipboard.changed";
+    public const string ClipboardGet = "clipboard.get";       // either direction: "send me your clipboard" (v24)
 
     // v2
     public const string NotificationPosted = "notification.posted";

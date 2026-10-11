@@ -120,6 +120,22 @@ public interface IDeviceRegistry
     void SaveLastHostPort(string? hostPort);
     void SavePairedDevice(string serial, string model);
     void SaveClipboardSyncEnabled(bool enabled);
+
+    /// <summary>Keep a clipboard history on this PC (D-083). Default on; off = sync only.</summary>
+    bool ClipboardHistoryEnabled { get; }
+
+    /// <summary>How many clipboard items to keep per phone: 100, 500 (default) or 2000.</summary>
+    int ClipboardHistorySize { get; }
+
+    void SaveClipboardHistory(bool enabled, int size);
+
+    /// <summary>Settings → Appearance → Show explanations (D-084). Default on. Per app, no sync.</summary>
+    bool ShowExplanations { get; }
+
+    void SaveShowExplanations(bool show);
+
+    /// <summary>Raised after <see cref="SaveShowExplanations"/>.</summary>
+    event Action? ShowExplanationsChanged;
     void SaveNotificationSyncEnabled(bool enabled);
     void SaveAllowUsbConnections(bool enabled);
     void SavePhoneCert(string certBase64);
@@ -257,7 +273,11 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // M19 C3: appended at the end for the same migration reason as every field above it. The
         // default is ON, so an upgraded install starts on the update channel rather than silently
         // opted out of it.
-        bool? UpdatesEnabled = null);
+        bool? UpdatesEnabled = null,
+        // 1.0.0.11 (D-083/D-084): appended at the end like every field above it.
+        bool? ClipboardHistoryEnabled = null,
+        int? ClipboardHistorySize = null,
+        bool? ShowExplanations = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -307,6 +327,11 @@ public sealed class DeviceRegistry : IDeviceRegistry
 
     // M18 B1: ON by default — `?? true` below re-asserts it for an upgraded install with no key.
     public bool UsePhoneColours { get; private set; } = true;
+
+    public bool ClipboardHistoryEnabled { get; private set; } = true;
+    public int ClipboardHistorySize { get; private set; } = 500;
+    public bool ShowExplanations { get; private set; } = true;
+    public event Action? ShowExplanationsChanged;
 
     /// <summary>Raised when <see cref="UsePhoneColours"/> changes, so the theme can re-derive.</summary>
     public event Action? UsePhoneColoursChanged;
@@ -403,6 +428,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 UpdatesEnabled = settings?.UpdatesEnabled ?? true;
                 SkippedUpdateVersion = Blank(settings?.SkippedUpdateVersion);
                 UsePhoneColours = settings?.UsePhoneColours ?? true;
+                ClipboardHistoryEnabled = settings?.ClipboardHistoryEnabled ?? true;
+                ClipboardHistorySize = ClampHistorySize(settings?.ClipboardHistorySize ?? 500);
+                ShowExplanations = settings?.ShowExplanations ?? true;
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -603,6 +631,26 @@ public sealed class DeviceRegistry : IDeviceRegistry
         Persist();
     }
 
+    public void SaveClipboardHistory(bool enabled, int size)
+    {
+        ClipboardHistoryEnabled = enabled;
+        ClipboardHistorySize = ClampHistorySize(size);
+        Persist();
+    }
+
+    private static int ClampHistorySize(int size) => size is 100 or 2000 ? size : 500;
+
+    public void SaveShowExplanations(bool show)
+    {
+        if (ShowExplanations == show)
+        {
+            return;
+        }
+        ShowExplanations = show;
+        Persist();
+        ShowExplanationsChanged?.Invoke();
+    }
+
     public void SaveStartWithWindows(bool enabled)
     {
         StartWithWindows = enabled;
@@ -683,7 +731,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 AllowUsbConnections, null, BackgroundConnectionEnabled, null,
                 null, null, _knownDevices,
                 NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
-                null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled)));
+                null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
+                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations)));
         }
         catch (IOException)
         {

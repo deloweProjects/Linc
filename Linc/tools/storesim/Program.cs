@@ -69,9 +69,9 @@ try
     {
         conn.Open();
         var version = ReadScalarInt(conn, "SELECT value FROM schema_version LIMIT 1;");
-        Check(1, 12, version == LincStore.CurrentSchemaVersion && version == 1,
-            $"schema_version reads back {version} (== CurrentSchemaVersion == 1).",
-            $"schema_version read back {version}, expected 1.", "schema_version not 1");
+        Check(1, 12, version == LincStore.CurrentSchemaVersion && version == 2,
+            $"schema_version reads back {version} (== CurrentSchemaVersion == 2).",
+            $"schema_version read back {version}, expected 2.", "schema_version not 2");
     }
 }
 catch (Exception ex)
@@ -104,7 +104,7 @@ try
     {
         conn.Open();
         var version = ReadScalarInt(conn, "SELECT value FROM schema_version LIMIT 1;");
-        CheckSub(2, 12, version == 1,
+        CheckSub(2, 12, version == 2,
             $"schema_version is still {version} after two more ensures.",
             $"schema_version drifted to {version} after re-ensure.", "Version drifted on re-ensure");
 
@@ -149,6 +149,7 @@ try
         ["notifications"] = ["id", "serial", "posted_utc", "app_package", "title", "body", "key"],
         ["outbox"] = ["id", "serial", "queued_utc", "kind", "payload_json", "attempts"],
         ["sync_cache"] = ["serial", "kind", "key", "payload_json", "updated_utc"],
+        ["clipboard"] = ["id", "serial", "text", "from_phone", "sent", "pinned", "at_utc"],
     };
 
     var allPresent = true;
@@ -992,6 +993,77 @@ catch (Exception ex)
 {
     Console.WriteLine($"    [12/12] FAIL: notification-insert race-guard check threw: {ex.GetType().Name}: {ex.Message}");
     failures.Add($"Notification-insert race-guard check threw: {ex.GetType().Name}: {ex.Message}");
+}
+
+// ---------------------------------------------------------------------------------------
+// 13. Clipboard history (schema v2, 1.0.0.11, D-083): one row per text per phone, a repeat
+//     moves to the top, pins survive pruning and clearing, phones never share a history, and a
+//     v1 database migrates forward without losing anything.
+// ---------------------------------------------------------------------------------------
+Console.WriteLine("\n[13/13] Clipboard history: dedupe, pin, prune, clear, per-phone, v1 -> v2...");
+try
+{
+    var clipRoot = Path.Combine(Path.GetTempPath(), "Linc_storesim_clip_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(clipRoot);
+    try
+    {
+        // Start from a genuine v1 database: build it, then wind the version back and drop v2's table.
+        var v1 = new LincStore(clipRoot);
+        await v1.EnsureSchemaAsync();
+        using (var c = new SqliteConnection($"Data Source={Path.Combine(clipRoot, "linc.db")}"))
+        {
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "DROP TABLE clipboard; UPDATE schema_version SET value = 1;";
+            cmd.ExecuteNonQuery();
+        }
+        var s = new LincStore(clipRoot);
+        await s.EnsureSchemaAsync();
+        CheckSub(13, 13, s.IsAvailable && s.AddClip("A", "first", fromPhone: true, sent: false, DateTimeOffset.UtcNow.AddMinutes(-5)),
+            "a v1 database migrates to v2 and takes clipboard rows.", "the v1 -> v2 migration did not give a usable clipboard table.", "Clipboard migration failed");
+
+        for (var i = 0; i < 6; i++)
+        {
+            s.AddClip("A", $"t{i}", fromPhone: false, sent: false, DateTimeOffset.UtcNow.AddMinutes(-4 + i * 0.1));
+        }
+        s.AddClip("A", "first", fromPhone: false, sent: true, DateTimeOffset.UtcNow);
+        var list = s.ListClips("A", 100);
+        CheckSub(13, 13, list.Count == 7 && list[0].Text == "first" && list[0].Sent && !list[0].FromPhone,
+            "a repeat moves to the top, keeps one row, and takes the new source and sent flag.",
+            $"repeat handling is wrong ({list.Count} rows, top '{(list.Count > 0 ? list[0].Text : "-")}').", "Clipboard dedupe wrong");
+
+        var oldest = list[^1];
+        s.SetClipPinned(oldest.Id, true);
+        s.PruneClips("A", 3);
+        var pruned = s.ListClips("A", 100);
+        CheckSub(13, 13, pruned.Count == 3 && pruned.Any(c => c.Id == oldest.Id && c.Pinned) && pruned[0].Pinned,
+            "pruning to 3 keeps the pinned (oldest) item plus the two newest, pinned first.",
+            $"pruning kept {pruned.Count} rows (pinned kept: {pruned.Any(c => c.Id == oldest.Id)}).", "Clipboard prune wrong");
+
+        s.AddClip("B", "other phone", fromPhone: true, sent: false, DateTimeOffset.UtcNow);
+        CheckSub(13, 13, s.ListClips("B", 100).Count == 1 && s.ListClips("A", 100).All(c => c.Text != "other phone"),
+            "two phones never share a history.", "one phone's clipboard leaked into another's.", "Clipboard per-phone leak");
+
+        s.ClearClips("A");
+        var cleared = s.ListClips("A", 100);
+        CheckSub(13, 13, cleared.Count == 1 && cleared[0].Pinned,
+            "clearing keeps pinned items.", $"clearing left {cleared.Count} rows.", "Clipboard clear wrong");
+
+        s.DeleteClip(cleared[0].Id);
+        CheckSub(13, 13, s.ListClips("A", 100).Count == 0, "delete removes the item.", "delete left the item.", "Clipboard delete wrong");
+    }
+    finally
+    {
+        SqliteConnection.ClearAllPools();
+        try { Directory.Delete(clipRoot, recursive: true); } catch (IOException) { /* best effort */ }
+    }
+    Check(13, 13, !failures.Any(f => f.StartsWith("Clipboard", StringComparison.Ordinal)),
+        "the clipboard history behaves as D-083 specifies.", "the clipboard history misbehaves (see above).", "Clipboard history checks failed");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"    [13/13] FAIL: clipboard check threw: {ex.GetType().Name}: {ex.Message}");
+    failures.Add($"Clipboard check threw: {ex.GetType().Name}: {ex.Message}");
 }
 
 Console.WriteLine("\n=== SUMMARY ===");

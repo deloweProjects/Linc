@@ -230,7 +230,12 @@
                         <FontIcon Glyph="&#xE8B7;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Share" Tag="Share" ToolTipService.ToolTip="Quick Share with nearby devices">
+                <NavigationViewItem Content="Clipboard" Tag="Clipboard" ToolTipService.ToolTip="What you copy, on both devices">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE77F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Share" Tag="Share" ToolTipService.ToolTip="Send files and links to your phone or nearby devices">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE72D;" />
                     </NavigationViewItem.Icon>

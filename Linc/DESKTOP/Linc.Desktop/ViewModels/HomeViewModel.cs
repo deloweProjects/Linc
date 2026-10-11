@@ -1922,7 +1922,8 @@ RefreshGradient();
     private void RebuildClips()
     {
         Clips.Clear();
-        foreach (var entry in _clipboard.History)
+        // Home shows the newest few; the Clipboard page has the whole history (D-083).
+        foreach (var entry in _clipboard.History.Where(c => !c.Pinned).Take(5))
         {
             Clips.Add(new ClipVm(entry, _clipboard, _connection));
         }
