@@ -26,6 +26,16 @@ public static class QsShellIntegration
     /// <summary>First line of a pipe hand-off that is for the phone over Linc rather than Quick Share.</summary>
     private const string PhoneMarker = "@phone";
 
+    /// <summary>The installer's "please exit" (D-085): the running Linc exits as the tray's Exit does.</summary>
+    public const string QuitArgument = "--quit";
+    private const string QuitMarker = "@quit";
+
+    /// <summary>Ask a running Linc to exit. False when none is listening.</summary>
+    public static bool TryForwardQuit() => TryForward([QuitMarker]);
+
+    /// <summary>True for the pipe message <see cref="TryForwardQuit"/> sends.</summary>
+    public static bool IsQuit(IReadOnlyList<string> paths) => paths.Count == 1 && paths[0] == QuitMarker;
+
     /// <summary>Per user and per session, so two people signed in never cross wires.</summary>
     private static string PipeName => $"LincQuickShare-{Environment.UserName}-{System.Diagnostics.Process.GetCurrentProcess().SessionId}";
 

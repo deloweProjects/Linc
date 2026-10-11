@@ -156,6 +156,27 @@ public partial class App : Application
     // silently disabled direct connections when a stray instance held :46001).
     private static System.Threading.Mutex? _singleInstance;
 
+    public const string RestoreAndExitArgument = "--restore-and-exit";
+
+    private void RestoreAndExit()
+    {
+        var log = Services.GetRequiredService<ILogService>();
+        log.Log(LogLevel.Info, "Uninstall: putting back the microphones, display scale, Explorer menu and autostart.");
+        try { PcVoiceAccess.RestoreAllMics(log); } catch (Exception ex) { log.Log(LogLevel.Warn, $"Uninstall: microphones: {ex.Message}"); }
+        try { PcTabletMode.RestorePending(log); } catch (Exception ex) { log.Log(LogLevel.Warn, $"Uninstall: display scale: {ex.Message}"); }
+        try { QuickShare.QsShellIntegration.Unregister(); } catch (Exception ex) { log.Log(LogLevel.Warn, $"Uninstall: Explorer menu: {ex.Message}"); }
+        try
+        {
+            using var run = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(StartupRegistration.RunKeySubPath, writable: true);
+            run?.DeleteValue(StartupRegistration.RunValueName, throwOnMissingValue: false);
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Uninstall: autostart: {ex.Message}");
+        }
+        Exit();
+    }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         // M12b Part A: on a clean machine with no debugger, an exception here used to kill the
@@ -165,6 +186,22 @@ public partial class App : Application
         // exits cleanly instead of hanging or vanishing.
         try
         {
+            // 1.0.0.11 (D-085): the uninstaller's clean-up. Put back anything Linc changed on the
+            // PC — the default and Voice Access microphones, the display scale, Explorer's menu and
+            // the autostart entry — then exit without a window. VB-CABLE stays installed.
+            if (Environment.GetCommandLineArgs().Any(a => string.Equals(a, QuickShare.QsShellIntegration.QuitArgument, StringComparison.OrdinalIgnoreCase)))
+            {
+                // The installer closing Linc before an upgrade or uninstall: ask the running copy
+                // to exit cleanly (it puts the microphones and display scale back), then go.
+                QuickShare.QsShellIntegration.TryForwardQuit();
+                Exit();
+                return;
+            }
+            if (Environment.GetCommandLineArgs().Any(a => string.Equals(a, RestoreAndExitArgument, StringComparison.OrdinalIgnoreCase)))
+            {
+                RestoreAndExit();
+                return;
+            }
             _singleInstance = new System.Threading.Mutex(initiallyOwned: true, @"Local\LincDesktopSingleInstance", out var isFirst);
             var quickSharePaths = QuickShare.QsShellIntegration.PathsFrom(Environment.GetCommandLineArgs());
             var phonePaths = QuickShare.QsShellIntegration.PathsFrom(
@@ -229,7 +266,11 @@ public partial class App : Application
             QuickShare.QsShellIntegration.Listen(
                 (paths, toPhone) => window.DispatcherQueue.TryEnqueue(() =>
                 {
-                    if (toPhone)
+                    if (QuickShare.QsShellIntegration.IsQuit(paths))
+                    {
+                        window.ExitCommand.Execute(null);
+                    }
+                    else if (toPhone)
                     {
                         window.SendToPhone(paths);
                     }
@@ -311,6 +352,17 @@ public partial class App : Application
                             startup.Enable(exePath);
                             Services.GetRequiredService<ILogService>().Log(
                                 LogLevel.Info, "StartupRegistration: rewrote a stale Run key entry to the current exe path.");
+                        }
+                    }
+                    else
+                    {
+                        // The installer's "Start with Windows" box writes the same Run entry the
+                        // setting does (D-085): adopt it, so Settings shows what Windows will do.
+                        var startup = Services.GetRequiredService<StartupRegistration>();
+                        var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName!;
+                        if (!StartupRegistration.NeedsRewrite(startup.CurrentValue(), StartupRegistration.BuildRunCommand(exePath)))
+                        {
+                            registry.SaveStartWithWindows(true);
                         }
                     }
                 }

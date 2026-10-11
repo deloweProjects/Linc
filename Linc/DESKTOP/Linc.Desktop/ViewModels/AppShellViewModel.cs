@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -209,10 +210,25 @@ public partial class AppShellViewModel : ObservableObject
     /// Starts the verified installer and closes Linc so the file it is replacing is not locked.
     /// Separate from the verify step so nothing can reach it without a matching checksum.
     /// </summary>
-    private static void LaunchInstaller(string verifiedPath)
+    private void LaunchInstaller(string verifiedPath)
     {
-        Process.Start(new ProcessStartInfo(verifiedPath) { UseShellExecute = true });
-        Environment.Exit(0);
+        if (verifiedPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            // 1.0.0.11 (D-085): the Inno Setup installer, run silently. It closes Linc, upgrades in
+            // place (keeping %LOCALAPPDATA%\Linc) and starts it again. Put the PC's microphone and
+            // display scale back first, as Exit does.
+            var log = App.Services.GetRequiredService<ILogService>();
+            Task.Run(() => PcVoiceAccess.RestoreAllMics(log)).Wait(TimeSpan.FromSeconds(3));
+            Task.Run(() => PcTabletMode.RestorePending(log)).Wait(TimeSpan.FromSeconds(3));
+            Process.Start(new ProcessStartInfo(verifiedPath,
+                "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /NORESTART")
+            { UseShellExecute = true });
+            Environment.Exit(0);
+            return;
+        }
+        // A portable zip can't install itself: show it in Explorer to unzip over the old folder.
+        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{verifiedPath}\"") { UseShellExecute = true });
+        _dispatcher.TryEnqueue(() => UpdateProblem = "The update is downloaded. Close Linc, unzip it over this folder, and start it again.");
     }
 
     [ObservableProperty]
