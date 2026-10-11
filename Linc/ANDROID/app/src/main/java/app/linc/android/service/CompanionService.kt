@@ -162,6 +162,7 @@ class CompanionService : Service() {
         presence = null
         blePresence?.stop()
         blePresence = null
+        PcGate.instance?.dropAll()
         server?.stop()
         PcGate.instance = null
         server = null

@@ -242,6 +242,30 @@ static IEnumerable<(string, Action<Asserter>)> Scenarios()
         finally { PcMirrorSource.SimulateEncoderFailureAfter = 0; PcVideoEncoder.TrustAllAgain(); }
     });
 
+    yield return ("D-091 stop never hangs: start and stop ten times, each stop quick", a =>
+    {
+        // AMD at 4K hung for ever in END_STREAMING / IMFShutdown when the pump had stopped
+        // collecting output before the encoder was shut down. Stop mid-stream, repeatedly.
+        long slowest = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            var source = new PcMirrorSource(0, Config.Fps, Config.Bitrate, new ConsoleLog());
+            var got = new ManualResetEventSlim(false);
+            int count = 0;
+            source.FrameEncoded += _ => { if (Interlocked.Increment(ref count) >= 20) got.Set(); };
+            source.Start();
+            got.Wait(TimeSpan.FromSeconds(20));
+            var clock = Stopwatch.StartNew();
+            var dispose = Task.Run(source.Dispose);
+            bool done = dispose.Wait(TimeSpan.FromSeconds(10));
+            slowest = Math.Max(slowest, clock.ElapsedMilliseconds);
+            a.True(done, $"stop {i + 1} finished");
+            if (!done) return;
+        }
+        Console.WriteLine($"    slowest stop: {slowest} ms");
+        a.True(slowest < 2500, "every stop took under 2.5 s (a stuck encoder is abandoned at 3 s, so this catches one)");
+    });
+
     yield return ("keyframe flag matches the bitstream", a =>
     {
         var (frames, _) = Run(Config.TargetFrames);

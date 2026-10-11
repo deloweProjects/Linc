@@ -1468,3 +1468,33 @@ previous Icon** (confirmed by scanning its IL). So the first connect destroyed t
 disconnected icon, and the next drop set a disposed Icon → exception in the dispatcher callback →
 process killed. Fix: `MainWindow.SetTrayIcon` hands the tray a `Clone()` each time, inside a
 try/catch that logs instead of crashing. Build-checked; the owner's disconnect test is the proof.
+
+## D-091: Mirror PC stuck after a stop; Start Linc on the phone doing nothing after Stop
+
+**2026-10-11.** Owner, on 1.0.0.13 with a 4K display: "everything was working then boom" — after a
+stop at 20:47:32 the PC log only says "PC mirror: already starting, ignoring the phone's retry",
+forever; and on the phone "Start Linc won't work after I've stopped it".
+
+**Mirror.** A dump of the running app showed the stop parked in `PcVideoEncoder.Dispose` →
+`ProcessMessage(END_STREAMING)` on AMD's async encoder, with the pump and feeder threads already gone:
+on cancellation the pump leaves its loop at the next event, so an output nobody collected was
+pending, and at 3840x2160 the driver never returned. The start flag and gate stayed held, so every
+later start was ignored. Ending it with `IMFShutdown` alone was tried and hung the same way (a
+mirrorsim dump), which pinned the real cause: the pump. It now runs until the encoder is shut down,
+still collecting output while stopping (just not passing it on). That was not enough either: once
+IMFShutdown begins, GetEvent fails and the pump leaves, but AMD's Shutdown still waited for a held
+frame. So hardware encoders are now FLUSHED (discarding held frames) and then shut down — no
+END_STREAMING (kept only for the synchronous software encoder). Belt and braces: the encoder dispose
+in `PcMirrorSource` (stop and watchdog swap) is abandoned after 3 s, and `PcMirrorService` gives the
+whole source 5 s, each logging and carrying on. mirrorsim "D-091": ten start/stop cycles at
+3840x2160 on AMD, run three times — slowest stop 82 ms, nothing abandoned. The same flush-then-shutdown
+teardown is used when a hardware encoder fails during setup (the Intel path), and building the source
+is bounded at 30 s, so a driver that hangs in setup cannot hold "already starting" either. All of it
+is vendor-neutral; untested on Intel here. The other mirrorsim failures at 4K (idle-screen bit rate,
+I-beam cursor image, the rate-change pair) fail identically on the code before D-091.
+
+**Phone.** `SocketServer.stop()` closed the `LocalServerSocket`, but on Android that does not wake a
+thread blocked in `accept()`, and the abstract socket name stays bound until it does — so the next
+service's bind failed once, it reported Stopped, and Start looked dead. Now stop() calls
+`Os.shutdown(fd, SHUT_RDWR)` before close (accept returns at once), start() retries the bind for
+3 s, and stopping the service drops every live PC link (`PcGate.dropAll`).

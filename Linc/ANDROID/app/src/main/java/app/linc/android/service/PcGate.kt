@@ -104,6 +104,12 @@ class PcGate(private val context: Context) {
         ReconnectSignal.poke("you picked a PC")
     }
 
+    /** Linc is stopping: end every PC link, so a later Start begins clean (D-091). */
+    fun dropAll() {
+        val drops = synchronized(this) { live.values.map { it.close } }
+        drops.forEach { runCatching { it() } }
+    }
+
     /** Forget a PC: drop its link if it is the one connected. */
     fun forget(id: String) {
         val drops = synchronized(this) { live.values.filter { it.key == id }.map { it.close } }

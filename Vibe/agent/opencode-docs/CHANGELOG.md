@@ -9,6 +9,12 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-11 — Mirror PC no longer gets stuck; Start Linc works after Stop (1.0.0.14, D-091)
+
+- After stopping Mirror PC (more likely on 4K screens) it could refuse to start again until Linc was
+  restarted. It now always starts again.
+- On the phone, Start Linc did nothing after you had stopped Linc. It now starts.
+
 ### Fixed — 2026-10-11 — Linc no longer closes when the phone disconnects (1.0.0.13, D-090)
 
 - Since 1.0.0.11 the PC app shut itself down the moment the phone's connection dropped (the

@@ -171,7 +171,9 @@ public sealed class PcMirrorSource : IDisposable
         var failed = _encoder;
         _log.Log(LogLevel.Warn, $"PC mirror: {failed.EncoderName} {why}; switching to Windows' software encoder");
         failed.Distrust();
-        failed.Dispose();    // wakes its pump, which then ends quietly (it sees Disposed)
+        // Wakes its pump, which then ends quietly (it sees Disposed). Bounded like Dispose (D-091).
+        if (!Task.Run(failed.Dispose).Wait(TimeSpan.FromSeconds(3)))
+            _log.Log(LogLevel.Warn, $"PC mirror: {failed.EncoderName} didn't shut down within 3 s; leaving it behind");
         _pumpThread?.Join(1000);
         try
         {
@@ -200,17 +202,23 @@ public sealed class PcMirrorSource : IDisposable
     {
         try
         {
-            while (!_stopping.IsCancellationRequested)
+            // Runs until the encoder is shut down (GetEvent then fails), NOT until stopping is
+            // requested: an async encoder holding a finished frame nobody collects never finishes
+            // shutting down — AMD at 4K hung in END_STREAMING, then in IMFShutdown, while this
+            // loop had already left on cancellation (D-091). So while stopping it keeps
+            // collecting, and simply stops handing frames on.
+            while (true)
             {
                 int mediaEvent = encoder.NextEvent();
+                bool stopping = _stopping.IsCancellationRequested;
                 if (mediaEvent == Mf.METransformNeedInput)
                 {
                     Interlocked.Exchange(ref _lastSlotTick, Environment.TickCount64);
-                    _inputSlots.Release();
+                    if (!stopping) _inputSlots.Release();
                 }
                 else if (mediaEvent == Mf.METransformHaveOutput)
                 {
-                    if (encoder.Receive() is { } frame)
+                    if (encoder.Receive() is { } frame && !stopping)
                     {
                         Volatile.Write(ref _submittedSinceOutput, 0);
                         FrameEncoded?.Invoke(frame);
@@ -326,7 +334,11 @@ public sealed class PcMirrorSource : IDisposable
 
         // The pump may be parked in a blocking GetEvent; disposing the encoder is what
         // releases it, so it is not joined first.
-        _encoder.Dispose();
+        // Never wait for ever on a graphics driver (D-091): an encoder that will not shut down in
+        // 3 s is left behind rather than freezing whoever is stopping the mirror.
+        var encoder = _encoder;
+        if (!Task.Run(encoder.Dispose).Wait(TimeSpan.FromSeconds(3)))
+            _log.Log(LogLevel.Warn, $"PC mirror: {encoder.EncoderName} didn't shut down within 3 s; leaving it behind");
         _pumpThread?.Join(1000);
         _capture.Dispose();
         _inputSlots.Dispose();

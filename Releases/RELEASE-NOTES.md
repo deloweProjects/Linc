@@ -15,6 +15,14 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.14 ("1.0.0-beta.14") — 2026-10-11
+
+Install both apps. Everything in 1.0.0.13 and 1.0.0.12 below, plus:
+
+- **Mirror PC no longer gets stuck.** After stopping it (more likely on a 4K screen), it could refuse
+  to start again until Linc was restarted. It now always starts again.
+- **Start Linc on the phone works after Stop.** It used to do nothing until the phone app was closed.
+
 ## 1.0.0.13 ("1.0.0-beta.13") — 2026-10-11
 
 Install both apps. Phones and settings are kept. Everything in 1.0.0.12 below, plus:

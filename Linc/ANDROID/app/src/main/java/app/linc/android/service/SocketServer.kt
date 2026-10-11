@@ -112,9 +112,21 @@ class SocketServer(
     fun start() {
         if (acceptJob != null) return
         acceptJob = scope.launch(Dispatchers.IO) {
-            val server = try {
-                LocalServerSocket(SOCKET_NAME)
-            } catch (_: IOException) {
+            // Stop then Start used to leave Linc "stopped": the old socket's name was still taken
+            // (D-091), so this bind failed once and gave up. stop() now frees it properly; a few
+            // retries cover the moment it takes Android to let go.
+            var server: LocalServerSocket? = null
+            for (attempt in 1..10) {
+                server = try {
+                    LocalServerSocket(SOCKET_NAME)
+                } catch (_: IOException) {
+                    null
+                }
+                if (server != null || !isActive) break
+                kotlinx.coroutines.delay(300)
+            }
+            if (server == null) {
+                LogStore.log(LogLevel.WARN, "Linc couldn't open its connection point; stop and start Linc again")
                 CompanionStateHolder.update(ServiceState.Stopped)
                 return@launch
             }
@@ -213,7 +225,13 @@ class SocketServer(
     fun stop() {
         acceptJob?.cancel()
         acceptJob = null
-        runCatching { serverSocket?.close() }
+        // Closing a LocalServerSocket does not wake a thread blocked in accept() on Android, and
+        // until that thread returns the socket's name stays taken, so the next Start failed to
+        // bind (D-091). Shutting the descriptor down first makes accept() return at once.
+        serverSocket?.let { s ->
+            runCatching { android.system.Os.shutdown(s.fileDescriptor, android.system.OsConstants.SHUT_RDWR) }
+            runCatching { s.close() }
+        }
         serverSocket = null
         CompanionStateHolder.update(ServiceState.Stopped)
     }

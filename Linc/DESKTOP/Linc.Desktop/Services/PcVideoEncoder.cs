@@ -224,7 +224,12 @@ public sealed class PcVideoEncoder : IDisposable
             // Give the hardware session back before trying the next encoder.
             if (transform is not null)
             {
-                try { transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
+                // Same teardown as Dispose (D-091): a sync encoder ends streaming, an async
+                // hardware one (Intel, AMD, NVIDIA) is flushed and shut down.
+                if (software)
+                    try { transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
+                else
+                    try { transform.ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, IntPtr.Zero); } catch { }
                 try { if (transform is IMFShutdown shutdown) shutdown.Shutdown(); } catch { }
                 try { shutdownActivate?.Invoke(); } catch { }
                 try { Marshal.ReleaseComObject(transform); } catch { }
@@ -606,7 +611,19 @@ public sealed class PcVideoEncoder : IDisposable
 
         // Shutdown ordering matters and a throw here would mask the real error, so each
         // step is best-effort.
-        try { _transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
+        //
+        // END_STREAMING only for the synchronous software encoder. An async hardware MFT is
+        // ended by IMFShutdown alone: asked to END_STREAMING after the pump has stopped reading
+        // its events, AMD's encoder at 4K never returned (a held output, 2026-10-11, D-091), so
+        // the stop hung and every later Mirror PC was ignored as "already starting".
+        //
+        // An async MFT is FLUSHED first: that discards any finished frame it still holds. Without
+        // it, IMFShutdown on AMD at 4K waited for that frame to be collected — after it had already
+        // stopped delivering events, so nothing ever could (mirrorsim dump, D-091).
+        if (_syncEvents is not null)
+            try { _transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, IntPtr.Zero); } catch { }
+        else
+            try { _transform.ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, IntPtr.Zero); } catch { }
         // Wakes a pump thread parked in GetEvent (it gets MF_E_SHUTDOWN and throws). Without
         // this, Dispose left that thread blocked for good — harmless-looking at the end of a
         // session, fatal when the encoder is rebuilt mid-stream (D-069).
