@@ -9,6 +9,20 @@ first.
 
 ## [Unreleased]
 
+### Changed — 2026-10-11 — A new look for the phone, Clipboard and Share pages on both apps (1.0.0.11, D-082–D-084)
+
+- The phone app is rebuilt in Material 3 Expressive: Home, Remote, Clipboard and Share tabs, with
+  Settings behind the gear. Remote is a full-screen trackpad with keyboard, media, presentation,
+  voice and power sheets.
+- Clipboard pages on both apps: send text to the other device, Sync now, and a searchable history of
+  500 items (or 100 / 2,000) that survives restarts. Passwords and other private copies are skipped.
+- Share pages on both apps say whether they're using Linc or Quick Share and pick by themselves;
+  transfers show progress and can be retried.
+- The PC's tray icon shows when the phone isn't connected, and its menu can send files, clipboard
+  text or a link to the phone. Explorer gains "Send to phone (Linc)".
+- "Show explanations" (Settings → Appearance) hides the helper lines in each app.
+- The phone app now actually checks for updates.
+
 ### Changed — 2026-10-11 — Connections that just work (1.0.0.11, D-081)
 
 - Plugging in the USB cable while on Wi-Fi switches to the cable without disconnecting; unplugging it

@@ -157,6 +157,38 @@ public partial class SettingsViewModel : ObservableObject
         set { _clipboardSync.Enabled = value; OnPropertyChanged(); }
     }
 
+    // ---- Clipboard history (D-083) ----
+    public bool ClipboardHistoryEnabled
+    {
+        get => _registry.ClipboardHistoryEnabled;
+        set
+        {
+            _registry.SaveClipboardHistory(value, _registry.ClipboardHistorySize);
+            _clipboardSync.Reload();
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsClipboard100 { get => _registry.ClipboardHistorySize == 100; set { if (value) SetClipboardSize(100); } }
+    public bool IsClipboard500 { get => _registry.ClipboardHistorySize == 500; set { if (value) SetClipboardSize(500); } }
+    public bool IsClipboard2000 { get => _registry.ClipboardHistorySize == 2000; set { if (value) SetClipboardSize(2000); } }
+
+    private void SetClipboardSize(int size)
+    {
+        _registry.SaveClipboardHistory(_registry.ClipboardHistoryEnabled, size);
+        _clipboardSync.Reload();
+        OnPropertyChanged(nameof(IsClipboard100));
+        OnPropertyChanged(nameof(IsClipboard500));
+        OnPropertyChanged(nameof(IsClipboard2000));
+    }
+
+    // ---- Appearance → Show explanations (D-084) ----
+    public bool ShowExplanations
+    {
+        get => _registry.ShowExplanations;
+        set { _registry.SaveShowExplanations(value); OnPropertyChanged(); }
+    }
+
     public bool NotificationSyncEnabled
     {
         get => _notifications.Enabled;

@@ -229,11 +229,11 @@
                     <TextBlock Text="Options" Style="{StaticResource TitleText}" />
                     <ToggleSwitch Header="Accept from my connected phone without asking"
                                   IsOn="{x:Bind ViewModel.AutoAcceptOwnPhone, Mode=TwoWay}" />
-                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Opacity="0.8"
+                    <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Opacity="0.8"
                                Text="Only when Linc is connected to that phone over Wi-Fi and the Quick Share comes from the same network address with the same name. A name alone is never trusted, and a USB link can't be checked this way." />
                     <ToggleSwitch Header="Show &quot;Send to phone (Linc)&quot; and &quot;Send with Quick Share&quot; when right-clicking files in Explorer"
                                   IsOn="{x:Bind ViewModel.ExplorerMenuEnabled, Mode=TwoWay}" />
-                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Opacity="0.8"
+                    <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Opacity="0.8"
                                Text="On Windows 11 it appears under Show more options. Only for your account; turning this off removes it." />
                     <TextBlock Text="{x:Bind ViewModel.ShellError, Mode=OneWay}" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                TextWrapping="Wrap" />

@@ -1280,3 +1280,64 @@ lines a minute.
 linksim, presencesim, hotspotsim (2 pre-existing onboarding-text failures, unrelated, fixed in
 Part 5), onboardsim. **Not verified here:** any of it on the owner's phone and network — the
 before/after numbers for the §2.8 targets need the connection test script and `linksim log`.
+
+## D-082: Linc for Android is a Material 3 Expressive app with four tabs
+
+**2026-10-11.** Owner: "this is ugly — make it nice … the Tools page needs good UI work". Spec:
+`Vibe/agent/design/android-m3e.md` (written first; the code follows it).
+
+- **IA:** bottom navigation **Home · Remote · Clipboard · Share**; Settings is the gear in every top
+  bar (pushed, predictive back), Logs under Settings → Help & diagnostics. The Status tab became the
+  **Connection sheet** (from Home's hero). Tools became **Remote**; `ToolsActivity` stays as a host.
+  Mirror PC is Home's extended FAB and Remote's toolbar FAB; `MirrorActivity` is untouched.
+- **Tokens:** `MaterialExpressiveTheme` + `MotionScheme.expressive()` everywhere; dynamic colour on
+  Android 12+, otherwise a tonal-spot scheme generated offline from seed **#4F5BD5** (`SeedScheme.kt`;
+  tone = CIELAB L*, an approximation of HCT — no colour library added). Large flexible top bars,
+  28 dp heroes, 24/4 dp grouped segments, Expressive button shapes, `MaterialShapes` as clips only.
+- **Kit (`ui/kit/`):** `LincScaffold`, `SectionHeader`, `SettingsGroup/Row`, `HeroCard`, `ToolTile`,
+  `StatusChip`, `BlockedState`, `EmptyState`, `ConnectedChoice`, `Loading`, `ProgressLine` (wavy),
+  `HelperText`, snackbars via `LocalSnackbar`. Everything alpha18 lacked: nothing — `ButtonGroup`'s
+  composable was not used for onboarding's Back/Skip/Next (a plain row of Expressive buttons).
+- **Remote:** full-height trackpad (dot grid, right-edge scroll strip, first-use hints that fade after
+  three gestures), Left | Right hold buttons, `HorizontalFloatingToolbar` of sheets — Keyboard (sticky
+  modifiers, Esc/Tab/arrows, dictation), Media (volume slider), Present, Voice, Power (confirms) —
+  disabled-not-hidden per gate (`RemoteScreenSourceTest` replaces `ToolsScreenSourceTest`).
+- **Icons:** 81 more, inlined from Android Studio's bundled Material Icons (Round) — offline, no
+  dependency; the icon test checks every `LincSymbols` getter.
+- **Found and fixed:** the phone **never checked for updates** — every piece existed but nothing
+  fetched the manifest. `UpdateCheck` now does (on open, ≤ every 6 h, or Settings → Check now);
+  Home shows the card with a wavy % download and SHA-256 check. The desktop's hello now carries the
+  PC's name (optional field), shown on Home and the Connection sheet.
+
+**Not verified on a phone:** layouts were checked only by compiling and through `@Preview`s; light,
+dark, 360 dp, 200 % font and blocked/empty previews exist for every top-level screen.
+
+## D-083: Clipboard and Share pages on both apps; protocol v24
+
+**2026-10-11.** Owner asked for a LARGE clipboard history and one way to share.
+
+- **Clipboard, both apps:** a Send-text composer (puts the text on the *other* device's clipboard
+  through the existing clipboard path), **Sync now**, search, history grouped by day with pinned
+  first, Copy here / Send / Pin / Delete, Clear (confirm). **500 items** by default (100/500/2,000).
+  Phone: a JSON file in app storage (`ClipHistory`, 9 unit tests). PC: LincStore schema **v2**
+  `clipboard` table per phone (`CacheKey`), storesim section 13.
+- **Privacy:** Android 13+'s `EXTRA_IS_SENSITIVE` clips and Windows clips marked
+  `ExcludeClipboardContentFromMonitorProcessing` / `CanIncludeInClipboardHistory = 0` are never sent
+  or saved. "Keep history" off = sync only. Text only; images are out of scope.
+- **Protocol v24:** `clipboard.get` (either direction) for Sync now — the peer answers with its
+  normal clipboard push if it can read its clipboard (the phone only while Linc is open).
+- **Share:** both apps say which way they send — "Sending over Linc" or "Linc isn't connected —
+  sending with Quick Share" — and pick by themselves. Phone: Send files / photos / text-or-link
+  tiles, Received from PC (survives restarts with All files access), transfers with progress and
+  Retry, an All-files-access row instead of the silent failure. PC: send by picker, drop zone or
+  text box (links open on the phone), transfers with progress, received files, Quick Share as one
+  section of the same page; tray menu and icon state; Explorer "Send to phone (Linc)".
+- The phone's Direct Share shortcut for the PC was **not** built (the share-sheet target remains).
+
+## D-084: "Show explanations" — one switch per app
+
+**2026-10-11.** Settings → Appearance, default on. Off hides helper lines only; titles, values,
+warnings, errors and blocked reasons always show. Phone: `Explanations` (prefs flow) →
+`LocalShowExplanations` → `HelperText` (3 unit tests). PC: `IDeviceRegistry.ShowExplanations` +
+`Explain.IsHelp` attached property on explanatory TextBlocks (Clipboard, Share, Settings pages so
+far). Per app, no sync.
