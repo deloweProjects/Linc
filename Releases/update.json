@@ -29,15 +29,15 @@
     "",
     "Keys beginning with an underscore are ignored by both parsers."
   ],
-  "latest": "1.0.0.11",
+  "latest": "1.0.0.12",
   "minimumSupported": "1.0.0-beta.1",
-  "notes": "Linc 1.0.0-beta.11 — a new phone app, Clipboard and Share pages on both apps, connections that just work, and a Windows installer.",
+  "notes": "Mirror PC works on Intel graphics; the phone remembers each PC; setup can skip installing the phone app.",
   "desktop": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.11/Linc-Setup-1.0.0.11.exe",
-    "sha256": "7C88C52C1BC7B742711CB1B7347CD0B0281B459CC9B5F8CD00E17C51A782C941"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.12/Linc-Setup-1.0.0.12.exe",
+    "sha256": "145E7224DFFBBF7860773AD1E5A5BEABF73009D4569C71A3B5933D953D180143"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.11/Linc-Companion-1.0.0.11-2026-10-11.apk",
-    "sha256": "BB2D3FBC35CFD2DFFDEC98F23B0ED93535B6C1DBA9466D92EE5D8B33312FF0C6"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.12/Linc-Companion-1.0.0.12-2026-10-11.apk",
+    "sha256": "40AFF2767831903107DD0FEA4BB5AF9F079B50631F761C76D694BB4577A3ACFE"
   }
 }
