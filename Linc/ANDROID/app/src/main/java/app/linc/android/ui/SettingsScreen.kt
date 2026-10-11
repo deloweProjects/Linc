@@ -42,6 +42,7 @@ import app.linc.android.service.ClipboardSettings
 import app.linc.android.service.ConnectionWatch
 import app.linc.android.service.Explanations
 import app.linc.android.service.LincNotificationListener
+import app.linc.android.service.ProjectLinks
 import app.linc.android.service.MirrorSettings
 import app.linc.android.service.NfcTap
 import app.linc.android.service.SmsProvider
@@ -223,6 +224,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
             item {
                 SettingsGroup(rows = listOf(
                     { s -> SettingsRow("Linc for Android", s, LincSymbols.Smartphone, value = "Version ${BuildConfig.VERSION_NAME}") },
+                    { s -> SettingsRow("Developer", s, LincSymbols.Info, value = "${ProjectLinks.DEVELOPER} (${ProjectLinks.DEVELOPER_HANDLE})",
+                        onClick = { openLink(context, ProjectLinks.DEVELOPER_GITHUB) }) },
+                    { s -> SettingsRow("Telegram channel", s, LincSymbols.Send, supporting = "News, new versions and help — t.me/LincApp",
+                        onClick = { openLink(context, ProjectLinks.TELEGRAM) }, trailing = { Chevron() }) },
+                    { s -> SettingsRow("Source code on GitHub", s, LincSymbols.OpenInNew, supporting = "Releases, issues and the code — github.com/deloweProjects/Linc",
+                        onClick = { openLink(context, ProjectLinks.GITHUB) }, trailing = { Chevron() }) },
                 ))
             }
         }
@@ -273,6 +280,9 @@ private fun NfcRow(segment: app.linc.android.ui.kit.Segment) {
         trailing = { Text(if (state == NfcTap.WriteState.Waiting) "Cancel" else "Write", color = androidx.compose.material3.MaterialTheme.colorScheme.primary) },
     )
 }
+
+private fun openLink(context: android.content.Context, url: String) =
+    openSafely(context, Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
 
 private fun openSafely(context: android.content.Context, intent: Intent) {
     try { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: ActivityNotFoundException) { /* no screen on this OEM build */ }

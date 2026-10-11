@@ -4,7 +4,8 @@
 your own Wi-Fi, with nothing in between.**
 
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
-[![Status: beta](https://img.shields.io/badge/status-1.0.0--beta.11-orange.svg)](https://github.com/deloweProjects/Linc/releases)
+[![Latest release](https://img.shields.io/github/v/release/deloweProjects/Linc?label=release)](https://github.com/deloweProjects/Linc/releases/latest)
+[![Telegram](https://img.shields.io/badge/Telegram-%40LincApp-26A5E4?logo=telegram&logoColor=white)](https://t.me/LincApp)
 [![Platform: Windows 10 1809+ · Android 11+](https://img.shields.io/badge/platform-Windows%2010%201809%2B%20%C2%B7%20Android%2011%2B-lightgrey.svg)](#requirements)
 
 ---
@@ -72,7 +73,7 @@ a contract — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-**Beta — `1.0.0-beta.11`.** Used daily and tested on real hardware; still a one-maintainer project.
+**Beta.** Used daily and tested on real hardware; still a one-maintainer project.
 Honest notes:
 
 - **The phone app is debug-signed.** Android asks you to confirm installing it, and a future
@@ -96,8 +97,15 @@ Full detail per version: [`Releases/RELEASE-NOTES.md`](Releases/RELEASE-NOTES.md
 2. **Phone:** the PC can install the Linc app for you — connect the phone (below) and Linc offers to. Or
    sideload `Linc-Companion-<version>.apk` from the release.
 
-Linc keeps itself up to date from `Releases/update.json` in this repo: an installed Linc updates in
-place (it closes, updates and restarts by itself). Turn that off in **Settings → Updates**.
+**Or get it from [Komi Store](https://komistore.app)** (the open-source store for GitHub releases): search
+for **Linc** — it installs `Linc-Setup` on Windows and the companion APK on Android straight from these
+releases.
+
+**Updates.** When a new version is out, Linc tells you — a banner on the PC, a card on the phone — with
+a one-line note of what changed. Choose **Update** and it downloads, checks the file's SHA-256, then
+installs: the PC app closes, upgrades and restarts by itself; on the phone Android asks you to confirm
+the install. **Skip** hides that version until the next one. Turn checking off in **Settings → Updates**.
+New versions are also announced on [Telegram](https://t.me/LincApp).
 
 **Updating from 1.0.0.2 (the previous release) or a local test build:** those can't install an
 update themselves (their updater was broken). Run `Linc-Setup` once; from then on updates are automatic. Your phones, history
@@ -158,11 +166,12 @@ the real build commands (including the two traps that will otherwise cost you an
 run the verification harnesses, and the one rule that is not negotiable — **the wire protocol is
 versioned and sacred**.
 
-Reach the maintainer as **@delow3**.
+Reach the maintainer, **delowe** ([@delow3](https://github.com/deloweProjects)), on GitHub issues or the
+**[Linc Telegram channel](https://t.me/LincApp)** — news, new versions and help.
 
 ## Licence
 
-[MIT](LICENSE) © 2026 delow3.
+[MIT](LICENSE) © 2026 delowe (@delow3).
 
 Linc vendors [scrcpy](https://github.com/Genymobile/scrcpy) (Apache-2.0); see
 `Linc/SCRCPY/NOTICE.md`.

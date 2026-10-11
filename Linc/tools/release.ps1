@@ -14,9 +14,13 @@
   4. Builds Linc-Setup-<ver>.exe (Inno Setup 6) and the portable zip.
   5. Writes Releases\CHECKSUMS.txt, Releases\update.json and the RELEASE-NOTES header.
   6. Fills "Linc prod" and removes older builds there, skipping anything in use.
-  7. Prints the git/gh commands — and runs them only with -Publish: push, a GitHub pre-release
+  7. Prints the git/gh commands — and runs them only with -Publish: push, a GitHub release
      with every asset (small ones first, big ones retried), HEAD-check every URL, then merge to
      main by PR (which is what makes update.json live).
+
+  Releases are published as GitHub's "Latest" by default: Komi Store (komistore.app) and
+  /releases/latest ignore pre-releases, so a pre-release is invisible there. Pass -Prerelease for
+  a test build that should stay out of stores (update.json still offers it to installed copies).
 
   Code signing: set LINC_SIGN_PFX (path) and LINC_SIGN_PASSWORD, or LINC_SIGN_THUMBPRINT (a cert in
   the user's store), and the exe and installer are signed with signtool. Nothing is signed otherwise.
@@ -29,7 +33,7 @@ param(
     [Parameter(Mandatory)] [string] $DisplayName,
     [string] $Notes,
     [switch] $Publish,
-    [switch] $Latest,
+    [switch] $Prerelease,
     [switch] $SkipTests
 )
 
@@ -239,7 +243,7 @@ if ($kept) { Write-Host "Left in place because in use: $($kept -join ', ')" -For
 
 # --------------------------------------------------------------------------------------------
 $branch = (git -C $RepoRoot rev-parse --abbrev-ref HEAD).Trim()
-$prerelease = if ($Latest) { '' } else { '--prerelease' }
+$prerelease = if ($Prerelease) { '--prerelease' } else { '' }
 $commands = @(
     "git -C `"$RepoRoot`" add -A",
     "git -C `"$RepoRoot`" commit -m `"Linc $Version ($DisplayName)`"",
@@ -270,7 +274,7 @@ Run 'git' @('-C', $RepoRoot, 'push', 'origin', $branch) 'git push'
 gh release view $Tag --repo $Repo *> $null
 if ($LASTEXITCODE) {
     $create = @('release', 'create', $Tag, '--repo', $Repo, '--target', $branch, '--title', "Linc $DisplayName", '--notes-file', "$Out\release-notes.md")
-    if (-not $Latest) { $create += '--prerelease' }
+    if ($Prerelease) { $create += '--prerelease' }
     Run 'gh' $create 'Creating the GitHub release'
 }
 function Upload([string] $path) {
