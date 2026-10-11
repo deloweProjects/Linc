@@ -15,6 +15,16 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.15 ("1.0.0-beta.15") — 2026-10-11
+
+Install both apps. Phones and settings are kept. Everything in 1.0.0.14 and earlier below, plus:
+
+- **About now links to the Linc community.** Settings → About on the PC and the phone shows the
+  developer (delowe, @delow3), the Telegram channel [t.me/LincApp](https://t.me/LincApp) for news,
+  new versions and help, and the source code on GitHub.
+- **Linc is on Komi Store.** Search for Linc in [Komi Store](https://komistore.app) to install it on
+  Windows or Android straight from these releases.
+
 ## 1.0.0.14 ("1.0.0-beta.14") — 2026-10-11
 
 Install both apps. Everything in 1.0.0.13 and 1.0.0.12 below, plus:
