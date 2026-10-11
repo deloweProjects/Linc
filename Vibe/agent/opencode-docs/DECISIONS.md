@@ -1332,7 +1332,9 @@ dark, 360 dp, 200 % font and blocked/empty previews exist for every top-level sc
   Retry, an All-files-access row instead of the silent failure. PC: send by picker, drop zone or
   text box (links open on the phone), transfers with progress, received files, Quick Share as one
   section of the same page; tray menu and icon state; Explorer "Send to phone (Linc)".
-- The phone's Direct Share shortcut for the PC was **not** built (the share-sheet target remains).
+- **Direct Share:** the PC is published as a long-lived share shortcut (named after the PC once it
+  sends its name) whose shares go to the same "Linc — send to PC" target, which falls back to Quick
+  Share when Linc isn't connected.
 
 ## D-084: "Show explanations" — one switch per app
 

@@ -16,6 +16,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
@@ -35,6 +39,14 @@ class CompanionService : Service() {
         super.onCreate()
         LogStore.init(this)
         ClipboardHistoryStore.init(this)
+        // The PC as a Direct Share target, named after it once it says its name (D-083).
+        scope.launch {
+            CompanionStateHolder.state
+                .filterIsInstance<CompanionStateHolder.ServiceState.Connected>()
+                .map { it.host }
+                .distinctUntilChanged()
+                .collect { host -> DirectShare.publish(this@CompanionService, host) }
+        }
         createNotificationChannel()
     }
 

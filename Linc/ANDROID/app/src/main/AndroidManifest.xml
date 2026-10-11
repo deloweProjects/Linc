@@ -107,6 +107,10 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Direct Share target for the PC (1.0.0.11, D-083). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- PC Remote (M05): fullscreen landscape viewer for the PC's screen. Not exported;
