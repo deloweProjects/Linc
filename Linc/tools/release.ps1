@@ -243,7 +243,7 @@ if ($kept) { Write-Host "Left in place because in use: $($kept -join ', ')" -For
 
 # --------------------------------------------------------------------------------------------
 $branch = (git -C $RepoRoot rev-parse --abbrev-ref HEAD).Trim()
-$prerelease = if ($Prerelease) { '--prerelease' } else { '' }
+$prereleaseFlag = if ($Prerelease) { '--prerelease' } else { '' }
 $commands = @(
     "git -C `"$RepoRoot`" add -A",
     "git -C `"$RepoRoot`" commit -m `"Linc $Version ($DisplayName)`"",
