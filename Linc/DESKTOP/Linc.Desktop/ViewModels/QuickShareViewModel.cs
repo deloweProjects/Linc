@@ -192,7 +192,8 @@ public sealed partial class QuickShareViewModel : ObservableObject
             }
             ShellError = null;
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException
+            or System.Runtime.InteropServices.COMException)
         {
             ShellError = $"Couldn't change the Explorer menu: {ex.Message}";
         }

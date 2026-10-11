@@ -291,14 +291,17 @@ public partial class App : Application
             {
                 window.SendToPhone(phonePaths);
             }
-            // An Explorer menu registered by an older Linc gains "Send to phone (Linc)" too.
+            // 1.0.0.15: Explorer's right-click entries and Send to list are on unless the user turned
+            // them off; an Explorer menu registered by an older Linc gains whatever it was missing.
             try
             {
+                QuickShare.QsShellIntegration.EnableOnceByDefault(Environment.ProcessPath ?? "");
                 QuickShare.QsShellIntegration.UpgradeIfRegistered(Environment.ProcessPath ?? "");
             }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException
+                or System.Runtime.InteropServices.COMException)
             {
-                Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, $"Couldn't add \"Send to phone\" to Explorer: {ex.Message}");
+                Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, $"Couldn't add Linc to Explorer's menus: {ex.Message}");
             }
 
             // M13a (§3.3): pre-warm the ADB server. Starting it costs 200-500 ms, and every

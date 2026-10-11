@@ -23,7 +23,11 @@ Install both apps. Phones and settings are kept. Everything in 1.0.0.14 and earl
   developer (delowe, @delow3), the Telegram channel [t.me/LincApp](https://t.me/LincApp) for news,
   new versions and help, and the source code on GitHub.
 - **Join the channel from setup.** The phone's last setup page has a button to join the Linc
-  Telegram channel.
+  Telegram channel, and Home shows a one-time card (Join / Not now) to
+  phones that are already set up.
+- **Linc is in Explorer's Send to list.** Right-click files → Send to → **Phone (Linc)** or
+  **Quick Share (Linc)**, next to the existing right-click entries. They are now on by default;
+  turn them off on the Share page.
 - **Linc is on Komi Store.** Search for Linc in [Komi Store](https://komistore.app) to install it on
   Windows or Android straight from these releases.
 

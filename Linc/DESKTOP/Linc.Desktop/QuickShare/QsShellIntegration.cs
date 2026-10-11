@@ -23,6 +23,19 @@ public static class QsShellIntegration
     private const string VerbKey = @"Software\Classes\*\shell\LincQuickShare";
     private const string PhoneVerbKey = @"Software\Classes\*\shell\LincSendToPhone";
 
+    /// <summary>
+    /// Explorer's right-click → Send to list (1.0.0.15): shortcuts in the user's SendTo folder.
+    /// Explorer appends the selected files to the shortcut's arguments, so they arrive exactly
+    /// like the right-click verbs' <c>--sendtophone a b c</c>.
+    /// </summary>
+    private static string SendToFolder => Environment.GetFolderPath(Environment.SpecialFolder.SendTo);
+    private static string PhoneSendToLink => Path.Combine(SendToFolder, "Phone (Linc).lnk");
+    private static string QuickShareSendToLink => Path.Combine(SendToFolder, "Quick Share (Linc).lnk");
+
+    /// <summary>Set once Linc has turned the Explorer entries on by itself, so turning them off sticks.</summary>
+    private const string DefaultedKey = @"Software\Linc";
+    private const string DefaultedValue = "ExplorerMenuDefaulted";
+
     /// <summary>First line of a pipe hand-off that is for the phone over Linc rather than Quick Share.</summary>
     private const string PhoneMarker = "@phone";
 
@@ -61,24 +74,67 @@ public static class QsShellIntegration
         phone.SetValue("MultiSelectModel", "Player");
         using var phoneCommand = phone.CreateSubKey("command");
         phoneCommand.SetValue("", $"\"{exePath}\" {PhoneArgument} \"%1\"");
+
+        WriteShortcut(PhoneSendToLink, exePath, PhoneArgument, "Send to your phone over Linc");
+        WriteShortcut(QuickShareSendToLink, exePath, Argument, "Send to a nearby phone with Quick Share");
     }
 
     public static void Unregister()
     {
         Registry.CurrentUser.DeleteSubKeyTree(VerbKey, throwOnMissingSubKey: false);
         Registry.CurrentUser.DeleteSubKeyTree(PhoneVerbKey, throwOnMissingSubKey: false);
+        File.Delete(PhoneSendToLink);
+        File.Delete(QuickShareSendToLink);
     }
 
     /// <summary>
-    /// An install from before 1.0.0.11 registered only "Send with Quick Share": add the phone verb
-    /// beside it, so turning the Explorer menu on once is enough.
+    /// 1.0.0.15: the Explorer entries are on unless the user has turned them off. Turns them on
+    /// once per Windows account; after that the Share page's switch is the only thing that changes them.
+    /// </summary>
+    public static void EnableOnceByDefault(string exePath)
+    {
+        using var linc = Registry.CurrentUser.CreateSubKey(DefaultedKey);
+        if (linc.GetValue(DefaultedValue) is not null)
+        {
+            return;
+        }
+        Register(exePath);
+        linc.SetValue(DefaultedValue, 1, RegistryValueKind.DWord);
+    }
+
+    /// <summary>A .lnk via the shell's own WScript.Shell — no extra dependency for one file.</summary>
+    private static void WriteShortcut(string linkPath, string exePath, string argument, string description)
+    {
+        var shellType = Type.GetTypeFromProgID("WScript.Shell") ?? throw new IOException("WScript.Shell is unavailable");
+        dynamic shell = Activator.CreateInstance(shellType)!;
+        try
+        {
+            dynamic link = shell.CreateShortcut(linkPath);
+            link.TargetPath = exePath;
+            link.Arguments = argument;
+            link.IconLocation = $"{exePath},0";
+            link.Description = description;
+            link.Save();
+            System.Runtime.InteropServices.Marshal.FinalReleaseComObject(link);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    /// <summary>
+    /// An install from before 1.0.0.11 registered only "Send with Quick Share", and one from before
+    /// 1.0.0.15 had no Send to entries: add what is missing, so turning the Explorer menu on once is enough.
     /// </summary>
     public static void UpgradeIfRegistered(string exePath)
     {
         if (IsRegistered())
         {
             using var phone = Registry.CurrentUser.OpenSubKey(PhoneVerbKey);
-            if (phone is null)
+            // Re-register when the phone verb or the Send to shortcuts (1.0.0.15) are missing,
+            // and after an update, so every entry points at this copy's exe.
+            if (phone is null || !File.Exists(PhoneSendToLink) || !File.Exists(QuickShareSendToLink))
             {
                 Register(exePath);
             }

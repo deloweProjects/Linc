@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +54,7 @@ import app.linc.android.service.PcMedia
 import app.linc.android.service.PcMediaControl
 import app.linc.android.service.PcMediaStore
 import app.linc.android.service.PcVoiceAccess
+import app.linc.android.service.ProjectLinks
 import app.linc.android.service.TransportStore
 import app.linc.android.service.VoiceAccessState
 import app.linc.android.ui.kit.BlockedState
@@ -140,6 +142,7 @@ private fun HomeContent(
     val fabExpanded by remember { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 40 } }
     var connectionSheet by remember { mutableStateOf(false) }
     var voiceSheet by remember { mutableStateOf(false) }
+    var telegramDone by remember { mutableStateOf(ProjectLinks.telegramCardDone(context)) }
     val connected = connection as? ServiceState.Connected
 
     LincScaffold(
@@ -183,6 +186,21 @@ private fun HomeContent(
             }
             item("hero") {
                 ConnectionHero(connection, transport, onClick = { connectionSheet = true })
+            }
+            // 1.0.0.15: once, after the first PC — setup's last page already offered it to new users.
+            if (everPaired && !telegramDone) {
+                item("telegram") {
+                    TelegramCard(
+                        onJoin = {
+                            ProjectLinks.markTelegramCardDone(context); telegramDone = true
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(ProjectLinks.TELEGRAM))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            } catch (_: android.content.ActivityNotFoundException) { /* no browser or Telegram */ }
+                        },
+                        onDismiss = { ProjectLinks.markTelegramCardDone(context); telegramDone = true },
+                    )
+                }
             }
             item("tools-h") { SectionHeader("Tools") }
             item("tools") {
@@ -369,3 +387,26 @@ private fun HomePreviewDark() = LincTheme(darkTheme = true) { HomePreview(Servic
 @Preview(name = "Home — never set up", widthDp = 360, heightDp = 1100, fontScale = 2f)
 @Composable
 private fun HomePreviewNew() = LincTheme { HomePreview(ServiceState.Stopped, everPaired = false) }
+
+/** Home's one-time invitation to the Linc Telegram channel. Either button retires it for good. */
+@Composable
+private fun TelegramCard(onJoin: () -> Unit, onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = RoundedCornerShape(Kit.heroRadius),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter),
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(LincSymbols.Send, contentDescription = null)
+                Text("Join the Linc channel", style = MaterialTheme.typography.titleMedium)
+            }
+            Text("News, new versions and help from the developer, on Telegram.", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onJoin, shapes = ButtonDefaults.shapes(), modifier = Modifier.heightIn(min = Kit.touch)) { Text("Join") }
+                androidx.compose.material3.TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = Kit.touch)) { Text("Not now") }
+            }
+        }
+    }
+}
