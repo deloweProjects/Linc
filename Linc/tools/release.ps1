@@ -248,7 +248,7 @@ $commands = @(
     "git -C `"$RepoRoot`" add -A",
     "git -C `"$RepoRoot`" commit -m `"Linc $Version ($DisplayName)`"",
     "git -C `"$RepoRoot`" push origin $branch",
-    "gh release create $Tag --repo $Repo --target $branch --title `"Linc $DisplayName`" --notes-file `"$Out\release-notes.md`" $prerelease",
+    "gh release create $Tag --repo $Repo --target $branch --title `"Linc $DisplayName`" --notes-file `"$Out\release-notes.md`" $prereleaseFlag",
     "gh release upload $Tag --repo $Repo `"$apkOut`" `"$Out\CHECKSUMS.txt`" --clobber",
     "gh release upload $Tag --repo $Repo `"$setup`" --clobber",
     "gh release upload $Tag --repo $Repo `"$zip`" --clobber",
