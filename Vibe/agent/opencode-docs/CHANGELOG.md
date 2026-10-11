@@ -9,6 +9,11 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-11 — Linc no longer closes when the phone disconnects (1.0.0.13, D-090)
+
+- Since 1.0.0.11 the PC app shut itself down the moment the phone's connection dropped (the
+  connected/disconnected tray icon). It now stays open and reconnects.
+
 ### Fixed — 2026-10-11 — Mirror PC on Intel graphics, for real this time (1.0.0.12, D-087)
 
 - When the graphics chip's encoder won't start, Linc retries it with basic settings and then uses

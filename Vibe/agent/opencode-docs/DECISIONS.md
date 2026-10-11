@@ -1452,3 +1452,19 @@ it stops `PhoneSetupService` pushing the APK (the Checking text changes to match
 out not to be there, the log says to install and open it. The box resets when the wizard closes. The
 install was already skipped when the package is present; this covers a phone whose copy came from
 elsewhere and the PC with no bundled APK (the "Heads up" banner hides when it's ticked).
+
+## D-090: Linc closed itself on every disconnect — the tray icon was disposed under it
+
+**2026-10-11.** Owner: the PC app "crashed after a while of disconnect … just closed even on this
+pc". Event Log: `Linc.Desktop.exe` 1.0.0.11, exception 0xC000027B (stowed exception) in
+CoreMessagingXP/combase, at 16:35:06 and 17:07:38 — each within a second of the log's "Connection
+dropped; … looking for the phone now", once a Wi-Fi drop and once a cable pull. Nothing reached
+Linc's own crash log: an exception inside a `DispatcherQueue.TryEnqueue` callback is fail-fast in
+WinUI, not `Application.UnhandledException`.
+
+Cause: 1.0.0.11's tray icon shows connected/disconnected by setting `TaskbarIcon.Icon` to one of
+two cached `System.Drawing.Icon`s. H.NotifyIcon 2.2.0's `TaskbarIcon.OnIconChanged` **disposes the
+previous Icon** (confirmed by scanning its IL). So the first connect destroyed the cached
+disconnected icon, and the next drop set a disposed Icon → exception in the dispatcher callback →
+process killed. Fix: `MainWindow.SetTrayIcon` hands the tray a `Clone()` each time, inside a
+try/catch that logs instead of crashing. Build-checked; the owner's disconnect test is the proof.

@@ -72,9 +72,8 @@ public sealed partial class MainWindow : Window
             // the window/taskbar keep the square AppIcon.ico.
             _trayConnected = new System.Drawing.Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIconMono.ico"));
             _trayDisconnected = TrayBadge.Disconnected(_trayConnected);
-            TrayIcon.Icon = Shell.IsConnected ? _trayConnected : _trayDisconnected;
-            Shell.TrayStateChanged += connected => DispatcherQueue.TryEnqueue(() =>
-                TrayIcon.Icon = connected ? _trayConnected : _trayDisconnected);
+            SetTrayIcon(Shell.IsConnected);
+            Shell.TrayStateChanged += connected => DispatcherQueue.TryEnqueue(() => SetTrayIcon(connected));
             TrayIcon.ForceCreate();
         }
         catch (Exception ex)
@@ -96,6 +95,27 @@ public sealed partial class MainWindow : Window
 
         // Closing the window hides Linc to the tray; it keeps watching for the phone.
         AppWindow.Closing += OnAppWindowClosing;
+    }
+
+    /// <summary>
+    /// Show the connected or disconnected tray icon. H.NotifyIcon DISPOSES the previous Icon each
+    /// time Icon changes (TaskbarIcon.OnIconChanged), so it gets a fresh copy every time: handing it
+    /// our cached one meant the first connect destroyed the disconnected icon, and the next drop
+    /// set a disposed icon — an exception inside a DispatcherQueue callback, which WinUI turns into
+    /// a fail-fast (0xC000027B) that closed Linc on every disconnect (1.0.0.11, D-090). A tray
+    /// problem must never close the app either way, hence the catch.
+    /// </summary>
+    private void SetTrayIcon(bool connected)
+    {
+        try
+        {
+            if ((connected ? _trayConnected : _trayDisconnected) is { } icon)
+                TrayIcon.Icon = (System.Drawing.Icon)icon.Clone();
+        }
+        catch (Exception ex)
+        {
+            App.Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, $"Couldn't update the tray icon ({ex.GetType().Name}: {ex.Message})");
+        }
     }
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs e)

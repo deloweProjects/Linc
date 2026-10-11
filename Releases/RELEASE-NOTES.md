@@ -15,6 +15,13 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.13 ("1.0.0-beta.13") — 2026-10-11
+
+Install both apps. Phones and settings are kept. Everything in 1.0.0.12 below, plus:
+
+- **Linc no longer closes when the phone disconnects.** Since 1.0.0.11 the PC app shut itself down
+  the moment the connection dropped (Wi-Fi lost or cable pulled). It now stays open and reconnects.
+
 ## 1.0.0.12 ("1.0.0-beta.12") — 2026-10-11
 
 Install both apps. Phones and settings are kept.
