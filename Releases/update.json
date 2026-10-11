@@ -29,15 +29,15 @@
     "",
     "Keys beginning with an underscore are ignored by both parsers."
   ],
-  "latest": "1.0.0.12",
+  "latest": "1.0.0.13",
   "minimumSupported": "1.0.0-beta.1",
-  "notes": "Mirror PC works on Intel graphics; the phone remembers each PC; setup can skip installing the phone app.",
+  "notes": "Linc no longer closes when the phone disconnects; Mirror PC works on Intel graphics; the phone remembers each PC.",
   "desktop": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.12/Linc-Setup-1.0.0.12.exe",
-    "sha256": "145E7224DFFBBF7860773AD1E5A5BEABF73009D4569C71A3B5933D953D180143"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.13/Linc-Setup-1.0.0.13.exe",
+    "sha256": "7E4048BCC1FDFDD3371E5352898A3E2A375D2D71964EABF8B5ED0DD2941AB582"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.12/Linc-Companion-1.0.0.12-2026-10-11.apk",
-    "sha256": "40AFF2767831903107DD0FEA4BB5AF9F079B50631F761C76D694BB4577A3ACFE"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.13/Linc-Companion-1.0.0.13-2026-10-11.apk",
+    "sha256": "1910D1B73B25B81D8DA0197F4D1839244CA0C079BF96A38BA5447F73C0D8AB1B"
   }
 }
