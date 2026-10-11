@@ -20,7 +20,14 @@ completely, even with a signature — and since 2024 that is true for EV certifi
 | **Azure Trusted Signing** | about $10 / month | Organisations; **individuals only in the US and Canada** (identity validation) | Azure subscription, identity validation | Probably **not available** to an individual in Zimbabwe — check the current eligibility page before trying. |
 | **Commercial OV / EV** (Sectigo, DigiCert, SSL.com…) | about $200–600 / year; hardware token required since 2023 | Individuals (OV) or registered businesses (EV) | ID/business verification, buy or rent a hardware token or cloud HSM | Works, but the most expensive, and EV no longer skips SmartScreen's reputation period. |
 
-## Recommendation
+## Decision (2026-10-11)
+
+**The owner chose not to pay: Linc ships unsigned.** Free options to revisit later: the Microsoft
+Store (free individual developer account; Microsoft signs Store packages, but Linc would need MSIX
+packaging) or SignPath Foundation (needs builds from GitHub Actions). The paid recommendation below
+is kept for reference.
+
+## Recommendation (paid, not taken)
 
 **Certum Open Source Code Signing, SimplySign (cloud) variant.** Steps for the owner:
 

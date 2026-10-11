@@ -1371,7 +1371,7 @@ far). Per app, no sync.
 - No trimming/AOT and no size work beyond reporting sizes (the brief allowed only cleanroomsim-proven
   wins; none were attempted).
 
-## D-086: Code signing — Certum Open Source recommended, wired to need only the certificate
+## D-086: Code signing — stays unsigned (owner's choice); wired so a certificate can drop in later
 
 **2026-10-11.** Options, costs and eligibility: `Vibe/agent/design/code-signing.md`. Recommended:
 Certum Open Source Code Signing (cloud SimplySign) — cheap, open to individuals outside the US, and
@@ -1379,3 +1379,8 @@ signs on the owner's PC; SignPath Foundation (free) needs builds from CI first; 
 is likely unavailable to an individual in Zimbabwe; commercial OV/EV is the expensive fallback.
 `release.ps1` signs the exe, installer and uninstaller when `LINC_SIGN_THUMBPRINT` (or
 `LINC_SIGN_PFX` + password) is set. SmartScreen reputation still builds over time.
+
+**Decided 2026-10-11 by the owner: no paid certificate.** Linc ships unsigned; users pass SmartScreen
+with More info → Run anyway (README). Free routes to revisit later: the Microsoft Store (free
+individual account, Microsoft signs MSIX — needs Store packaging) or SignPath Foundation (needs a CI
+build). Certum stays documented as the cheapest paid option.
