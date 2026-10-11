@@ -13,9 +13,13 @@ public sealed partial class QuickSharePage : Page
 {
     public QuickShareViewModel ViewModel { get; }
 
+    /// <summary>The Linc half: send to the connected phone, transfers, received files (D-083).</summary>
+    public ShareViewModel Linc { get; }
+
     public QuickSharePage()
     {
         ViewModel = App.Services.GetRequiredService<QuickShareViewModel>();
+        Linc = App.Services.GetRequiredService<ShareViewModel>();
         InitializeComponent();
     }
 
@@ -33,6 +37,38 @@ public sealed partial class QuickSharePage : Page
     {
         base.OnNavigatedFrom(e);
         ViewModel.StopScan(); // the BLE wake beacon shouldn't outlive the page that wanted it
+    }
+
+    private async void OnSendToPhoneClick(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(
+            picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
+        var files = await picker.PickMultipleFilesAsync();
+        if (files is { Count: > 0 })
+        {
+            Linc.SendFiles(files.Select(f => f.Path).ToList());
+        }
+    }
+
+    private void OnPhoneDragOver(object sender, DragEventArgs e)
+    {
+        if (e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            e.AcceptedOperation = DataPackageOperation.Copy;
+            e.DragUIOverride.Caption = Linc.OverLinc ? "Send to your phone" : "Get ready for Quick Share";
+        }
+    }
+
+    private async void OnPhoneDrop(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            return;
+        }
+        var items = await e.DataView.GetStorageItemsAsync();
+        Linc.SendFiles(items.OfType<StorageFile>().Select(f => f.Path).ToList());
     }
 
     private async void OnSendClick(object sender, RoutedEventArgs e)

@@ -7,12 +7,25 @@ namespace Linc.Desktop.Services;
 /// <summary>A file the phone shared and the PC has now saved.</summary>
 public sealed record ReceivedShare(string Name, string LocalPath, DateTimeOffset ReceivedAt);
 
+public enum PhoneTransferState { Sending, Done, Failed }
+
+/// <summary>One file going to the phone over Linc (1.0.0.11, D-083). Progress is 0–100.</summary>
+public sealed record PhoneTransfer(Guid Id, string Name, string LocalPath, PhoneTransferState State, double Progress, string? Message);
+
 public interface IShareService
 {
     void Start();
 
     /// <summary>Pushes a PC file into the phone's Share inbox and announces it (v13 `share.incoming`).</summary>
     Task SendFileToPhoneAsync(string localPath, CancellationToken ct);
+
+    /// <summary>Send files to the phone over Linc, one after another, each tracked in <see cref="Transfers"/>.</summary>
+    Task SendFilesToPhoneAsync(IReadOnlyList<string> paths);
+
+    /// <summary>Files going to the phone this session, newest first.</summary>
+    IReadOnlyList<PhoneTransfer> Transfers { get; }
+
+    event Action<PhoneTransfer>? TransferChanged;
 
     /// <summary>Files received from the phone this session, newest first.</summary>
     IReadOnlyList<ReceivedShare> Received { get; }
@@ -37,7 +50,53 @@ public sealed class ShareService(
     private const string PhoneOutbox = "/sdcard/Download/Linc/outbox";
 
     private readonly List<ReceivedShare> _received = [];
+    private readonly List<PhoneTransfer> _transfers = [];
+
+    public IReadOnlyList<PhoneTransfer> Transfers
+    {
+        get { lock (_transfers) { return _transfers.ToList(); } }
+    }
+
+    public event Action<PhoneTransfer>? TransferChanged;
+
+    private void Publish(PhoneTransfer transfer)
+    {
+        lock (_transfers)
+        {
+            var index = _transfers.FindIndex(t => t.Id == transfer.Id);
+            if (index >= 0)
+            {
+                _transfers[index] = transfer;
+            }
+            else
+            {
+                _transfers.Insert(0, transfer);
+                if (_transfers.Count > 50)
+                {
+                    _transfers.RemoveAt(_transfers.Count - 1);
+                }
+            }
+        }
+        TransferChanged?.Invoke(transfer);
+    }
+
+    public async Task SendFilesToPhoneAsync(IReadOnlyList<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            try
+            {
+                await SendFileToPhoneAsync(path, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                // Already recorded as a failed transfer with a plain reason; keep going with the rest.
+                log.Log(LogLevel.Warn, $"Couldn't send {Path.GetFileName(path)} to the phone: {ex.Message}");
+            }
+        }
+    }
     private readonly SemaphoreSlim _drainGate = new(1, 1);
+    private bool _saidNoOutbox;
 
     public IReadOnlyList<ReceivedShare> Received
     {
@@ -93,8 +152,13 @@ public sealed class ShareService(
             }
             catch (Exception ex)
             {
-                // No outbox yet is the normal case on a phone that has never shared.
-                log.Log(LogLevel.Info, $"No shared files waiting on the phone ({ex.Message})");
+                // No outbox yet is the normal case on a phone that has never shared — said once a
+                // session, not on every connect (it was logged on every single one).
+                if (!_saidNoOutbox)
+                {
+                    _saidNoOutbox = true;
+                    log.Log(LogLevel.Info, $"No shared files waiting on the phone ({ex.Message})");
+                }
                 return;
             }
 
@@ -139,18 +203,46 @@ public sealed class ShareService(
 
     public async Task SendFileToPhoneAsync(string localPath, CancellationToken ct)
     {
-        // PushAsync renames on conflict and returns the path actually written, so the
-        // announcement always names the file the phone really has.
-        var remote = await files.PushAsync(localPath, PhoneInbox, new Progress<double>(), ct);
-        var name = remote[(remote.LastIndexOf('/') + 1)..];
-        await connection.SendToPhoneAsync(
-            Envelope.Create(MessageType.ShareIncoming, new JsonObject
+        var transfer = new PhoneTransfer(Guid.NewGuid(), Path.GetFileName(localPath), localPath, PhoneTransferState.Sending, 0, null);
+        Publish(transfer);
+        try
+        {
+            if (supervisor.State != LinkState.Connected)
             {
-                ["name"] = name,
-                ["path"] = remote,
-            }),
-            ct);
-        log.Log(LogLevel.Info, $"Sent {name} to the phone");
+                throw new LincException("Your phone isn't connected.");
+            }
+            var lastReported = -10.0;
+            var progress = new Progress<double>(p =>
+            {
+                if (p - lastReported >= 2 || p >= 100)
+                {
+                    lastReported = p;
+                    Publish(transfer = transfer with { Progress = Math.Clamp(p, 0, 100) });
+                }
+            });
+            // PushAsync renames on conflict and returns the path actually written, so the
+            // announcement always names the file the phone really has.
+            var remote = await files.PushAsync(localPath, PhoneInbox, progress, ct);
+            var name = remote[(remote.LastIndexOf('/') + 1)..];
+            await connection.SendToPhoneAsync(
+                Envelope.Create(MessageType.ShareIncoming, new JsonObject
+                {
+                    ["name"] = name,
+                    ["path"] = remote,
+                }),
+                ct);
+            Publish(transfer with { State = PhoneTransferState.Done, Progress = 100, Message = "Sent to your phone (Download/Linc)" });
+            log.Log(LogLevel.Info, $"Sent {name} to the phone");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Publish(transfer with
+            {
+                State = PhoneTransferState.Failed,
+                Message = ex is LincException ? ex.Message : "Couldn't send it — check the phone is connected and has storage space.",
+            });
+            throw;
+        }
     }
 
     private static void Toast(string title, string body)

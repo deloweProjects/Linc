@@ -233,9 +233,34 @@ public partial class AppShellViewModel : ObservableObject
     public bool HasError => ErrorMessage is not null;
     public bool IsConnected => _supervisor.State == LinkState.Connected;
 
+    /// <summary>Raised on the UI thread with whether a phone is connected, for the tray icon.</summary>
+    public event Action<bool>? TrayStateChanged;
+
     public string TrayText => _supervisor.State == LinkState.Connected
         ? $"Linc — connected to {_supervisor.Device?.Model}"
         : $"Linc — {StateWord}";
+
+    /// <summary>The tray menu's phone line: "Pixel 7 — connected" (a label, not a command).</summary>
+    public string TrayPhoneText => _supervisor.State == LinkState.Connected
+        ? $"{_supervisor.Device?.Model ?? "Phone"} — connected"
+        : $"{_registry.PairedModel ?? "No phone"} — {StateWord}";
+
+    public bool IsPaused => _supervisor.State == LinkState.Paused;
+
+    public string PauseText => IsPaused ? "Resume connection" : "Pause connection";
+
+    /// <summary>The tray's Pause/Resume: pausing stops reconnecting until resumed.</summary>
+    public void TogglePause()
+    {
+        if (IsPaused)
+        {
+            _supervisor.ResumeAutomatic();
+        }
+        else
+        {
+            _supervisor.RequestDisconnect();
+        }
+    }
 
     private string StateWord => _supervisor.State switch
     {
@@ -249,6 +274,10 @@ public partial class AppShellViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsConnected));
         OnPropertyChanged(nameof(TrayText));
+        OnPropertyChanged(nameof(TrayPhoneText));
+        OnPropertyChanged(nameof(IsPaused));
+        OnPropertyChanged(nameof(PauseText));
+        TrayStateChanged?.Invoke(IsConnected);
         if (IsConnected)
         {
             ErrorMessage = null;

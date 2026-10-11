@@ -160,10 +160,36 @@
             NoLeftClickDelay="True">
             <tb:TaskbarIcon.ContextFlyout>
                 <MenuFlyout>
-                    <MenuFlyoutItem Text="Open Linc" Command="{x:Bind ShowWindowCommand}" />
-                    <MenuFlyoutItem Text="Quick Share..." Command="{x:Bind ShowShareCommand}" />
+                    <MenuFlyoutItem Text="Open Linc" Command="{x:Bind ShowWindowCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A7;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
                     <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Exit" Command="{x:Bind ExitCommand}" />
+                    <MenuFlyoutSubItem Text="Send to phone">
+                        <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE724;" /></MenuFlyoutSubItem.Icon>
+                        <MenuFlyoutItem Text="Files…" Command="{x:Bind SendFilesCommand}">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Clipboard text" Command="{x:Bind SendClipboardCommand}">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Paste &amp; send" Command="{x:Bind PasteAndSendCommand}">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyoutSubItem>
+                    <MenuFlyoutItem Text="Quick Share…" Command="{x:Bind ShowShareCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72D;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="{x:Bind Shell.TrayPhoneText, Mode=OneWay}" IsEnabled="False">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8EA;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem Text="{x:Bind Shell.PauseText, Mode=OneWay}" Command="{x:Bind TogglePauseCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE769;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Exit" Command="{x:Bind ExitCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E8;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
                 </MenuFlyout>
             </tb:TaskbarIcon.ContextFlyout>
         </tb:TaskbarIcon>

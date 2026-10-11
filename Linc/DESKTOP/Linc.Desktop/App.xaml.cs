@@ -130,6 +130,7 @@ public partial class App : Application
             .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()
             .AddSingleton<QuickShareViewModel>()
             .AddSingleton<ClipboardViewModel>()
+            .AddSingleton<ShareViewModel>()
             .AddSingleton<HomeViewModel>()
             .AddSingleton<SyncViewModel>()
             .AddSingleton<FilesViewModel>()
@@ -166,13 +167,19 @@ public partial class App : Application
         {
             _singleInstance = new System.Threading.Mutex(initiallyOwned: true, @"Local\LincDesktopSingleInstance", out var isFirst);
             var quickSharePaths = QuickShare.QsShellIntegration.PathsFrom(Environment.GetCommandLineArgs());
+            var phonePaths = QuickShare.QsShellIntegration.PathsFrom(
+                Environment.GetCommandLineArgs(), QuickShare.QsShellIntegration.PhoneArgument);
             if (!isFirst)
             {
-                // Explorer's "Send with Quick Share" starts a second copy; hand its files to the
-                // running one, which opens its Share page with them ready to send.
+                // Explorer's "Send with Quick Share" / "Send to phone (Linc)" start a second copy;
+                // hand its files to the running one.
                 if (quickSharePaths.Count > 0)
                 {
                     QuickShare.QsShellIntegration.TryForward(quickSharePaths);
+                }
+                if (phonePaths.Count > 0)
+                {
+                    QuickShare.QsShellIntegration.TryForward(phonePaths, toPhone: true);
                 }
                 Exit(); // another Linc is already running; let it own the tray and the port
                 return;
@@ -213,24 +220,44 @@ public partial class App : Application
             // MainWindow.OnAppWindowClosing) — no second hiding mechanism.
             _window.Activate();
             var commandLineArgs = Environment.GetCommandLineArgs();
-            if (StartupRegistration.IsStartupLaunch(commandLineArgs) && quickSharePaths.Count == 0)
+            if (StartupRegistration.IsStartupLaunch(commandLineArgs) && quickSharePaths.Count == 0 && phonePaths.Count == 0)
             {
                 _window.AppWindow.Hide();
             }
             var quickShare = Services.GetRequiredService<QuickShare.IQuickShareService>();
             var window = (MainWindow)_window;
             QuickShare.QsShellIntegration.Listen(
-                paths =>
+                (paths, toPhone) => window.DispatcherQueue.TryEnqueue(() =>
                 {
-                    quickShare.QueueFiles(paths);
-                    window.ShowSharePage();
-                },
+                    if (toPhone)
+                    {
+                        window.SendToPhone(paths);
+                    }
+                    else
+                    {
+                        quickShare.QueueFiles(paths);
+                        window.ShowSharePage();
+                    }
+                }),
                 message => Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, message),
                 CancellationToken.None);
             if (quickSharePaths.Count > 0)
             {
                 quickShare.QueueFiles(quickSharePaths);
                 window.ShowSharePage();
+            }
+            if (phonePaths.Count > 0)
+            {
+                window.SendToPhone(phonePaths);
+            }
+            // An Explorer menu registered by an older Linc gains "Send to phone (Linc)" too.
+            try
+            {
+                QuickShare.QsShellIntegration.UpgradeIfRegistered(Environment.ProcessPath ?? "");
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+            {
+                Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, $"Couldn't add \"Send to phone\" to Explorer: {ex.Message}");
             }
 
             // M13a (§3.3): pre-warm the ADB server. Starting it costs 200-500 ms, and every

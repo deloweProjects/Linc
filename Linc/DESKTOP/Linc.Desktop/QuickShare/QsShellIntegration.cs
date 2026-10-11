@@ -17,7 +17,14 @@ public static class QsShellIntegration
 {
     public const string Argument = "--quickshare";
 
+    /// <summary>Explorer's "Send to phone (Linc)" (1.0.0.11, D-083): over the Linc link, no prompts.</summary>
+    public const string PhoneArgument = "--sendtophone";
+
     private const string VerbKey = @"Software\Classes\*\shell\LincQuickShare";
+    private const string PhoneVerbKey = @"Software\Classes\*\shell\LincSendToPhone";
+
+    /// <summary>First line of a pipe hand-off that is for the phone over Linc rather than Quick Share.</summary>
+    private const string PhoneMarker = "@phone";
 
     /// <summary>Per user and per session, so two people signed in never cross wires.</summary>
     private static string PipeName => $"LincQuickShare-{Environment.UserName}-{System.Diagnostics.Process.GetCurrentProcess().SessionId}";
@@ -37,17 +44,44 @@ public static class QsShellIntegration
         verb.SetValue("MultiSelectModel", "Player");
         using var command = verb.CreateSubKey("command");
         command.SetValue("", $"\"{exePath}\" {Argument} \"%1\"");
+
+        using var phone = Registry.CurrentUser.CreateSubKey(PhoneVerbKey);
+        phone.SetValue("", "Send to phone (Linc)");
+        phone.SetValue("Icon", $"\"{exePath}\",0");
+        phone.SetValue("MultiSelectModel", "Player");
+        using var phoneCommand = phone.CreateSubKey("command");
+        phoneCommand.SetValue("", $"\"{exePath}\" {PhoneArgument} \"%1\"");
     }
 
-    public static void Unregister() => Registry.CurrentUser.DeleteSubKeyTree(VerbKey, throwOnMissingSubKey: false);
+    public static void Unregister()
+    {
+        Registry.CurrentUser.DeleteSubKeyTree(VerbKey, throwOnMissingSubKey: false);
+        Registry.CurrentUser.DeleteSubKeyTree(PhoneVerbKey, throwOnMissingSubKey: false);
+    }
+
+    /// <summary>
+    /// An install from before 1.0.0.11 registered only "Send with Quick Share": add the phone verb
+    /// beside it, so turning the Explorer menu on once is enough.
+    /// </summary>
+    public static void UpgradeIfRegistered(string exePath)
+    {
+        if (IsRegistered())
+        {
+            using var phone = Registry.CurrentUser.OpenSubKey(PhoneVerbKey);
+            if (phone is null)
+            {
+                Register(exePath);
+            }
+        }
+    }
 
     /// <summary>The file paths passed after <see cref="Argument"/>, or empty.</summary>
-    public static List<string> PathsFrom(string[] args)
+    public static List<string> PathsFrom(string[] args, string argument = Argument)
     {
         var paths = new List<string>();
         for (var i = 0; i < args.Length; i++)
         {
-            if (!string.Equals(args[i], Argument, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(args[i], argument, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -60,13 +94,17 @@ public static class QsShellIntegration
     }
 
     /// <summary>Second instance: hand the paths to the running Linc. False when nobody is listening.</summary>
-    public static bool TryForward(IReadOnlyList<string> paths)
+    public static bool TryForward(IReadOnlyList<string> paths, bool toPhone = false)
     {
         try
         {
             using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
             pipe.Connect(3000);
             using var writer = new StreamWriter(pipe);
+            if (toPhone)
+            {
+                writer.WriteLine(PhoneMarker);
+            }
             foreach (var path in paths)
             {
                 writer.WriteLine(path);
@@ -81,7 +119,7 @@ public static class QsShellIntegration
     }
 
     /// <summary>First instance: accept hand-offs for the life of the process.</summary>
-    public static void Listen(Action<IReadOnlyList<string>> onPaths, Action<string> log, CancellationToken ct)
+    public static void Listen(Action<IReadOnlyList<string>, bool> onPaths, Action<string> log, CancellationToken ct)
     {
         _ = Task.Run(async () =>
         {
@@ -101,9 +139,14 @@ public static class QsShellIntegration
                             paths.Add(line);
                         }
                     }
+                    var toPhone = paths.Count > 0 && paths[0] == PhoneMarker;
+                    if (toPhone)
+                    {
+                        paths.RemoveAt(0);
+                    }
                     if (paths.Count > 0)
                     {
-                        onPaths(paths);
+                        onPaths(paths, toPhone);
                     }
                 }
                 catch (OperationCanceledException)

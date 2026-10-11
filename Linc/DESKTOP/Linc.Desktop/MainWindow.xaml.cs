@@ -18,6 +18,13 @@ public sealed partial class MainWindow : Window
     public RelayCommand ShowWindowCommand { get; }
     public RelayCommand ExitCommand { get; }
     public RelayCommand ShowShareCommand { get; }
+    public RelayCommand SendFilesCommand { get; }
+    public RelayCommand SendClipboardCommand { get; }
+    public RelayCommand PasteAndSendCommand { get; }
+    public RelayCommand TogglePauseCommand { get; }
+
+    private System.Drawing.Icon? _trayConnected;
+    private System.Drawing.Icon? _trayDisconnected;
 
     public MainWindow()
     {
@@ -42,6 +49,10 @@ public sealed partial class MainWindow : Window
             Activate();
         });
         ShowShareCommand = new RelayCommand(ShowSharePage);
+        SendFilesCommand = new RelayCommand(() => _ = PickAndSendAsync());
+        SendClipboardCommand = new RelayCommand(() => _ = SendClipboardAsync(pasteFiles: false));
+        PasteAndSendCommand = new RelayCommand(() => _ = SendClipboardAsync(pasteFiles: true));
+        TogglePauseCommand = new RelayCommand(() => Shell.TogglePause());
         ExitCommand = new RelayCommand(() =>
         {
             // Never leave the phone's virtual cable as the PC's default microphone (D-071).
@@ -59,7 +70,11 @@ public sealed partial class MainWindow : Window
             // M14: the tray reads the mono variant (white L on transparency) — an opaque
             // black tile becomes a heavy black box on a light Windows 11 taskbar. The exe and
             // the window/taskbar keep the square AppIcon.ico.
-            TrayIcon.Icon = new System.Drawing.Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIconMono.ico"));
+            _trayConnected = new System.Drawing.Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIconMono.ico"));
+            _trayDisconnected = TrayBadge.Disconnected(_trayConnected);
+            TrayIcon.Icon = Shell.IsConnected ? _trayConnected : _trayDisconnected;
+            Shell.TrayStateChanged += connected => DispatcherQueue.TryEnqueue(() =>
+                TrayIcon.Icon = connected ? _trayConnected : _trayDisconnected);
             TrayIcon.ForceCreate();
         }
         catch (Exception ex)
@@ -188,6 +203,86 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Bring the window up on the Share page (tray item, Explorer hand-off).</summary>
+    /// <summary>
+    /// Explorer's "Send to phone (Linc)" and the tray's Send to phone: over the link when the phone
+    /// is connected, quietly; otherwise the Share page opens with them ready for Quick Share.
+    /// </summary>
+    public void SendToPhone(IReadOnlyList<string> paths)
+    {
+        var share = App.Services.GetRequiredService<ShareViewModel>();
+        if (share.SendFiles(paths))
+        {
+            Notify("Sending to your phone", paths.Count == 1 ? System.IO.Path.GetFileName(paths[0]) : $"{paths.Count} files");
+        }
+        else
+        {
+            ShowSharePage();
+        }
+    }
+
+    private async Task PickAndSendAsync()
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var files = await picker.PickMultipleFilesAsync();
+        if (files is { Count: > 0 })
+        {
+            SendToPhone(files.Select(f => f.Path).ToList());
+        }
+    }
+
+    /// <summary>
+    /// Tray → Send to phone. "Clipboard text": what's on this PC's clipboard goes on the phone's.
+    /// "Paste &amp; send": whatever is on the clipboard goes — copied files are sent, a link opens on
+    /// the phone, other text lands on its clipboard.
+    /// </summary>
+    private async Task SendClipboardAsync(bool pasteFiles)
+    {
+        try
+        {
+            var content = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            if (pasteFiles && content.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                var items = await content.GetStorageItemsAsync();
+                SendToPhone(items.OfType<Windows.Storage.StorageFile>().Select(f => f.Path).ToList());
+                return;
+            }
+            if (!content.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
+            {
+                Notify("Nothing to send", "The clipboard has no text or files.");
+                return;
+            }
+            var text = (await content.GetTextAsync()).Trim();
+            var connection = App.Services.GetRequiredService<IConnectionManager>();
+            if (pasteFiles && Uri.TryCreate(text, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+            {
+                await connection.ContinueUrlAsync(uri.AbsoluteUri, CancellationToken.None);
+                Notify("Opening on your phone", uri.Host);
+                return;
+            }
+            var sent = await App.Services.GetRequiredService<IClipboardSyncService>().SendToPhoneAsync(text);
+            Notify(sent ? "On your phone's clipboard" : "Your phone isn't connected", sent ? (text.Length > 60 ? text[..60] + "…" : text) : "Linc will send things again once it reconnects.");
+        }
+        catch (Exception ex) when (ex is LincException or System.Runtime.InteropServices.COMException or UnauthorizedAccessException)
+        {
+            Notify("Couldn't send", ex is LincException ? ex.Message : "Another app has the clipboard open — try again.");
+        }
+    }
+
+    private static void Notify(string title, string body)
+    {
+        try
+        {
+            Microsoft.Windows.AppNotifications.AppNotificationManager.Default.Show(
+                new Microsoft.Windows.AppNotifications.Builder.AppNotificationBuilder().AddText(title).AddText(body).BuildNotification());
+        }
+        catch (Exception)
+        {
+            // Notifications unavailable; nothing else to tell.
+        }
+    }
+
     public void ShowSharePage() => DispatcherQueue.TryEnqueue(() =>
     {
         AppWindow.Show();
