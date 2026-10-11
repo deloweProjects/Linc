@@ -69,7 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.linc.android.service.LinkStats
-import app.linc.android.ui.theme.LincDarkColorScheme
+import app.linc.android.ui.theme.SeedDarkColorScheme
 import app.linc.android.ui.theme.dynamicColorAvailable
 import kotlin.math.roundToInt
 
@@ -145,8 +145,8 @@ fun PcRemoteOverlay(state: RemoteUiState, actions: RemoteActions) {
     // like the rest of the app (the plain darkColorScheme() it used ignored the wallpaper).
     val context = LocalContext.current
     val scheme = remember(context) {
-        if (dynamicColorAvailable) runCatching { dynamicDarkColorScheme(context) }.getOrDefault(LincDarkColorScheme)
-        else LincDarkColorScheme
+        if (dynamicColorAvailable) runCatching { dynamicDarkColorScheme(context) }.getOrDefault(SeedDarkColorScheme)
+        else SeedDarkColorScheme
     }
     MaterialExpressiveTheme(colorScheme = scheme) {
         if (!state.visible) return@MaterialExpressiveTheme

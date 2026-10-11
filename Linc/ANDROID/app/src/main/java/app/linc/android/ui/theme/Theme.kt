@@ -2,114 +2,59 @@ package app.linc.android.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
+import app.linc.android.service.Explanations
+import app.linc.android.ui.kit.LocalShowExplanations
 
-// M19 E1 (owner's ruling): the phone follows the device's own colours. Material You dynamic
-// color drives this theme on Android 12+ (API 31), where the platform derives it from the user's
-// wallpaper; below that, and any time the platform cannot supply one, the app's own neutral
-// monochrome ramp below is used instead. M17a B1 had removed the dynamic path so the phone
-// matched the desktop's black-and-white; the owner has since ruled the other way — the phone
-// should look like the phone, and the DESKTOP follows it via UsePhoneColours (M18 B1), which
-// stays exactly as M18 built it.
+// 1.0.0.11 (D-082): Material 3 Expressive everywhere — MaterialExpressiveTheme with the expressive
+// motion scheme (springs) and the stock Expressive shapes. Colour stays M19 E1's ruling: the
+// phone's own Material You colours on Android 12+; otherwise the scheme generated from Linc's
+// indigo seed (SeedScheme.kt), which replaced the grey ramp the app used to fall back to.
 //
-// The neutral ramp is the same one the desktop shipped in M14 (Color.kt is a verbatim
-// transcription of MaterialExpressive.xaml), so with no dynamic colour the two apps still look
-// like one product.
-//
-// The theme payload the phone SENDS to the desktop is unaffected either way: that is built from
-// dynamicLightColorScheme/dynamicDarkColorScheme inside DeviceStatusReporter.themePayload() and
-// has never read this file (docs/DECISIONS.md D-011). The desktop's contrast clamp
-// (DynamicPalette, M18 B3) therefore still governs everything the desktop renders.
-
-internal val LincLightColorScheme = lightColorScheme(
-    primary = MdPrimaryLight,
-    onPrimary = MdOnPrimaryLight,
-    primaryContainer = MdPrimaryContainerLight,
-    onPrimaryContainer = MdOnPrimaryContainerLight,
-    secondaryContainer = MdSecondaryContainerLight,
-    onSecondaryContainer = MdOnSecondaryContainerLight,
-    tertiaryContainer = MdTertiaryContainerLight,
-    onTertiaryContainer = MdOnTertiaryContainerLight,
-    surface = MdSurfaceLight,
-    onSurface = MdOnSurfaceLight,
-    surfaceContainer = MdSurfaceContainerLight,
-    surfaceContainerHigh = MdSurfaceContainerHighLight,
-    surfaceVariant = MdSurfaceContainerLight,
-    onSurfaceVariant = MdOnSurfaceVariantLight,
-    outline = MdOutlineLight,
-    outlineVariant = MdOutlineVariantLight,
-    error = MdErrorLight,
-    errorContainer = MdErrorContainerLight,
-    onErrorContainer = MdOnErrorContainerLight,
-)
-
-internal val LincDarkColorScheme = darkColorScheme(
-    primary = MdPrimaryDark,
-    onPrimary = MdOnPrimaryDark,
-    primaryContainer = MdPrimaryContainerDark,
-    onPrimaryContainer = MdOnPrimaryContainerDark,
-    secondaryContainer = MdSecondaryContainerDark,
-    onSecondaryContainer = MdOnSecondaryContainerDark,
-    tertiaryContainer = MdTertiaryContainerDark,
-    onTertiaryContainer = MdOnTertiaryContainerDark,
-    surface = MdSurfaceDark,
-    onSurface = MdOnSurfaceDark,
-    surfaceContainer = MdSurfaceContainerDark,
-    surfaceContainerHigh = MdSurfaceContainerHighDark,
-    surfaceVariant = MdSurfaceContainerDark,
-    onSurfaceVariant = MdOnSurfaceVariantDark,
-    outline = MdOutlineDark,
-    outlineVariant = MdOutlineVariantDark,
-    error = MdErrorDark,
-    errorContainer = MdErrorContainerDark,
-    onErrorContainer = MdOnErrorContainerDark,
-)
-
-// M17a B1: one radius scale. Cards 20 dp, buttons/chips 12 dp — see Dimens.
-private val LincShapes = Shapes(
-    extraSmall = RoundedCornerShape(Dimens.radiusControl),
-    small = RoundedCornerShape(Dimens.radiusControl),
-    medium = RoundedCornerShape(Dimens.radiusCard),
-    large = RoundedCornerShape(Dimens.radiusCard),
-    extraLarge = RoundedCornerShape(Dimens.radiusCard),
-)
+// The theme payload the phone SENDS to the desktop is unaffected: DeviceStatusReporter builds it
+// from dynamicLightColorScheme/dynamicDarkColorScheme and never reads this file (D-011).
 
 /** True on Android 12+ (API 31), the first release that can derive a scheme from the wallpaper. */
 internal val dynamicColorAvailable: Boolean
     get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
+/** The scheme for [darkTheme]: wallpaper colours when the platform has them, else the seed's. */
+@Composable
+fun lincColorScheme(darkTheme: Boolean = isSystemInDarkTheme()): ColorScheme {
+    val context = LocalContext.current
+    val fallback = if (darkTheme) SeedDarkColorScheme else SeedLightColorScheme
+    if (!dynamicColorAvailable) return fallback
+    // A device can refuse to produce a scheme (no wallpaper colours yet, a stripped OEM build);
+    // the seed scheme is the right outcome then, never a crash.
+    return try {
+        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } catch (_: Exception) {
+        fallback
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LincTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
-    val fallback = if (darkTheme) LincDarkColorScheme else LincLightColorScheme
-    val scheme: ColorScheme = if (dynamicColorAvailable) {
-        // A device can refuse to produce a scheme (no wallpaper colours yet, a stripped OEM
-        // build). Falling through to the Linc ramp is the correct outcome and must never be a
-        // crash, so this catches rather than assuming the platform call always succeeds.
-        try {
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        } catch (_: Exception) {
-            fallback
-        }
-    } else {
-        fallback // API 30: the platform has no dynamic colour at all.
+    val showExplanations by Explanations.flow(context).collectAsState(initial = Explanations.get(context))
+    MaterialExpressiveTheme(
+        colorScheme = lincColorScheme(darkTheme),
+        motionScheme = MotionScheme.expressive(),
+    ) {
+        CompositionLocalProvider(LocalShowExplanations provides showExplanations, content = content)
     }
-
-    MaterialTheme(
-        colorScheme = scheme,
-        shapes = LincShapes,
-        content = content,
-    )
 }

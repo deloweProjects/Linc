@@ -1,0 +1,88 @@
+package app.linc.android.ui.theme
+
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.graphics.Color
+
+// GENERATED (1.0.0.11, D-082) from seed #4F5BD5 — Linc's indigo — as a Material "tonal spot"
+// scheme: tone = CIELAB L* (exactly M3's tone), hue/chroma in LCh. The fallback for phones with no
+// dynamic colour (Android 11, or a platform that refuses one); Android 12+ uses the wallpaper.
+// Regenerate rather than hand-edit.
+
+internal val SeedLightColorScheme = lightColorScheme(
+    primary = Color(0xFF4151C9),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFE4DFFF),
+    onPrimaryContainer = Color(0xFF001551),
+    inversePrimary = Color(0xFFC7BFFF),
+    secondary = Color(0xFF5E5B7A),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE4DFFF),
+    onSecondaryContainer = Color(0xFF1A1933),
+    tertiary = Color(0xFF894B62),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFD8E4),
+    onTertiaryContainer = Color(0xFF3C041E),
+    error = Color(0xFFC00301),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD1),
+    onErrorContainer = Color(0xFF360F00),
+    background = Color(0xFFFAF8FF),
+    onBackground = Color(0xFF1C1B23),
+    surface = Color(0xFFFAF8FF),
+    onSurface = Color(0xFF1C1B23),
+    surfaceVariant = Color(0xFFE3E0F3),
+    onSurfaceVariant = Color(0xFF474554),
+    surfaceTint = Color(0xFF4151C9),
+    inverseSurface = Color(0xFF312F38),
+    inverseOnSurface = Color(0xFFF1EFFB),
+    outline = Color(0xFF787585),
+    outlineVariant = Color(0xFFC7C4D6),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFFFAF8FF),
+    surfaceDim = Color(0xFFDBD9E4),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF4F2FE),
+    surfaceContainer = Color(0xFFEEECF8),
+    surfaceContainerHigh = Color(0xFFE9E7F2),
+    surfaceContainerHighest = Color(0xFFE3E1ED),
+)
+
+internal val SeedDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFC7BFFF),
+    onPrimary = Color(0xFF002780),
+    primaryContainer = Color(0xFF153AAD),
+    onPrimaryContainer = Color(0xFFE4DFFF),
+    inversePrimary = Color(0xFF4151C9),
+    secondary = Color(0xFFC7C2E6),
+    onSecondary = Color(0xFF2F2D49),
+    secondaryContainer = Color(0xFF464361),
+    onSecondaryContainer = Color(0xFFE4DFFF),
+    tertiary = Color(0xFFF9B3CA),
+    onTertiary = Color(0xFF551C33),
+    tertiaryContainer = Color(0xFF6E344A),
+    onTertiaryContainer = Color(0xFFFFD8E4),
+    error = Color(0xFFFFB4A1),
+    onError = Color(0xFF630E00),
+    errorContainer = Color(0xFF920500),
+    onErrorContainer = Color(0xFFFFDAD1),
+    background = Color(0xFF14121B),
+    onBackground = Color(0xFFE3E1ED),
+    surface = Color(0xFF14121B),
+    onSurface = Color(0xFFE3E1ED),
+    surfaceVariant = Color(0xFF474554),
+    onSurfaceVariant = Color(0xFFC7C4D6),
+    surfaceTint = Color(0xFFC7BFFF),
+    inverseSurface = Color(0xFFE3E1ED),
+    inverseOnSurface = Color(0xFF312F38),
+    outline = Color(0xFF918FA0),
+    outlineVariant = Color(0xFF474554),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFF393841),
+    surfaceDim = Color(0xFF14121B),
+    surfaceContainerLowest = Color(0xFF0F0D17),
+    surfaceContainerLow = Color(0xFF1C1B23),
+    surfaceContainer = Color(0xFF201F27),
+    surfaceContainerHigh = Color(0xFF2A2931),
+    surfaceContainerHighest = Color(0xFF35343D),
+)
