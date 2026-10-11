@@ -9,6 +9,14 @@ first.
 
 ## [Unreleased]
 
+### Added — 2026-10-11 — A Windows installer (1.0.0.11, D-085, D-086)
+
+- `Linc-Setup-<version>.exe`: installs for your account without an admin prompt, with Start menu and
+  optional desktop shortcut and "Start when I sign in". Linc updates itself through it from now on.
+- Uninstalling puts back the PC's microphone and display scale, removes Linc's Explorer entries and
+  asks whether to delete Linc's data.
+- The portable zip is still published.
+
 ### Changed — 2026-10-11 — A new look for the phone, Clipboard and Share pages on both apps (1.0.0.11, D-082–D-084)
 
 - The phone app is rebuilt in Material 3 Expressive: Home, Remote, Clipboard and Share tabs, with

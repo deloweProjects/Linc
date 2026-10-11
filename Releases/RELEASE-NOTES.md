@@ -15,6 +15,52 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.11 ("1.0.0-beta.11") — 2026-10-11
+
+Install both apps (protocol v24). **New: a proper Windows installer**, `Linc-Setup-1.0.0.11.exe` —
+no admin, upgrades itself from now on. Coming from 1.0.0.10 or earlier, run it once by hand (the old
+built-in updater couldn't install anything); your phones and settings are kept.
+
+**A new phone app.** Rebuilt in Material 3 Expressive with four tabs — Home, Remote, Clipboard,
+Share — and Settings behind the gear. It follows your wallpaper's colours (a new indigo theme on
+phones without them), works in light and dark, at large text sizes, and with predictive back.
+
+- **Remote** (was Tools) is a full-screen trackpad: tap to click, two-finger tap for right click,
+  two fingers to scroll, tap-then-drag to drag, Left and Right buttons, and sheets for the keyboard
+  (with Ctrl/Alt/Shift/Win and dictation), media and volume, presentations, Voice Access and the
+  microphone, and power and brightness. **The trackpad now works without Mirror PC** — before, the PC
+  ignored it unless Mirror PC was running, and taps and scrolling often didn't register at all.
+
+**Clipboard, on both apps.** Send text to the other device's clipboard, **Sync now**, and a
+searchable history of what you've copied — 500 items by default (100 or 2,000 in Settings), kept
+after restarts, grouped by day, with pin, copy and delete. Passwords and codes that apps mark as
+private are never saved or sent.
+
+**Share, on both apps.** Each says whether it's sending over Linc (fast, no prompts) or — when Linc
+isn't connected — with Quick Share, and picks by itself. Transfers show progress and can be retried.
+On the PC: drag files onto the Share page, the tray icon's new **Send to phone** menu, or right-click
+files in Explorer → **Send to phone (Linc)**. The tray icon shows when the phone isn't connected.
+
+**Connections that just work.**
+- Plugging in the USB cable while on Wi-Fi switches to the cable without disconnecting; unplugging it
+  goes back to Wi-Fi without a drop.
+- The phone reconnects as soon as it rejoins Wi-Fi, its screen comes on or you open Linc, and tries
+  the PC's last address first. The PC notices waking from sleep (it didn't on most laptops).
+- No more minutes of retrying an old hotspot address after the phone has gone; addresses that keep
+  failing are forgotten. The PC's log no longer repeats the same line over and over.
+
+**Also**
+- **Show explanations** (Settings → Appearance, in each app) hides the helper text once you know it.
+- The phone app checks for updates itself now (it never did), with a progress bar and a safety check.
+- Settings → Devices on the PC asks before removing a phone, the same way closing its tab does.
+- Uninstalling puts back the PC's microphone and display scale and asks whether to delete Linc's
+  data. VB-CABLE stays installed.
+
+Everything from 1.0.0.5–1.0.0.10 is included (adding and removing phones, Mirror PC on Intel and
+hybrid graphics, Voice Access hearing the phone, the phone as the PC's microphone, tablet mode).
+
+---
+
 ## 1.0.0.10 ("1.0.0-beta.10") — 2026-10-11
 
 (1.0.0.3 to 1.0.0.9 were local test builds and were never released.) Install both apps (protocol v23).

@@ -1341,3 +1341,39 @@ warnings, errors and blocked reasons always show. Phone: `Explanations` (prefs f
 `LocalShowExplanations` → `HelperText` (3 unit tests). PC: `IDeviceRegistry.ShowExplanations` +
 `Explain.IsHelp` attached property on explanatory TextBlocks (Clipboard, Share, Settings pages so
 far). Per app, no sync.
+
+## D-085: An Inno Setup installer, a self-update that works, and one release script
+
+**2026-10-11.** The desktop shipped as a 459-file, ~434 MB self-contained folder in a ~173 MB zip.
+
+- **`Linc-Setup-<ver>.exe` (Inno Setup 6, not MSIX):** per-user to `%LOCALAPPDATA%\Programs\Linc`
+  (fixed — the uninstaller removes that folder), no UAC; Start menu, optional desktop shortcut and
+  "Start with Windows" (the same Run entry Linc's setting writes; the app adopts it); licence and
+  `THIRD-PARTY-NOTICES.txt`; "Launch Linc". Stable AppId; an upgrade first asks a running 1.0.0.11+
+  Linc to exit through its own Exit (`--quit`, over the Explorer hand-off pipe), Restart Manager
+  (`CloseApplications=force`) as the fallback. Uninstall runs `--quit` then `--restore-and-exit`
+  (microphones, display scale, Explorer verbs, autostart) and asks whether to delete
+  `%LOCALAPPDATA%\Linc`; VB-CABLE stays.
+- **Self-update found broken:** 1.0.0.10's updater saved every download as `Linc-<ver>.tmp` and
+  shell-opened it — Windows can run neither a zip nor an exe named `.tmp`. Now the file keeps its
+  extension; a setup exe runs `/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS
+  /NORESTART` and Linc is started again (`[Run] … Check: WizardSilent`); a zip is shown in Explorer.
+  **Transition:** `update.json` `desktop.url` now points at the setup exe. Installs from 1.0.0.10 or
+  earlier still can't apply it themselves; the release notes and README tell them to run the setup
+  once. The portable zip stays as an asset.
+- **`Linc\tools\release.ps1`** stamps versions, builds/tests both apps and the pure harnesses, builds
+  installer + zip, writes `CHECKSUMS.txt`, `update.json` (no BOM — the phone's parser would choke on
+  one) and the notes header, fills "Linc prod" (rename-probe before deleting), and only with
+  `-Publish` pushes, creates the pre-release, uploads small assets first with retries, HEAD-checks
+  every URL and merges to main by PR.
+- No trimming/AOT and no size work beyond reporting sizes (the brief allowed only cleanroomsim-proven
+  wins; none were attempted).
+
+## D-086: Code signing — Certum Open Source recommended, wired to need only the certificate
+
+**2026-10-11.** Options, costs and eligibility: `Vibe/agent/design/code-signing.md`. Recommended:
+Certum Open Source Code Signing (cloud SimplySign) — cheap, open to individuals outside the US, and
+signs on the owner's PC; SignPath Foundation (free) needs builds from CI first; Azure Trusted Signing
+is likely unavailable to an individual in Zimbabwe; commercial OV/EV is the expensive fallback.
+`release.ps1` signs the exe, installer and uninstaller when `LINC_SIGN_THUMBPRINT` (or
+`LINC_SIGN_PFX` + password) is set. SmartScreen reputation still builds over time.
