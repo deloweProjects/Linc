@@ -47,6 +47,7 @@ class SocketServer(
     private val scope: CoroutineScope,
     private val statusPayload: (negotiatedVersion: Int) -> JsonObject,
     private val onSetClipboard: (String) -> Unit,
+    private val onClipboardGet: () -> Unit = {},
     private val onDesktopConnected: () -> Unit,
     private val onDismissNotification: (String) -> Unit,
     private val bulkFetch: (kind: String, id: String) -> ByteArray?,
@@ -94,6 +95,8 @@ class SocketServer(
         val input: DataInputStream,
         val output: DataOutputStream,
         val setTimeout: (Int) -> Unit,
+        /** Where this connection came from: null over ADB, the PC's address over Direct TLS. */
+        val tlsAddress: String? = null,
     )
 
     private var serverSocket: LocalServerSocket? = null
@@ -152,6 +155,7 @@ class SocketServer(
             DataInputStream(socket.getInputStream()),
             DataOutputStream(socket.getOutputStream()),
             { millis -> socket.soTimeout = millis },
+            tlsAddress = socket.inetAddress?.hostAddress,
         )
         try {
             dispatch(peer)
@@ -280,7 +284,13 @@ class SocketServer(
         try {
             val desktopApp = (hello.payload["app"] as? JsonPrimitive)?.contentOrNull ?: "desktop"
             val desktopVersion = (hello.payload["appVersion"] as? JsonPrimitive)?.contentOrNull ?: "?"
-            CompanionStateHolder.update(ServiceState.Connected(desktopApp, desktopVersion, negotiated))
+            val host = (hello.payload["host"] as? JsonPrimitive)?.contentOrNull
+            CompanionStateHolder.update(ServiceState.Connected(desktopApp, desktopVersion, negotiated, host))
+            CompanionStateHolder.setLink(CompanionStateHolder.Link(
+                if (peer.tlsAddress != null) CompanionStateHolder.Route.Direct else CompanionStateHolder.Route.Adb,
+                peer.tlsAddress,
+                System.currentTimeMillis(),
+            ))
             LogStore.log(LogLevel.INFO, "Connected to $desktopApp (protocol v$negotiated)")
 
             // Unsolicited phone -> desktop messages (clipboard, notifications) exist from v1 on.
@@ -318,6 +328,11 @@ class SocketServer(
                             onSetClipboard(text)
                         }
                         send(Envelope(type = MessageType.OK, replyTo = message.id))
+                    }
+                    // v24 (D-083): the PC's Sync now. Android lets Linc read the clipboard only
+                    // while Linc is open, so this answers then and is silently a no-op otherwise.
+                    MessageType.CLIPBOARD_GET -> if (negotiated >= 24) {
+                        onClipboardGet()
                     }
                     MessageType.NOTIFICATION_DISMISS -> {
                         val key = (message.payload["key"] as? JsonPrimitive)?.contentOrNull
@@ -669,6 +684,7 @@ class SocketServer(
             val remaining = liveControls.decrementAndGet()
             if (serverSocket != null && remaining == 0) {
                 CompanionStateHolder.update(ServiceState.Listening)
+                CompanionStateHolder.setLink(null)
                 LogStore.log(LogLevel.WARN, "Desktop disconnected")
                 // The PC may still be right there on another route (the cable just came out):
                 // dial it directly now rather than after the presence loop's wait.

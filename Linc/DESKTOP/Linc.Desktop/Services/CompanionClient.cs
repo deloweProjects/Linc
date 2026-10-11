@@ -100,6 +100,9 @@ public sealed class CompanionClient : IDisposable
         {
             ["app"] = "linc-desktop",
             ["appVersion"] = appVersion,
+            // 1.0.0.11: the PC's name for the phone's Home and Connection sheet. An optional field:
+            // older phones ignore unknown fields (PROTOCOL.md envelope rules).
+            ["host"] = Environment.MachineName,
             ["minV"] = ProtocolConstants.MinVersion,
             ["maxV"] = ProtocolConstants.Version,
         });

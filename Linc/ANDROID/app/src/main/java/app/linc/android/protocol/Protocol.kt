@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 23
+const val PROTOCOL_VERSION = 24
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -29,6 +29,7 @@ object MessageType {
     const val OK = "ok"
     const val CLIPBOARD_SET = "clipboard.set"
     const val CLIPBOARD_CHANGED = "clipboard.changed"
+    const val CLIPBOARD_GET = "clipboard.get"   // either direction: "send me your clipboard" (v24)
 
     // v2
     const val NOTIFICATION_POSTED = "notification.posted"

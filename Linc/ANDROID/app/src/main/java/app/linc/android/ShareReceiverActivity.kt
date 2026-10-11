@@ -13,6 +13,7 @@ import app.linc.android.service.LogLevel
 import app.linc.android.service.LogStore
 import app.linc.android.service.ShareSender
 import app.linc.android.service.ShareSizeLimits
+import app.linc.android.service.ShareStore
 import app.linc.android.service.resolveShareUris
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +53,10 @@ class ShareReceiverActivity : ComponentActivity() {
 
     private fun sendText(text: String) {
         val kind = if (URL_REGEX.matches(text)) "url" else "text"
+        // The PC puts shared text on its clipboard, so it belongs in the clipboard history too —
+        // and sharing to Linc is how text copied in other apps reaches the PC (D-083).
+        app.linc.android.service.ClipboardHistoryStore.init(this)
+        app.linc.android.service.ClipboardHistoryStore.record(text, fromPhone = true, sent = true)
         CompanionOutbox.trySend(
             Envelope(
                 type = MessageType.SHARE_ITEM,
@@ -94,7 +99,7 @@ class ShareReceiverActivity : ComponentActivity() {
         backgroundScope.launch {
             // Sequential, in selection order (B2.3) — not a new batch message.
             for (uri in uris) {
-                ShareSender.sendFile(appContext, uri)
+                ShareStore.send(appContext, uri)
             }
         }
     }

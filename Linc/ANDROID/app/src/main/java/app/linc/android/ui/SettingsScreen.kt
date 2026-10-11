@@ -1,351 +1,292 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package app.linc.android.ui
 
+import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
-import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import app.linc.android.R
-import app.linc.android.ui.theme.Dimens
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import app.linc.android.BuildConfig
 import app.linc.android.service.AdbArmOutcome
-import app.linc.android.service.UpdateSettings
 import app.linc.android.service.AdbArmRules
 import app.linc.android.service.AdbArming
-import app.linc.android.service.ConnectionWatch
 import app.linc.android.service.CallProvider
+import app.linc.android.service.ClipHistory
+import app.linc.android.service.ClipboardSettings
+import app.linc.android.service.ConnectionWatch
+import app.linc.android.service.Explanations
 import app.linc.android.service.LincNotificationListener
 import app.linc.android.service.MirrorSettings
+import app.linc.android.service.NfcTap
 import app.linc.android.service.SmsProvider
 import app.linc.android.service.TransportStore
-import kotlinx.coroutines.delay
+import app.linc.android.service.UpdateCheck
+import app.linc.android.service.UpdateSettings
+import app.linc.android.ui.kit.Chevron
+import app.linc.android.ui.kit.ConnectedChoice
+import app.linc.android.ui.kit.Kit
+import app.linc.android.ui.kit.LincScaffold
+import app.linc.android.ui.kit.SectionHeader
+import app.linc.android.ui.kit.SettingsGroup
+import app.linc.android.ui.kit.SettingsRow
+import app.linc.android.ui.kit.pagePadding
+import app.linc.android.ui.kit.rememberNotify
+import app.linc.android.ui.theme.LincTheme
 
+/**
+ * Settings (1.0.0.11, D-082): one grouped list, in the order of the spec — Connection, Features
+ * shared with the PC, Clipboard, Mirror PC, Appearance, Updates, Help & diagnostics, About.
+ * Every permission row is always present and says whether it is granted ("disable, never hide").
+ */
 @Composable
-fun SettingsScreen(onRerunSetup: () -> Unit, onOpenLogs: () -> Unit = {}) {
+fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () -> Unit) {
     val context = LocalContext.current
+    var tick by remember { mutableIntStateOf(0) }
+    // Poll the grants so rows update after a trip to Android's settings.
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_500); tick++ } }
+
+    var presence by remember { mutableStateOf(TransportStore.presenceEnabled(context)) }
+    var clipSync by remember { mutableStateOf(ClipboardSettings.syncEnabled(context)) }
+    var keepHistory by remember { mutableStateOf(ClipboardSettings.keepHistory(context)) }
+    var historySize by remember { mutableIntStateOf(ClipboardSettings.historySize(context)) }
+    var skipSensitive by remember { mutableStateOf(ClipboardSettings.skipSensitive(context)) }
     var quality by remember { mutableStateOf(MirrorSettings.get(context)) }
+    var pointer by remember { mutableStateOf(MirrorSettings.pointerMode(context)) }
+    var autoKeyboard by remember { mutableStateOf(MirrorSettings.autoKeyboard(context)) }
+    var phoneMic by remember { mutableStateOf(MirrorSettings.voicePhoneMic(context)) }
+    var updates by remember { mutableStateOf(UpdateSettings.updatesEnabled(context)) }
+    val explanations by Explanations.flow(context).collectAsState(initial = Explanations.get(context))
+    val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
+    val callPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
 
-    // Poll the grants so the rows update after a trip to Settings.
-    var notifAccess by remember { mutableStateOf(LincNotificationListener.isEnabled(context)) }
-    var wallpaperAccess by remember { mutableStateOf(Environment.isExternalStorageManager()) }
-    var presenceEnabled by remember { mutableStateOf(TransportStore.presenceEnabled(context)) }
-    var smsAccess by remember { mutableStateOf(SmsProvider.canRead(context)) }
-    val smsPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { smsAccess = SmsProvider.canRead(context) }
-    var callAccess by remember { mutableStateOf(CallProvider.canReadLog(context)) }
-    val callPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { callAccess = CallProvider.canReadLog(context) }
-    // M13c §2.1: the one-time WRITE_SECURE_SETTINGS grant, and whether adbd is armed right now.
-    var selfArmGranted by remember { mutableStateOf(AdbArming.isPermissionHeld(context)) }
-    var adbArmed by remember { mutableStateOf(AdbArming.isArmed(context)) }
-    // M19 C3: "Keep Linc up to date", default ON. The manifest address is a build-time constant
-    // now (UpdateSettings.MANIFEST_URL), so this flag is the only update setting there is.
-    var updatesEnabled by remember { mutableStateOf(UpdateSettings.updatesEnabled(context)) }
-    var batteryExempt by remember { mutableStateOf(ConnectionWatch.isBatteryExempt(context)) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            notifAccess = LincNotificationListener.isEnabled(context)
-            wallpaperAccess = Environment.isExternalStorageManager()
-            presenceEnabled = TransportStore.presenceEnabled(context)
-            smsAccess = SmsProvider.canRead(context)
-            callAccess = CallProvider.canReadLog(context)
-            selfArmGranted = AdbArming.isPermissionHeld(context)
-            adbArmed = AdbArming.isArmed(context)
-            batteryExempt = ConnectionWatch.isBatteryExempt(context)
-            delay(2_000)
-        }
-    }
+    val exempt = remember(tick) { ConnectionWatch.isBatteryExempt(context) }
+    val notifications = remember(tick) { LincNotificationListener.isEnabled(context) }
+    val sms = remember(tick) { SmsProvider.canRead(context) }
+    val calls = remember(tick) { CallProvider.canReadLog(context) }
+    val allFiles = remember(tick) { Environment.isExternalStorageManager() }
 
-    LincScreen(title = stringResource(R.string.nav_settings)) {
+    LincScaffold(title = "Settings", onBack = onBack) { inner ->
+        val notify = rememberNotify()
+        LazyColumn(contentPadding = pagePadding(inner, bottomExtra = 32.dp)) {
+            item { SectionHeader("Connection") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Background connection", s, LincSymbols.Wifi,
+                        supporting = "Find your PC on Wi-Fi by itself, without a cable.",
+                        trailing = { Switch(presence, { presence = it; TransportStore.savePresenceEnabled(context, it) }) }) },
+                    { s -> SettingsRow("Stay connected in the background", s, LincSymbols.BatteryAlert,
+                        value = if (exempt) "Allowed" else "Not allowed",
+                        supporting = if (exempt) null else "Android may cut the link to your PC when the screen is off.",
+                        onClick = if (exempt) null else ({ ConnectionWatch.requestBatteryExemption(context) }),
+                        trailing = if (exempt) null else ({ TextButton(onClick = { ConnectionWatch.requestBatteryExemption(context) }) { Text("Allow") } })) },
+                    { s -> SettingsRow("Phone maker's auto-start", s, LincSymbols.PowerOff,
+                        supporting = if (ConnectionWatch.hasMakerBackgroundManager) "This phone has its own battery manager — turn Linc on there too."
+                        else "Opens Linc's app info, where background use can be checked.",
+                        onClick = { ConnectionWatch.openMakerBackgroundSettings(context) }, trailing = { Chevron() }) },
+                    { s -> SettingsRow("Hotspot quick link", s, LincSymbols.Hotspot,
+                        value = when {
+                            !AdbArming.isPermissionHeld(context) -> "Not set up"
+                            AdbArming.isArmed(context) -> "Ready — wireless debugging is on"
+                            else -> "Ready"
+                        },
+                        supporting = if (!AdbArming.isPermissionHeld(context)) AdbArmRules.describe(AdbArmOutcome.DENIED)
+                        else "Your PC connects the moment you share a hotspot either way.") },
+                ))
+            }
 
-        LincCard(title = stringResource(R.string.settings_permissions_header)) {
-            // The usual cause of "connects, then drops" over Wi-Fi: with the screen off Android
-            // (and harder still, some makers' battery managers) freezes a non-exempt app.
-            GrantRow(
-                granted = batteryExempt,
-                onText = "Stay connected in the background: allowed.",
-                offText = "Stay connected in the background: Android may cut Linc's Wi-Fi link to the PC when the screen is off.",
-                actionLabel = "Allow",
-                onAction = { ConnectionWatch.requestBatteryExemption(context) },
-            )
-            GrantRow(
-                granted = notifAccess,
-                onText = stringResource(R.string.notif_access_on),
-                offText = stringResource(R.string.notif_access_off),
-                actionLabel = stringResource(R.string.notif_access_action),
-                onAction = {
-                    try {
-                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    } catch (_: ActivityNotFoundException) {
-                        // No settings screen on this OEM build; nothing else we can do.
-                    }
-                },
-            )
-            GrantRow(
-                granted = wallpaperAccess,
-                onText = stringResource(R.string.wallpaper_access_on),
-                offText = stringResource(R.string.wallpaper_access_off),
-                actionLabel = stringResource(R.string.wallpaper_access_action),
-                onAction = {
-                    try {
-                        context.startActivity(Intent(
-                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            Uri.fromParts("package", context.packageName, null),
-                        ))
-                    } catch (_: ActivityNotFoundException) {
-                        runCatching {
-                            context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                        }
-                    }
-                },
-            )
-            GrantRow(
-                granted = smsAccess,
-                onText = stringResource(R.string.sms_access_on),
-                offText = stringResource(R.string.sms_access_off),
-                actionLabel = stringResource(R.string.sms_access_action),
-                onAction = {
-                    smsPermission.launch(arrayOf(
-                        android.Manifest.permission.READ_SMS,
-                        android.Manifest.permission.SEND_SMS,
-                        android.Manifest.permission.RECEIVE_SMS,
-                    ))
-                },
-            )
-            GrantRow(
-                granted = callAccess,
-                onText = stringResource(R.string.call_access_on),
-                offText = stringResource(R.string.call_access_off),
-                actionLabel = stringResource(R.string.call_access_action),
-                onAction = {
-                    callPermission.launch(arrayOf(
-                        android.Manifest.permission.READ_CALL_LOG,
-                        android.Manifest.permission.CALL_PHONE,
-                        android.Manifest.permission.READ_PHONE_STATE,
-                        android.Manifest.permission.ANSWER_PHONE_CALLS,
-                    ))
-                },
-            )
+            item { SectionHeader("Features shared with your PC") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> GrantRow(s, "Notifications", LincSymbols.Notifications, notifications,
+                        "Your PC shows this phone's notifications.") { openSafely(context, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } },
+                    { s -> GrantRow(s, "Messages", LincSymbols.Sms, sms, "Read and send texts from your PC.") {
+                        smsPermission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)) } },
+                    { s -> GrantRow(s, "Calls", LincSymbols.Call, calls, "See calls and dial from your PC.") {
+                        callPermission.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.CALL_PHONE,
+                            Manifest.permission.READ_PHONE_STATE, Manifest.permission.ANSWER_PHONE_CALLS)) } },
+                    { s -> SettingsRow("Clipboard sync", s, LincSymbols.Clipboard,
+                        supporting = "Copy on one device, paste on the other.",
+                        trailing = { Switch(clipSync, { clipSync = it; ClipboardSettings.setSyncEnabled(context, it) }) }) },
+                    { s -> GrantRow(s, "All files access", LincSymbols.Folder, allFiles,
+                        "Send files to your PC, browse this phone's files from it, and show its wallpaper.") { openAllFilesSettings(context) } },
+                ))
+            }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(
-                        if (presenceEnabled) R.string.presence_on else R.string.presence_off),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = presenceEnabled,
-                    onCheckedChange = {
-                        presenceEnabled = it
-                        TransportStore.savePresenceEnabled(context, it)
-                    },
+            item { SectionHeader("Clipboard") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Keep history", s, LincSymbols.History,
+                        supporting = if (keepHistory) "Saved on this phone only." else "Clips sync but aren't kept.",
+                        trailing = { Switch(keepHistory, { keepHistory = it; ClipboardSettings.setKeepHistory(context, it) }) }) },
+                    { s -> SettingsRow("History size", s, LincSymbols.ClearAll, value = "%,d items".format(historySize), enabled = keepHistory) },
+                    { s -> SettingsRow("Don't save sensitive copies", s, LincSymbols.VisibilityOff,
+                        supporting = "Passwords and codes apps mark as sensitive are never saved or sent.",
+                        trailing = { Switch(skipSensitive, { skipSensitive = it; ClipboardSettings.setSkipSensitive(context, it) }) }) },
+                ))
+            }
+            item {
+                ConnectedChoice(
+                    options = ClipHistory.SIZES.map { it to "%,d".format(it) },
+                    selected = historySize,
+                    onSelect = { historySize = it; ClipboardSettings.setHistorySize(context, it) },
+                    enabled = keepHistory,
+                    modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 8.dp),
                 )
             }
-        }
 
-        // M13c 2.1: disable, don't hide. The instant-hotspot-link card is always visible and
-        // always says why it can't work, rather than vanishing on a phone whose OEM refused
-        // the one-time grant. There is no toggle here on purpose - arming is something the
-        // PC asks for over the protocol, not a switch that silently changes the device.
-        LincCard(title = stringResource(R.string.settings_hotspot_header)) {
-            Text(
-                when {
-                    !selfArmGranted -> AdbArmRules.describe(AdbArmOutcome.DENIED)
-                    adbArmed -> "Ready. Wireless debugging is on, so your PC connects the moment " +
-                        "you share a hotspot either way."
-                    else -> "Ready. Linc will switch wireless debugging on for you when your PC asks."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                // Not-granted is informational, not an error: red here made a normal,
-                // perfectly usable phone look broken.
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        NfcTapCard()
-
-        LincCard(title = stringResource(R.string.settings_mirror_header)) {
-            Text(
-                quality.blurb,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                MirrorSettings.Quality.entries.forEach { option ->
-                    FilterChip(
-                        modifier = Modifier.heightIn(min = Dimens.touchTarget),
-                        selected = quality == option,
-                        onClick = {
-                            quality = option
-                            MirrorSettings.set(context, option)
-                        },
-                        label = { Text(option.label) },
-                    )
+            item { SectionHeader("Mirror PC") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Picture quality", s, LincSymbols.Tune, value = quality.label, supporting = quality.blurb) },
+                    { s -> SettingsRow("Pointer", s, LincSymbols.Mouse,
+                        value = if (pointer == MirrorSettings.PointerMode.TOUCH) "Touch — the pointer goes where you touch" else "Mouse — drag like a trackpad") },
+                    { s -> SettingsRow("Keyboard on text fields", s, LincSymbols.Keyboard,
+                        supporting = "Show the keyboard when a text box on the PC is selected.",
+                        trailing = { Switch(autoKeyboard, { autoKeyboard = it; MirrorSettings.setAutoKeyboard(context, it) }) }) },
+                ))
+            }
+            item {
+                Column(Modifier.padding(horizontal = Kit.gutter, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ConnectedChoice(MirrorSettings.Quality.entries.map { it to it.label }, quality, { quality = it; MirrorSettings.set(context, it) })
+                    ConnectedChoice(listOf(MirrorSettings.PointerMode.TOUCH to "Touch", MirrorSettings.PointerMode.MOUSE to "Mouse"),
+                        pointer, { pointer = it; MirrorSettings.setPointerMode(context, it) })
+                    Text("Which microphone the PC hears", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+                    ConnectedChoice(listOf(true to "This phone", false to "The PC's own"), phoneMic,
+                        { phoneMic = it; MirrorSettings.setVoicePhoneMic(context, it) })
                 }
             }
-            Text(
-                "Applies the next time you open Mirror PC.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
 
-        // M19 C3: one switch, default ON. Off means the update code path cannot execute at all -
-        // no request, no UI, nothing in the logs - and the card then says where to get updates by
-        // hand instead. There is nothing else to configure: the address is baked into the build.
-        LincCard(title = stringResource(R.string.settings_updates_header)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_updates_label),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = updatesEnabled,
-                    onCheckedChange = {
-                        updatesEnabled = it
-                        UpdateSettings.setUpdatesEnabled(context, it)
-                    },
-                )
+            item { SectionHeader("Appearance") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Show explanations", s, LincSymbols.Info,
+                        supporting = "The short lines that explain each setting. Warnings and errors always show.",
+                        trailing = { Switch(explanations, { Explanations.set(context, it) }) }) },
+                ))
             }
-            Text(
-                stringResource(
-                    if (updatesEnabled) R.string.settings_updates_on
-                    else R.string.settings_updates_off
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
 
-        LincCard(title = stringResource(R.string.settings_about_header)) {
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
-                onClick = onOpenLogs,
-            ) {
-                Text(stringResource(R.string.action_view_logs))
+            item { SectionHeader("Updates") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Keep Linc up to date", s, LincSymbols.SystemUpdate,
+                        supporting = if (updates) "Linc checks for a new version when you open it." else "Get new versions from ${UpdateSettings.RELEASES_URL}",
+                        trailing = { Switch(updates, { updates = it; UpdateSettings.setUpdatesEnabled(context, it) }) }) },
+                    { s -> SettingsRow("Check now", s, LincSymbols.Refresh, enabled = updates,
+                        onClick = { UpdateCheck.check(context, force = true) { notify(it) } }, trailing = { Chevron() }) },
+                ))
             }
-            TextButton(
-                modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
-                onClick = onRerunSetup,
-            ) {
-                Text(stringResource(R.string.action_rerun_setup))
+
+            item { SectionHeader("Help & diagnostics") }
+            item {
+                val nfc = (context as? android.app.Activity)?.let { NfcTap.isSupported(it) } == true
+                SettingsGroup(rows = listOfNotNull(
+                    { s -> SettingsRow("Logs", s, LincSymbols.Logs, supporting = "What Linc has been doing.", onClick = onOpenLogs, trailing = { Chevron() }) },
+                    { s -> SettingsRow("Copy log", s, LincSymbols.Copy,
+                        supporting = "A report to paste to whoever is helping you.",
+                        onClick = {
+                            context.getSystemService(ClipboardManager::class.java)
+                                .setPrimaryClip(ClipData.newPlainText("Linc log", ConnectionWatch.report(context)))
+                            notify("Log copied")
+                        }) },
+                    if (nfc) { s -> NfcRow(s) } else null,
+                    { s -> SettingsRow("Run setup again", s, LincSymbols.Restart, onClick = onRerunSetup, trailing = { Chevron() }) },
+                ))
+            }
+
+            item { SectionHeader("About") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Linc for Android", s, LincSymbols.Smartphone, value = "Version ${BuildConfig.VERSION_NAME}") },
+                ))
             }
         }
     }
 }
 
-/**
- * M17a B1: one row shape for every permission - the granted sentence, or the ungranted
- * sentence plus the button that fixes it. "Disable, never hide" is unchanged: the row is
- * always present either way, and it always says which state it is in.
- */
+/** A permission row: granted state as the value, and the fix as a button when not granted. */
 @Composable
 private fun GrantRow(
+    segment: app.linc.android.ui.kit.Segment,
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     granted: Boolean,
-    onText: String,
-    offText: String,
-    actionLabel: String,
-    onAction: () -> Unit,
+    what: String,
+    fix: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
-        Text(
-            if (granted) onText else offText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (granted) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-        )
-        if (!granted) {
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
-                onClick = onAction,
-            ) {
-                Text(actionLabel)
-            }
-        }
-    }
+    SettingsRow(
+        title = title,
+        segment = segment,
+        icon = icon,
+        value = if (granted) "Allowed" else "Not allowed",
+        supporting = what,
+        onClick = if (granted) null else fix,
+        trailing = if (granted) null else ({ FilledTonalButton(onClick = fix) { Text("Allow") } }),
+    )
 }
 
-/**
- * Tap-to-connect: write a cheap NFC sticker once, put it by the PC, and tapping it connects Linc
- * straight away. Hidden entirely on a phone with no NFC, rather than showing a dead button.
- */
 @Composable
-private fun NfcTapCard() {
+private fun NfcRow(segment: app.linc.android.ui.kit.Segment) {
     val activity = LocalContext.current as? android.app.Activity ?: return
-    if (!app.linc.android.service.NfcTap.isSupported(activity)) return
-    val state by app.linc.android.service.NfcTap.writeState.collectAsState()
-    DisposableEffect(Unit) {
-        onDispose { app.linc.android.service.NfcTap.cancelWrite(activity) }
-    }
-    LincCard(title = "Tap to connect (NFC)") {
-        Text(
-            when (val s = state) {
-                app.linc.android.service.NfcTap.WriteState.Idle ->
-                    "Stick a blank NFC tag (NTAG213 or bigger) by your PC. Write it once here, then tapping " +
-                        "your phone on it connects Linc instantly — no need to open the app."
-                app.linc.android.service.NfcTap.WriteState.Waiting ->
-                    "Hold the tag against the back of the phone…"
-                app.linc.android.service.NfcTap.WriteState.Written ->
-                    "Done. Put the tag by your PC and tap your phone on it to connect."
-                is app.linc.android.service.NfcTap.WriteState.Failed -> s.reason
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (state is app.linc.android.service.NfcTap.WriteState.Failed) MaterialTheme.colorScheme.error
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-            if (state == app.linc.android.service.NfcTap.WriteState.Waiting) {
-                OutlinedButton(
-                    modifier = Modifier.heightIn(min = Dimens.touchTarget),
-                    onClick = { app.linc.android.service.NfcTap.cancelWrite(activity) },
-                ) { Text("Cancel") }
-            } else {
-                OutlinedButton(
-                    modifier = Modifier.heightIn(min = Dimens.touchTarget),
-                    onClick = {
-                        app.linc.android.service.NfcTap.resetWriteState()
-                        app.linc.android.service.NfcTap.beginWrite(activity)
-                    },
-                ) { Text(if (state == app.linc.android.service.NfcTap.WriteState.Written) "Write another tag" else "Write a tag") }
-            }
-        }
-    }
+    val state by NfcTap.writeState.collectAsState()
+    DisposableEffect(Unit) { onDispose { NfcTap.cancelWrite(activity) } }
+    SettingsRow(
+        title = "Tap to connect (NFC tag)",
+        segment = segment,
+        icon = LincSymbols.Nfc,
+        value = when (val s = state) {
+            NfcTap.WriteState.Idle -> null
+            NfcTap.WriteState.Waiting -> "Hold the tag against the back of the phone…"
+            NfcTap.WriteState.Written -> "Done — put the tag by your PC"
+            is NfcTap.WriteState.Failed -> s.reason
+        },
+        supporting = "Write a blank NFC tag once; tapping it connects Linc without opening the app.",
+        onClick = {
+            if (state == NfcTap.WriteState.Waiting) NfcTap.cancelWrite(activity)
+            else { NfcTap.resetWriteState(); NfcTap.beginWrite(activity) }
+        },
+        trailing = { Text(if (state == NfcTap.WriteState.Waiting) "Cancel" else "Write", color = androidx.compose.material3.MaterialTheme.colorScheme.primary) },
+    )
 }
+
+private fun openSafely(context: android.content.Context, intent: Intent) {
+    try { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: ActivityNotFoundException) { /* no screen on this OEM build */ }
+}
+
+
+@Preview(name = "Settings — light", widthDp = 360, heightDp = 2400)
+@Composable
+private fun SettingsPreviewLight() = LincTheme(darkTheme = false) { SettingsScreen({}, {}, {}) }
+
+@Preview(name = "Settings — dark", widthDp = 411, heightDp = 2400)
+@Composable
+private fun SettingsPreviewDark() = LincTheme(darkTheme = true) { SettingsScreen({}, {}, {}) }
+
+@Preview(name = "Settings — large font", widthDp = 360, heightDp = 3200, fontScale = 2f)
+@Composable
+private fun SettingsPreviewLargeFont() = LincTheme { SettingsScreen({}, {}, {}) }

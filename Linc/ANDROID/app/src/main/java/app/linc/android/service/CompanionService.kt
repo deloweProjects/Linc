@@ -34,6 +34,7 @@ class CompanionService : Service() {
     override fun onCreate() {
         super.onCreate()
         LogStore.init(this)
+        ClipboardHistoryStore.init(this)
         createNotificationChannel()
     }
 
@@ -64,6 +65,7 @@ class CompanionService : Service() {
                 scope,
                 statusPayload = { negotiatedVersion -> DeviceStatusReporter.payload(this, negotiatedVersion) },
                 onSetClipboard = { text -> ClipboardBridge.applyFromDesktop(this, text) },
+                onClipboardGet = { ClipboardBridge.onPcAsked(this) },
                 onDesktopConnected = { LincNotificationListener.instance?.pushActiveNotifications() },
                 onDismissNotification = { key -> LincNotificationListener.instance?.dismiss(key) },
                 bulkFetch = { kind, id ->

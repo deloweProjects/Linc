@@ -28,17 +28,47 @@ object ShareSender {
 
     private const val OUTBOX = "/sdcard/Download/Linc/outbox"
 
-    /** Returns true when the file was staged and announced (the PC pulls it over the files channel). */
-    fun sendFile(context: Context, uri: Uri): Boolean {
+    sealed interface Result {
+        /** Staged and announced to a connected PC, which pulls it now. */
+        data object Sent : Result
+        /** Staged; no PC connected, so it is collected when the PC reconnects (outbox sweep). */
+        data object Staged : Result
+        data class Failed(val reason: String) : Result
+    }
+
+    /**
+     * Copy [uri] into Linc's outbox ([onProgress] 0..1 as it copies), then announce it; the PC pulls
+     * it over the files channel. Never fails silently: every failure says why (D-083).
+     */
+    fun sendFile(context: Context, uri: Uri, onProgress: (Float) -> Unit = {}): Result {
+        if (!android.os.Environment.isExternalStorageManager()) {
+            return Result.Failed("Linc needs All files access to hand files to your PC")
+        }
         val name = displayName(context, uri) ?: "shared-file"
-        val dest = File(File(OUTBOX).apply { mkdirs() }, name)
+        val total = sizeOf(context, uri)
+        val outbox = File(OUTBOX).apply { mkdirs() }
+        val dest = File(outbox, name)
         val staged = runCatching {
             context.contentResolver.openInputStream(uri)?.use { input ->
-                dest.outputStream().use { input.copyTo(it) }
-            } ?: return false
+                dest.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        output.write(buffer, 0, n)
+                        copied += n
+                        if (total > 0) onProgress((copied.toFloat() / total).coerceIn(0f, 1f))
+                    }
+                }
+            } ?: return Result.Failed("Couldn't open $name")
         }.isSuccess
         if (!staged) {
-            return false
+            return Result.Failed("Couldn't copy $name — is the phone's storage full?")
+        }
+        if (!CompanionOutbox.canSend(10)) {
+            LogStore.log(LogLevel.INFO, "Staged a file for the PC to collect when it reconnects")
+            return Result.Staged
         }
         CompanionOutbox.trySend(
             Envelope(
@@ -51,6 +81,23 @@ object ShareSender {
             requiredVersion = 10,
         )
         LogStore.log(LogLevel.INFO, "Sent a file to the PC")
+        return Result.Sent
+    }
+
+    /** Text or a link to the PC over Linc (`share.item` text/url, v10). False when not connected. */
+    fun sendText(text: String): Boolean {
+        if (text.isBlank() || !CompanionOutbox.canSend(10)) return false
+        val kind = if (Regex("^https?://\\S+$").matches(text.trim())) "url" else "text"
+        CompanionOutbox.trySend(
+            Envelope(
+                type = MessageType.SHARE_ITEM,
+                payload = buildJsonObject {
+                    put("kind", kind)
+                    put("text", text.trim())
+                },
+            ),
+            requiredVersion = 10,
+        )
         return true
     }
 
