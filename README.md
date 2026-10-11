@@ -99,8 +99,8 @@ Full detail per version: [`Releases/RELEASE-NOTES.md`](Releases/RELEASE-NOTES.md
 Linc keeps itself up to date from `Releases/update.json` in this repo: an installed Linc updates in
 place (it closes, updates and restarts by itself). Turn that off in **Settings → Updates**.
 
-**Updating from 1.0.0.10 or earlier:** those builds can't install an update themselves (their
-updater was broken). Run `Linc-Setup` once; from then on updates are automatic. Your phones, history
+**Updating from 1.0.0.2 (the previous release) or a local test build:** those can't install an
+update themselves (their updater was broken). Run `Linc-Setup` once; from then on updates are automatic. Your phones, history
 and settings are kept — they live in `%LOCALAPPDATA%\Linc`, not in the program folder.
 
 ## First connection

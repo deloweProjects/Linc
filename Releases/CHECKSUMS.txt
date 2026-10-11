@@ -1,39 +1,18 @@
-﻿Linc - SHA256 checksums
-=======================
+Linc builds - SHA256 checksums
+==============================
 
-Verify a download on Windows with:
+Verify before running:  Get-FileHash <filename> -Algorithm SHA256
 
-    certutil -hashfile <filename> SHA256
+1.0.0.11 ("1.0.0-beta.11", 2026-10-11) - GitHub release v1.0.0.11.
 
-or in PowerShell:
+7C88C52C1BC7B742711CB1B7347CD0B0281B459CC9B5F8CD00E17C51A782C941  Linc-Setup-1.0.0.11.exe
+18389155C87383FBD324D78EFBE1EEBF3AEDA1AFE979D9F46A14A4251DBC4EB3  Linc-Desktop-1.0.0.11-2026-10-11.zip
+BB2D3FBC35CFD2DFFDEC98F23B0ED93535B6C1DBA9466D92EE5D8B33312FF0C6  Linc-Companion-1.0.0.11-2026-10-11.apk
 
-    Get-FileHash <filename> -Algorithm SHA256
+Linc-Setup installs Linc for your Windows account (no admin). The zip is the same app, portable.
 
-The hash you get must match the line below exactly. If it does not, the file is
-damaged or has been tampered with - do not run it.
+File sizes (bytes):
 
-
-1.0.0.10 ("1.0.0-beta.10", 2026-10-10, release v1.0.0.10):
-
-7E74DBF8E6C368CAFD68D6F38E75FCDD1F2A3B5E055C7FCE1C087312E0C43848  Linc-Desktop-1.0.0.10-2026-10-11.zip
-5423B97EAFD9E5E75D1335729E49F659BCF4C3BFC182D3AFD498668543471E0C  Linc-Companion-1.0.0.10-2026-10-11.apk
-
-1.0.0.2 ("1.0.0-beta.2", 2026-10-10, release v1.0.0.2):
-
-46B4226886EFA0674DA7418E772FA940C97D006A5FD2C01EEFB6CC6C55D856FA  Linc-Desktop-1.0.0.2-2026-10-10.zip
-AB2039D25C8DABAA22ADCBC18FC087AF63D4B52958FF42C1E7B5FF361F203B33  Linc-Companion-1.0.0.2-2026-10-10.apk
-
-1.0.0-beta.1 (release v1.0.0-beta.1):
-
-11E251A1DB9498F1B2DAFBCDB4D598AA34EF0DA7440D10957246129D6802FA65  Linc-Desktop-1.0.0-beta.1.zip
-1DE9609F32EFD3E252FDD7CC60BF2F201FC68989BD84506B4E307D5CD16A5DCA  Linc-Companion-1.0.0-beta.1.apk
-
-
-File sizes (bytes), as a second check:
-
-    Linc-Desktop-1.0.0.10-2026-10-11.zip     173214780
-    Linc-Companion-1.0.0.10-2026-10-11.apk    29825230
-    Linc-Desktop-1.0.0.2-2026-10-10.zip     173163761
-    Linc-Companion-1.0.0.2-2026-10-10.apk    29762309
-    Linc-Desktop-1.0.0-beta.1.zip     170997273
-    Linc-Companion-1.0.0-beta.1.apk   25584537
+    Linc-Setup-1.0.0.11.exe                      117,957,576
+    Linc-Desktop-1.0.0.11-2026-10-11.zip         173,504,322
+    Linc-Companion-1.0.0.11-2026-10-11.apk        30,469,395

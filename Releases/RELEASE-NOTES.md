@@ -18,8 +18,8 @@ display names only — the update check ignores anything after a `-`.
 ## 1.0.0.11 ("1.0.0-beta.11") — 2026-10-11
 
 Install both apps (protocol v24). **New: a proper Windows installer**, `Linc-Setup-1.0.0.11.exe` —
-no admin, upgrades itself from now on. Coming from 1.0.0.10 or earlier, run it once by hand (the old
-built-in updater couldn't install anything); your phones and settings are kept.
+no admin, upgrades itself from now on. Coming from 1.0.0.2 (the last published build), run it once
+by hand (the old built-in updater couldn't install anything); your phones and settings are kept.
 
 **A new phone app.** Rebuilt in Material 3 Expressive with four tabs — Home, Remote, Clipboard,
 Share — and Settings behind the gear. It follows your wallpaper's colours (a new indigo theme on
@@ -56,8 +56,9 @@ files in Explorer → **Send to phone (Linc)**. The tray icon shows when the pho
 - Uninstalling puts back the PC's microphone and display scale and asks whether to delete Linc's
   data. VB-CABLE stays installed.
 
-Everything from 1.0.0.5–1.0.0.10 is included (adding and removing phones, Mirror PC on Intel and
-hybrid graphics, Voice Access hearing the phone, the phone as the PC's microphone, tablet mode).
+1.0.0.3 to 1.0.0.10 were never published; everything in them is included — see their notes below
+(adding and removing phones, Mirror PC on Intel and hybrid graphics, Voice Access and the phone as
+the PC's microphone, tablet mode, the PC Remote bubble and keyboard).
 
 ---
 

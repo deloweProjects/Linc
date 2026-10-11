@@ -80,8 +80,8 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 Step "Stamping $Version into both apps"
 $csproj = Join-Path $Desktop 'Linc.Desktop.csproj'
 $text = [System.IO.File]::ReadAllText($csproj)
-foreach ($tag in 'Version', 'AssemblyVersion', 'FileVersion', 'InformationalVersion') {
-    $text = [regex]::Replace($text, "<$tag>[^<]*</$tag>", "<$tag>$Version</$tag>")
+foreach ($element in 'Version', 'AssemblyVersion', 'FileVersion', 'InformationalVersion') {
+    $text = [regex]::Replace($text, "<$element>[^<]*</$element>", "<$element>$Version</$element>")
 }
 WriteText $csproj $text
 $gradle = Join-Path $Android 'app\build.gradle.kts'
@@ -108,9 +108,9 @@ if (Get-Process Linc.Desktop -ErrorAction SilentlyContinue | Where-Object { $_.P
     Fail "a Linc built from this repo is running; quit it from the tray first (your installed Linc can stay running)"
 }
 Run $MSBuild @($csproj, '-restore', '-t:Publish', '-p:PublishProfile=Beta', '-p:Configuration=Release', '-p:Platform=x64', '-v:m', '-nologo') 'The desktop publish'
-$publish = Join-Path $Desktop 'bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish'
+$publishDir = Join-Path $Desktop 'bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish'
 foreach ($must in 'Linc.Desktop.exe', 'Linc.Desktop.pri', 'Assets\companion.apk', 'vcruntime140.dll') {
-    if (-not (Test-Path (Join-Path $publish $must))) { Fail "the publish is missing $must (see Beta.pubxml)" }
+    if (-not (Test-Path (Join-Path $publishDir $must))) { Fail "the publish is missing $must (see Beta.pubxml)" }
 }
 
 if (-not $SkipTests) {
@@ -135,13 +135,13 @@ if ($env:LINC_SIGN_PFX -or $env:LINC_SIGN_THUMBPRINT) {
         "`"$($signtool.FullName)`" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /sha1 $env:LINC_SIGN_THUMBPRINT"
     }
     Step "Signing Linc.Desktop.exe"
-    cmd /c "$sign `"$(Join-Path $publish 'Linc.Desktop.exe')`""
+    cmd /c "$sign `"$(Join-Path $publishDir 'Linc.Desktop.exe')`""
     if ($LASTEXITCODE -ne 0) { Fail "signing Linc.Desktop.exe failed" }
 }
 
 # --------------------------------------------------------------------------------------------
 Step "Building $SetupName"
-$isccArgs = @("/DAppVersion=$Version", "/DDisplayName=$DisplayName", "/DSourceDir=$publish", "/DOutputDir=$Out", '/Q')
+$isccArgs = @("/DAppVersion=$Version", "/DDisplayName=$DisplayName", "/DSourceDir=$publishDir", "/DOutputDir=$Out", '/Q')
 if ($sign) { $isccArgs += @('/DSign', "/Slinc=$sign `$f") }
 $isccArgs += (Join-Path $LincDir 'installer\Linc.iss')
 Run $Iscc $isccArgs 'The installer build'
@@ -149,7 +149,7 @@ Run $Iscc $isccArgs 'The installer build'
 Step "Building the portable zip"
 $folder = Join-Path $Out $FolderName
 if (Test-Path $folder) { Remove-Item $folder -Recurse -Force }
-Copy-Item $publish $folder -Recurse
+Copy-Item $publishDir $folder -Recurse
 $zip = Join-Path $Out $ZipName
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -157,7 +157,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $setup = Join-Path $Out $SetupName
 $apkOut = Join-Path $Out $ApkName
-$files = Get-ChildItem $publish -Recurse -File
+$files = Get-ChildItem $publishDir -Recurse -File
 Write-Host ("Publish folder: {0:N0} files, {1:N0} MB.  Setup: {2:N1} MB.  Zip: {3:N1} MB.  APK: {4:N1} MB." -f `
     $files.Count, (($files | Measure-Object Length -Sum).Sum / 1MB), ((Size $setup) / 1MB), ((Size $zip) / 1MB), ((Size $apkOut) / 1MB))
 
@@ -187,15 +187,21 @@ File sizes (bytes):
 WriteText (Join-Path $Releases 'CHECKSUMS.txt') $checksums
 WriteText (Join-Path $Out 'CHECKSUMS.txt') $checksums
 
+# Edited in place, value by value, so the file keeps its layout and comments (PowerShell 5.1's
+# ConvertTo-Json rewrites the whole thing). minimumSupported is never touched.
 $manifestPath = Join-Path $Releases 'update.json'
-$manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$manifest.latest = $Version
-if ($Notes) { $manifest.notes = $Notes }
-$manifest.desktop.url = "$base/$SetupName"
-$manifest.desktop.sha256 = Sha256 $setup
-$manifest.android.url = "$base/$ApkName"
-$manifest.android.sha256 = Sha256 $apkOut
-WriteText $manifestPath (($manifest | ConvertTo-Json -Depth 5) -replace '\\u0027', "'" -replace '\\u003c', '<' -replace '\\u003e', '>')
+$json = [System.IO.File]::ReadAllText($manifestPath)
+function SetJson([string] $pattern, [string] $value) {
+    $script:json = [regex]::Replace($script:json, $pattern, { param($m) $m.Groups[1].Value + $value + '"' }.GetNewClosure(), 'Singleline')
+}
+SetJson '("latest"\s*:\s*")[^"]*"' $Version
+if ($Notes) { SetJson '("notes"\s*:\s*")[^"]*"' ($Notes -replace '"', "'") }
+SetJson '("desktop"\s*:\s*\{\s*"url"\s*:\s*")[^"]*"' "$base/$SetupName"
+SetJson '("desktop"\s*:\s*\{\s*"url"\s*:\s*"[^"]*",\s*"sha256"\s*:\s*")[^"]*"' (Sha256 $setup)
+SetJson '("android"\s*:\s*\{\s*"url"\s*:\s*")[^"]*"' "$base/$ApkName"
+SetJson '("android"\s*:\s*\{\s*"url"\s*:\s*"[^"]*",\s*"sha256"\s*:\s*")[^"]*"' (Sha256 $apkOut)
+$null = $json | ConvertFrom-Json   # fail loudly if the edit broke the JSON
+WriteText $manifestPath $json
 
 $notesPath = Join-Path $Releases 'RELEASE-NOTES.md'
 $notesText = [System.IO.File]::ReadAllText($notesPath)
@@ -218,14 +224,15 @@ $kept = @()
 Get-ChildItem $ProdDir | Where-Object {
     $_.Name -match '^Linc-(Desktop|Companion|Setup)-' -and $_.Name -notmatch [regex]::Escape($Version)
 } | ForEach-Object {
-    if ($_.PSIsContainer) {
+    $item = $_   # inside catch, $_ is the error record
+    if ($item.PSIsContainer) {
         # Rename-probe: a folder an exe or adb server is running from can't be renamed.
-        $probe = "$($_.FullName).probe"
-        try { Rename-Item $_.FullName $probe -ErrorAction Stop; Rename-Item $probe $_.FullName -ErrorAction Stop }
-        catch { $kept += $_.Name; return }
-        Remove-Item $_.FullName -Recurse -Force
+        $probe = "$($item.FullName).probe"
+        try { Rename-Item $item.FullName $probe -ErrorAction Stop; Rename-Item $probe $item.FullName -ErrorAction Stop }
+        catch { $kept += $item.Name; return }
+        try { Remove-Item $item.FullName -Recurse -Force -ErrorAction Stop } catch { $kept += $item.Name }
     } else {
-        try { Remove-Item $_.FullName -Force -ErrorAction Stop } catch { $kept += $_.Name }
+        try { Remove-Item $item.FullName -Force -ErrorAction Stop } catch { $kept += $item.Name }
     }
 }
 if ($kept) { Write-Host "Left in place because in use: $($kept -join ', ')" -ForegroundColor Yellow }

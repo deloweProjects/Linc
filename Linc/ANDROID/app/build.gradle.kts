@@ -18,8 +18,8 @@ android {
         // InformationalVersion exactly, because M17b's update check compares against it.
         // Numeric four-part versions from 1.0.0.2 on (M20 A2): "1.0.0-beta.2" is only the display
         // name; the update check compares these numbers, and a "-beta.N" suffix would be ignored.
-        versionCode = 11
-        versionName = "1.0.0.10"
+        versionCode = 12
+        versionName = "1.0.0.11"
     }
 
     buildTypes {
