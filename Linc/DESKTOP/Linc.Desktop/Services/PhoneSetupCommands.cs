@@ -44,12 +44,32 @@ public static class PhoneSetupCommands
         }
         // All-files access (D-021) backs wallpaper, the files channel and photos.
         plan.Add($"appops set {package} MANAGE_EXTERNAL_STORAGE allow");
+        plan.AddRange(UpkeepPlan(package));
         // M13c §2.1 — last, deliberately: it is the newest and least essential of these, and
         // ordering it after the rest means a phone whose OEM blocks it still gets everything
         // that came before.
         plan.Add($"pm grant {package} {SelfArmPermission}");
         return plan;
     }
+
+    /// <summary>Lets the phone notice a copy made in another app (D-075). A "development" permission: <c>pm grant</c> works.</summary>
+    public const string ClipboardLogPermission = "android.permission.READ_LOGS";
+
+    /// <summary>
+    /// Grants added after a phone may already have been set up, re-run on every ADB connect (once
+    /// per phone per session) so an existing install gets them too. Idempotent like the rest.
+    /// <para>
+    /// Background clipboard (D-075): Android 10+ lets only the focused app read the clipboard.
+    /// READ_LOGS lets the phone see the system's "denied clipboard access" line the moment
+    /// something is copied, and the overlay grant lets it put up an invisible window for the
+    /// instant it takes to read the clip. Both can only be granted over ADB.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<string> UpkeepPlan(string package) =>
+    [
+        $"pm grant {package} {ClipboardLogPermission}",
+        $"appops set {package} SYSTEM_ALERT_WINDOW allow",
+    ];
 
     /// <summary>True when a command in a plan is the self-arm grant.</summary>
     public static bool IsSelfArmGrant(string command) =>

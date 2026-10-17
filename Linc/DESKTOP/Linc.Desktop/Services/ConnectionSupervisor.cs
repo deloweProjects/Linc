@@ -864,14 +864,15 @@ public sealed class ConnectionSupervisor(
                 // M15a Part B: the one number nobody had — how long from the first unanswered
                 // probe to the link actually being marked dead. Logged on every real drop, so the
                 // next measurement needs no instrumentation run, just the log.
-                var confirmMs = _firstProbeFailureUtc is { } since
-                    ? (int)(DateTime.UtcNow - since).TotalMilliseconds
-                    : -1;
+                // A drop with no failed probe behind it (the transport closed under us, or the PC
+                // lost its network) has no detection time to report; it used to log "-1 ms".
+                log.Log(LogLevel.Warn, _firstProbeFailureUtc is { } since
+                    ? $"Connection dropped; will reconnect automatically. Detection took " +
+                      $"{(int)(DateTime.UtcNow - since).TotalMilliseconds} ms from the first failed probe " +
+                      $"(health poll {HealthInterval.TotalSeconds:0} s, 3 failures to confirm, 3 s apart)."
+                    : "Connection dropped; will reconnect automatically. The link closed before any " +
+                      "health probe failed.");
                 _firstProbeFailureUtc = null;
-                log.Log(LogLevel.Warn,
-                    $"Connection dropped; will reconnect automatically. Detection took {confirmMs} ms " +
-                    $"from the first failed probe (health poll {HealthInterval.TotalSeconds:0} s, " +
-                    "3 failures to confirm, 3 s apart).");
                 // A genuine link death is the one thing an override must not survive silently.
                 if (dying is { } dead && ManualTransport == dead)
                 {

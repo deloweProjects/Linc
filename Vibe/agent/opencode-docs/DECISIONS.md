@@ -992,3 +992,32 @@ with the screen off Android (and harder still, makers' battery managers) can fre
   reasons for Linc's last process deaths (`getHistoricalProcessExitReasons`), and the log, which is
   now also kept in a ~256 KB file so it survives the app being killed. **Logs → Copy log** (PC)
   copies Linc's version, Windows and the last two days of the PC log.
+
+## D-074: A hardware encoder is per adapter; a failed mirror start must give the screen back
+
+**2026-10-17.** Owner pasted a PC log (1.0.0.7, Windows 26300; two Intel UHD adapters, one with the
+display, and a Quick Sync H.264 MFT for each). Mirror PC never started: the first attempt failed
+`START_OF_STREAM` with `0xC00D3E85` (`MF_E_HW_MFT_FAILED_START_STREAMING`), every retry after it
+with `E_INVALIDARG`.
+
+- **Encoder choice.** A hardware MFT only takes textures from its own adapter, named in
+  `MFT_ENUM_ADAPTER_LUID`. `PcVideoEncoder` took MFTEnumEx's first hit, which on this PC can be the
+  displayless adapter's. It now orders encoders on the capture device's adapter first
+  (`PcScreenCapture.AdapterLuid`) and falls through to the next one when one won't start, logging
+  each refusal. D-039 (hardware only) stands.
+- **Cleanup on failure.** Nothing disposed the capture when the encoder threw, and DXGI allows one
+  Desktop Duplication per output per process, so the leak *was* the `E_INVALIDARG` ("the calling
+  application is already duplicating this desktop output"). `PcMirrorSource`, `PcScreenCapture` and
+  `PcVideoEncoder` now release what they built before rethrowing.
+- **Log honesty.** A drop with no failed probe no longer reports "Detection took -1 ms"; an empty
+  WinRT Bluetooth error shows its HRESULT; "Phone connected directly" names the peer, to explain a
+  burst of a dozen of them 100 ms apart while connected (cause not yet known — next log).
+- **Harness debt paid (found by the CI session's first Linux run).** `PcVoiceAccess` and
+  `VirtualCablePackage` resolved `LocalApplicationData` themselves (cleanroomsim); they now take
+  `IDeviceRegistry.RootPath` at startup, so `--data-root` is honoured. `updatesim` check 7 had
+  `1.0.0-beta.1` hard-coded as "shipped"; it now reads `<Version>` from the csproj and only requires
+  `minimumSupported` not to exceed it. `QsConnection.SafeName` spells out Windows' invalid name
+  characters instead of trusting the host OS's list.
+
+Not verified on the owner's hardware yet: the encoder fallback needs a multi-adapter PC.
+

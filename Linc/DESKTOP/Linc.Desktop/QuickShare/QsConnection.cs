@@ -661,11 +661,16 @@ public sealed class QsConnection : IAsyncDisposable
     // ---- file naming ------------------------------------------------------------------------
 
     /// <summary>The sender chooses the name; never let it choose the folder.</summary>
+    private static readonly char[] WindowsInvalidNameChars =
+        ['<', '>', ':', '"', '/', '\\', '|', '?', '*', .. Enumerable.Range(0, 32).Select(c => (char)c)];
+
     public static string SafeName(string? name)
     {
         // Take the last path segment by hand: Path.GetFileName would read "a:b" as a drive.
         var leaf = (name ?? "").Replace('\\', '/').Split('/').Last();
-        foreach (var bad in Path.GetInvalidFileNameChars())
+        // Windows' rules, spelled out: the name is a Windows file name whatever OS checks it,
+        // and Path.GetInvalidFileNameChars on Linux lists only '/' and NUL (so "a:b" survived).
+        foreach (var bad in Path.GetInvalidFileNameChars().Concat(WindowsInvalidNameChars))
         {
             leaf = leaf.Replace(bad, '_');
         }

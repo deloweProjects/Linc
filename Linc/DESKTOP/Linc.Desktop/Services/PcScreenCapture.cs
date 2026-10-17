@@ -61,21 +61,48 @@ public sealed class PcScreenCapture : IDisposable
         Device = device ?? throw new LincException("This PC's graphics device couldn't be opened for mirroring.");
         Context = Device.ImmediateContext;
 
-        // The MFT encodes on its own thread while we capture on ours; both touch this device.
-        using (var multithread = device.QueryInterface<ID3D11Multithread>())
-            multithread.SetMultithreadProtected(true);
-
-        using var dxgiDevice = device.QueryInterface<IDXGIDevice>();
-        using var adapter = dxgiDevice.GetAdapter();
-        adapter.EnumOutputs((uint)displayIndex, out IDXGIOutput? output).CheckError();
-        if (output is null)
-            throw new LincException($"This PC has no display {displayIndex} to mirror.");
-        using (output)
+        try
         {
-            using var output1 = output.QueryInterface<IDXGIOutput1>();
-            _duplication = output1.DuplicateOutput(Device);
+            // The MFT encodes on its own thread while we capture on ours; both touch this device.
+            using (var multithread = device.QueryInterface<ID3D11Multithread>())
+                multithread.SetMultithreadProtected(true);
+
+            using var dxgiDevice = device.QueryInterface<IDXGIDevice>();
+            using var adapter = dxgiDevice.GetAdapter();
+            AdapterLuid = LuidToInt64(adapter.Description.Luid);
+            adapter.EnumOutputs((uint)displayIndex, out IDXGIOutput? output).CheckError();
+            if (output is null)
+                throw new LincException($"This PC has no display {displayIndex} to mirror.");
+            using (output)
+            {
+                using var output1 = output.QueryInterface<IDXGIOutput1>();
+                _duplication = output1.DuplicateOutput(Device);
+            }
+        }
+        catch
+        {
+            // Nothing else will release the device, and a leaked duplication is worse: DXGI
+            // allows one per output per process, so every later attempt to mirror this display
+            // fails with E_INVALIDARG ("the calling application is already duplicating this
+            // desktop output") until the app restarts.
+            Context.Dispose();
+            Device.Dispose();
+            throw;
         }
     }
+
+    /// <summary>
+    /// The LUID of the adapter this capture runs on, as Media Foundation stores it
+    /// (<c>MFT_ENUM_ADAPTER_LUID</c>, low part in the low 32 bits). A hardware encoder only
+    /// works with textures from its own adapter — see <see cref="PcVideoEncoder"/>.
+    /// </summary>
+    public long AdapterLuid { get; }
+
+    /// <summary>Reads DXGI's 8-byte LUID struct as one integer, whatever the binding calls it.</summary>
+    private static long LuidToInt64<T>(T luid) where T : unmanaged =>
+        System.Runtime.CompilerServices.Unsafe.SizeOf<T>() == sizeof(long)
+            ? System.Runtime.CompilerServices.Unsafe.As<T, long>(ref luid)
+            : 0;
 
     /// <summary>Enumerate attached displays for the phone's display picker (<c>pc.displays</c>).</summary>
     public static IReadOnlyList<PcDisplay> Enumerate()

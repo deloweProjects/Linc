@@ -9,6 +9,18 @@ first.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-17 — Mirror PC on PCs with more than one graphics adapter (D-074)
+
+- **Mirror PC starts on multi-GPU PCs.** Linc picks the hardware encoder on the same adapter as the
+  screen, and tries the next one if it won't start, instead of always the first one listed.
+- **One failed start no longer breaks every later one.** A failed start now releases the screen
+  capture; before, every retry failed with "The parameter is incorrect" until Linc restarted.
+- Clearer PC log: no more "Detection took -1 ms"; Bluetooth errors show their code; direct
+  connections show where they came from.
+- The voice-access mic note and the VB-CABLE download now live under the store root (honours
+  `--data-root`). `updatesim` reads the shipped version from the csproj. Quick Share file names are
+  cleaned to Windows rules on any OS.
+
 ### Fixed — 2026-10-10 — Mirror PC no longer freezes on the bubble; faster start; Voice Access sets up its own microphone (D-071, D-072)
 
 - **Tapping the PC Remote bubble no longer kills Linc.** It was an ANR, not a crash: the bubble's

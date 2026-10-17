@@ -40,8 +40,16 @@ public static class VirtualCablePackage
     /// </summary>
     public const string Sha256 = "B950E39F01AF1D04EA623C8F6D8EB9B6EA5C477C637295FABF20631C85116BFB";
 
+    /// <summary>
+    /// The store root (<see cref="IDeviceRegistry.RootPath"/>), set once at startup. D-057: only
+    /// DeviceRegistry resolves LocalApplicationData, so a <c>--data-root</c> run or a harness never
+    /// writes into the owner's real store (cleanroomsim guards this).
+    /// </summary>
+    public static string? StoreRoot { get; set; }
+
     public static string Folder => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Linc", "drivers", "vb-cable-45");
+        StoreRoot ?? throw new InvalidOperationException("VirtualCablePackage.StoreRoot was never set."),
+        "drivers", "vb-cable-45");
 
     public static bool HashMatches(ReadOnlySpan<byte> data, string expectedHex) =>
         expectedHex.Length == 64 &&

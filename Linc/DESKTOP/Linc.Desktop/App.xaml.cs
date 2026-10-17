@@ -199,6 +199,11 @@ public partial class App : Application
             }
             _window = new MainWindow();
             MainWindowInstance = _window;
+            // D-057: the cable driver and the mic-restore note live under the store root, which
+            // only the registry resolves.
+            var storeRoot = Services.GetRequiredService<IDeviceRegistry>().RootPath;
+            VirtualCablePackage.StoreRoot = storeRoot;
+            PcVoiceAccess.StoreRoot = storeRoot;
             // D-071: a phone-mic session cut short by a crash or a kill left the virtual cable as
             // the default microphone; put the user's own back. COM, so off the UI thread.
             var restoreLog = Services.GetRequiredService<ILogService>();
