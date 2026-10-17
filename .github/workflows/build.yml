@@ -91,3 +91,32 @@ jobs:
           name: linc-desktop-x64-debug
           path: Linc/DESKTOP/Linc.Desktop/bin/x64/Debug/
           if-no-files-found: error
+
+      # packagesim and cleanroomsim inspect and launch the real Beta publish output.
+      - name: Publish desktop app (Beta)
+        run: msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
+
+      # Each harness exits 0 when green and 1 when not (CONTRIBUTING.md), and must run from Linc/.
+      # Skipped: they need a real phone, Bluetooth adapter or live hotspot link, none of which a
+      # runner has.
+      - name: Run tools/ harnesses
+        shell: pwsh
+        working-directory: Linc
+        run: |
+          $skip = @('probe', 'desktopsim', 'blescan', 'hotspotprobe')
+          $results = @()
+          foreach ($dir in Get-ChildItem tools -Directory) {
+            if ($skip -contains $dir.Name) { $results += "| $($dir.Name) | skipped (needs hardware) |"; continue }
+            $exe = Get-ChildItem "$($dir.FullName)\bin" -Recurse -Filter 'linc-*.exe' |
+              Where-Object { $_.FullName -notmatch '\\publish\\' } | Select-Object -First 1
+            Write-Host "::group::$($dir.Name)"
+            $proc = Start-Process $exe.FullName -NoNewWindow -PassThru
+            $null = $proc.Handle  # without this, ExitCode can come back empty
+            if (-not $proc.WaitForExit(300000)) { $proc.Kill($true); $code = 'timeout' } else { $code = $proc.ExitCode }
+            Write-Host "::endgroup::"
+            $status = if ($code -eq 0) { 'pass' } else { "**FAIL** ($code)" }
+            if ($code -ne 0) { Write-Host "::error::$($dir.Name) failed ($code)" }
+            $results += "| $($dir.Name) | $status |"
+          }
+          "| Harness | Result |`n|---|---|`n$($results -join "`n")" >> $env:GITHUB_STEP_SUMMARY
+          if ($results -match 'FAIL') { exit 1 }
