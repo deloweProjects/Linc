@@ -84,13 +84,24 @@ public sealed class PcMirrorSource : IDisposable
         _frameIntervalMs = 1000 / framesPerSecond;
         _capture = new PcScreenCapture(displayIndex);
 
-        // The encoder needs the frame size up front, and only an acquired frame can be trusted
-        // for that (see PcScreenCapture), so prime the capture before constructing it.
-        if (!PrimeCapture())
-            throw new LincException("Couldn't read this PC's screen to start mirroring.");
+        try
+        {
+            // The encoder needs the frame size up front, and only an acquired frame can be trusted
+            // for that (see PcScreenCapture), so prime the capture before constructing it.
+            if (!PrimeCapture())
+                throw new LincException("Couldn't read this PC's screen to start mirroring.");
 
-        _encoder = new PcVideoEncoder(_capture.Device, _capture.Width, _capture.Height,
-            framesPerSecond, bitrate);
+            _encoder = new PcVideoEncoder(_capture.Device, _capture.AdapterLuid,
+                _capture.Width, _capture.Height, framesPerSecond, bitrate, log);
+        }
+        catch
+        {
+            // A failed start must give the display back. The duplication is one-per-output
+            // per process, so leaking it here turned one encoder failure into E_INVALIDARG on
+            // every retry for the rest of the session (field log, 1.0.0.7).
+            _capture.Dispose();
+            throw;
+        }
         _log.Log(LogLevel.Info,
             $"PC mirror: {_capture.Width}x{_capture.Height} @ {framesPerSecond} fps via {_encoder.EncoderName}");
     }

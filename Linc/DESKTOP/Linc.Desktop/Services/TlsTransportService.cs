@@ -255,7 +255,12 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
                     return;
                 }
             }
-            log.Log(LogLevel.Info, "Phone connected directly (no ADB)");
+            // Say which socket and whether a dial-back was pending: a field log (1.0.0.7) showed a
+            // dozen of these 100 ms apart while already connected, and from the bare line there was
+            // no telling repeat control dials from dial-backs that missed their waiter.
+            log.Log(LogLevel.Info,
+                $"Phone connected directly (no ADB) from {client.Client.RemoteEndPoint}" +
+                (_channelWaiters.IsEmpty ? "" : $"; {_channelWaiters.Count} channel dial-back(s) pending but this connection sent no header"));
             // Read the endpoint here, while the TcpClient is still in scope — this is the only
             // point in the process where it is reachable at all (M13b §2, v18).
             ControlArrived?.Invoke(ssl, client.Client.RemoteEndPoint as IPEndPoint);
