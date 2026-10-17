@@ -907,8 +907,8 @@ try
 
     var indepLog = new SilentLog();
     using var indepService = new AppLaunchService(indepLog, SpawnIndependent);
-    var indepErrors = new List<string>();
-    indepService.ErrorRaised += msg => indepErrors.Add(msg);
+    var indepErrors = new System.Collections.Concurrent.ConcurrentQueue<string>(); // raised on a process-exit thread, read here while polling
+    indepService.ErrorRaised += msg => indepErrors.Enqueue(msg);
 
     await indepService.LaunchAsync(Serial, "com.example.survivorA", "SurvivorA", pixel7);
     await indepService.LaunchAsync(Serial, "com.example.survivorB", "SurvivorB", pixel7);
@@ -922,7 +922,12 @@ try
     // an abrupt external death, exactly what B3.3 says must not cascade.
     standIns[2].Kill(entireProcessTree: true);
     var waitedIndep = 0;
-    while (indepService.OpenWindowCount == 3 && waitedIndep < 5000)
+    // Wait for the error too, not just the count: the service drops the entry first and raises
+    // ErrorRaised only after saving geometry and disposing, so checking the moment the count
+    // fell read the error list too early on a fast runner (CI, 2026-10-17).
+    while ((indepService.OpenWindowCount == 3 ||
+            !indepErrors.Any(e => e.Contains("closed unexpectedly", StringComparison.OrdinalIgnoreCase)))
+           && waitedIndep < 5000)
     {
         await Task.Delay(50);
         waitedIndep += 50;
