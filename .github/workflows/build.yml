@@ -1,0 +1,90 @@
+# Builds both halves of Linc on every push and pull request.
+#
+# - android: the phone app (assembleDebug + unit tests) on Linux.
+# - windows: the WinUI desktop app and the tools/ harnesses on Windows. It runs after
+#   android because Linc.Desktop.csproj bundles app-debug.apk when it exists, so the
+#   desktop build ships the APK from the same commit.
+#
+# Per CONTRIBUTING.md, WinUI needs Visual Studio's MSBuild (plain `dotnet build` lacks the
+# PRI packaging tasks), so the windows job uses MSBuild throughout.
+
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Linc/ANDROID
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # gradlew is committed without the executable bit, so run it through bash.
+      - name: Build APK and run unit tests
+        run: bash gradlew assembleDebug testDebugUnitTest --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linc-android-debug-apk
+          path: Linc/ANDROID/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-test-reports
+          path: Linc/ANDROID/app/build/reports/tests/
+
+  windows:
+    needs: android
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linc-android-debug-apk
+          path: Linc/ANDROID/app/build/outputs/apk/debug
+
+      - name: Build desktop app (x64)
+        run: msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -p:Configuration=Debug -p:Platform=x64 -v:m
+
+      - name: Build tools/ harnesses
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($proj in Get-ChildItem Linc\tools\*\*.csproj) {
+            Write-Host "::group::$($proj.Directory.Name)"
+            msbuild $proj.FullName -restore -p:Configuration=Debug -v:m
+            if ($LASTEXITCODE -ne 0) { $failed += $proj.Directory.Name }
+            Write-Host "::endgroup::"
+          }
+          if ($failed) { Write-Error "Failed: $($failed -join ', ')"; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linc-desktop-x64-debug
+          path: Linc/DESKTOP/Linc.Desktop/bin/x64/Debug/
+          if-no-files-found: error
