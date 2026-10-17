@@ -93,13 +93,17 @@ jobs:
           if-no-files-found: error
 
       # packagesim and cleanroomsim inspect and launch the real Beta publish output.
-      # Beta.pubxml looks for the VC++ redist under VS Community; the runner has Enterprise, so
-      # point it at whichever VS install is present.
+      # Beta.pubxml looks for the VC++ redist under VS 18 Community, set inside its target so a
+      # command-line property can't override it. The runner has Enterprise, so link the
+      # Community path to whichever VS install is present.
       - name: Publish desktop app (Beta)
         shell: pwsh
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 "-p:_VcRedistBase=$vs\VC\Redist\MSVC" -v:m
+          Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC1*.CRT\vcruntime140.dll" | ForEach-Object FullName
+          $community = 'C:\Program Files\Microsoft Visual Studio\18\Community'
+          if (-not (Test-Path $community)) { New-Item -ItemType Junction -Path $community -Target $vs | Out-Null }
+          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
 
       # Each harness exits 0 when green and 1 when not (CONTRIBUTING.md), and must run from Linc/.
       # Skipped: they need a real phone, Bluetooth adapter or live hotspot link, none of which a
