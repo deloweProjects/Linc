@@ -390,7 +390,14 @@ public sealed class ConnectionSupervisor(
     {
         while (!ct.IsCancellationRequested)
         {
-            try { await Task.Delay(SpotInterval, ct); } catch (OperationCanceledException) { return; }
+            try
+            {
+                await Task.Delay(SpotInterval, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return; // the supervisor was disposed: stop spotting
+            }
             if (State is not LinkState.Searching || registry.PairedSerial is not { } active) continue;
             if (registry.KnownDevices.FirstOrDefault(d => d.Serial == active) is not { WifiMacs.Count: > 0 }) continue;
 
