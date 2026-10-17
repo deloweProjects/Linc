@@ -333,8 +333,16 @@ public sealed class PcVoiceAccess : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// The store root (<see cref="IDeviceRegistry.RootPath"/>), set once at startup — see
+    /// <see cref="VirtualCablePackage.StoreRoot"/> for why it is not resolved here.
+    /// </summary>
+    public static string? StoreRoot { get; set; }
+
+    // Every caller already treats a file error as "nothing to restore", which an unset root is too.
     private static string RestoreFile => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Linc", "voiceaccess-restore-mic.txt");
+        StoreRoot ?? throw new InvalidOperationException("PcVoiceAccess.StoreRoot was never set."),
+        "voiceaccess-restore-mic.txt");
 
     private static void WriteRestoreFile(string id)
     {
