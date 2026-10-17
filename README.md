@@ -1,4 +1,6 @@
-# Linc
+<p align="center"><img src="Assets/linc-icon.png" alt="Linc icon" width="128" height="128"></p>
+
+<h1 align="center">Linc</h1>
 
 **Your Android phone, on your PC — files, screen, notifications, clipboard, calls — over a cable or
 your own Wi-Fi, with nothing in between.**
