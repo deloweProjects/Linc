@@ -1,0 +1,122 @@
+# Builds both halves of Linc on every push and pull request.
+#
+# - android: the phone app (assembleDebug + unit tests) on Linux.
+# - windows: the WinUI desktop app and the tools/ harnesses on Windows. It runs after
+#   android because Linc.Desktop.csproj bundles app-debug.apk when it exists, so the
+#   desktop build ships the APK from the same commit.
+#
+# Per CONTRIBUTING.md, WinUI needs Visual Studio's MSBuild (plain `dotnet build` lacks the
+# PRI packaging tasks), so the windows job uses MSBuild throughout.
+
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Linc/ANDROID
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # gradlew is committed without the executable bit, so run it through bash.
+      - name: Build APK and run unit tests
+        run: bash gradlew assembleDebug testDebugUnitTest --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linc-android-debug-apk
+          path: Linc/ANDROID/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-test-reports
+          path: Linc/ANDROID/app/build/reports/tests/
+
+  windows:
+    needs: android
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linc-android-debug-apk
+          path: Linc/ANDROID/app/build/outputs/apk/debug
+
+      - name: Build desktop app (x64)
+        run: msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -p:Configuration=Debug -p:Platform=x64 -v:m
+
+      - name: Build tools/ harnesses
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($proj in Get-ChildItem Linc\tools\*\*.csproj) {
+            Write-Host "::group::$($proj.Directory.Name)"
+            # WinUI harnesses (appgridprobe) declare <Platforms> and need one picked, like the app.
+            $platform = @()
+            if (Select-String -Path $proj.FullName -Pattern '<Platforms>' -Quiet) { $platform = @('-p:Platform=x64') }
+            msbuild $proj.FullName -restore -p:Configuration=Debug @platform -v:m
+            if ($LASTEXITCODE -ne 0) { $failed += $proj.Directory.Name }
+            Write-Host "::endgroup::"
+          }
+          if ($failed) { Write-Error "Failed: $($failed -join ', ')"; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linc-desktop-x64-debug
+          path: Linc/DESKTOP/Linc.Desktop/bin/x64/Debug/
+          if-no-files-found: error
+
+      # packagesim and cleanroomsim inspect and launch the real Beta publish output.
+      - name: Publish desktop app (Beta)
+        run: msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
+
+      # Each harness exits 0 when green and 1 when not (CONTRIBUTING.md), and must run from Linc/.
+      # Skipped: they need a real phone, Bluetooth adapter or live hotspot link, none of which a
+      # runner has.
+      - name: Run tools/ harnesses
+        shell: pwsh
+        working-directory: Linc
+        run: |
+          $skip = @('probe', 'desktopsim', 'blescan', 'hotspotprobe')
+          $results = @()
+          foreach ($dir in Get-ChildItem tools -Directory) {
+            if ($skip -contains $dir.Name) { $results += "| $($dir.Name) | skipped (needs hardware) |"; continue }
+            $exe = Get-ChildItem "$($dir.FullName)\bin" -Recurse -Filter 'linc-*.exe' |
+              Where-Object { $_.FullName -notmatch '\\publish\\' } | Select-Object -First 1
+            Write-Host "::group::$($dir.Name)"
+            $proc = Start-Process $exe.FullName -NoNewWindow -PassThru
+            $null = $proc.Handle  # without this, ExitCode can come back empty
+            if (-not $proc.WaitForExit(300000)) { $proc.Kill($true); $code = 'timeout' } else { $code = $proc.ExitCode }
+            Write-Host "::endgroup::"
+            $status = if ($code -eq 0) { 'pass' } else { "**FAIL** ($code)" }
+            if ($code -ne 0) { Write-Host "::error::$($dir.Name) failed ($code)" }
+            $results += "| $($dir.Name) | $status |"
+          }
+          "| Harness | Result |`n|---|---|`n$($results -join "`n")" >> $env:GITHUB_STEP_SUMMARY
+          if ($results -match 'FAIL') { exit 1 }
