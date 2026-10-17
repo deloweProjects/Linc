@@ -1009,7 +1009,9 @@ try
         await gracefulService.LaunchAsync(Serial, "com.example.graceful", "Graceful", pixel7);
         var waitedForHwnd = 0;
         gracefulProc!.Refresh();
-        while (gracefulProc.MainWindowHandle == IntPtr.Zero && waitedForHwnd < 3000)
+        // 15 s, not 3: a fresh CI VM measured 1.7 s on one run and over 3 s on two others for
+        // Character Map's first window (2026-10-17). The wait only ends early; it proves nothing.
+        while (gracefulProc.MainWindowHandle == IntPtr.Zero && waitedForHwnd < 15000)
         {
             await Task.Delay(50);
             waitedForHwnd += 50;
