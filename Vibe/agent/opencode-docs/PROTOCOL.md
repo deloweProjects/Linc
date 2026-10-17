@@ -588,6 +588,15 @@ Remote Desktop feels instant on links where its video is visibly behind, because
 
 **pc-mic channel (7).** Desktop-requested, phone-served (the opposite of 5 and 6): after `channel.open` the phone dials back and writes a length-prefixed JSON config `{codec: "pcm16", sampleRate: 16000, channels: 1}`, then 20 ms packets of little-endian 16-bit PCM framed with the pc-video 12-byte header. The desktop buffers at most ~150 ms and drops older audio. Closing the channel ends the phone's recording.
 
+## v22 — Phone as PC speaker (2026-10-17; D-076)
+
+| Type | Direction | Payload | Notes |
+|---|---|---|---|
+| `pc.speaker.set` | phone → desktop | `{on}` | `on: true` makes the virtual cable's playback side ("CABLE Input") the PC's default output for every role, then (re)starts pc-audio (channel 6), whose loopback follows the default output, so the PC's sound plays on the phone **instead of** its own speakers. The previous default output is written to `speaker-restore-output.txt` under the store root and restored on `on: false`, when channel 6 ends (the phone went away), on desktop exit, and at the next start after a crash. |
+| `pc.speaker.state` | desktop → phone | `{on, cable, error?}` | Sent after every `set`. `cable`: a virtual cable is installed. `error`: `no-cable` (nothing to route into: set it up through Voice Access, D-071), `denied` (Windows refused the switch) or `audio` (pc-audio couldn't start; the switch was undone). |
+
+`pc.state` (v17) also gains two optional, read-only fields for the phone's Home "Your PC" card: `battery: {percent, charging}` (absent on a PC without a battery) and `network: "wifi" | "ethernet"` (absent when unknown). Older phones ignore them.
+
 ## Protocol draft — later milestones (not implemented)
 
 Everything below is **draft until its milestone ships**. These message types are ignored by current peers per the envelope's unknown-type rule.

@@ -209,6 +209,7 @@ public sealed class ConnectionSupervisor(
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
         discovery.Start();
         usbWatcher.Start();
+        _ = SpotKnownPhonesAsync(_spotCts.Token);
         blePresence.Start(); // hint only, and a no-op on a PC without Bluetooth (M04, D-034)
         if (registry.BackgroundConnectionEnabled)
         {
@@ -308,6 +309,7 @@ public sealed class ConnectionSupervisor(
         blePresence.DeviceSighted -= OnBleSighting;
         NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        _spotCts.Cancel();
         StopHealthLoop();
         blePresence.Dispose();
         usbWatcher.Dispose();
@@ -350,6 +352,79 @@ public sealed class ConnectionSupervisor(
     /// right now instead of after the idle delay. Fires about once a second while in range,
     /// hence the cheap guard.
     /// </summary>
+    // ---- spotting a known phone by its Wi-Fi address (D-077) --------------------
+
+    private readonly CancellationTokenSource _spotCts = new();
+    private readonly Dictionary<string, DateTime> _spottedAt = new(StringComparer.Ordinal);
+    private static readonly TimeSpan SpotInterval = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan SpotRetry = TimeSpan.FromSeconds(60);
+
+    private static string? HostOf(string address)
+    {
+        var trimmed = address.Trim();
+        var colon = trimmed.LastIndexOf(':');
+        return colon > 0 ? trimmed[..colon] : trimmed;
+    }
+
+    /// <summary>
+    /// Remember which Wi-Fi hardware address the phone just used, so it can be recognised on this
+    /// network again before it says anything (D-077). Off the gate: an ARP lookup can take a moment.
+    /// </summary>
+    private void LearnWifiMac(string? serial, string? host)
+    {
+        if (string.IsNullOrEmpty(serial) || host is null) return;
+        _ = Task.Run(() =>
+        {
+            if (NeighborTable.MacOf(host) is { } mac) registry.RememberWifiMac(serial, mac);
+        });
+    }
+
+    /// <summary>
+    /// While searching, look in the PC's neighbour table for the active phone's Wi-Fi address.
+    /// The table fills as soon as the phone joins the Wi-Fi and says anything at all, well before
+    /// Linc's own advert or wireless debugging's mDNS would be noticed, and reading it sends
+    /// nothing. A sighting dials the phone's wireless debugging at that address and asks
+    /// discovery to look now, the same "it's here, try" BLE sightings give.
+    /// </summary>
+    private async Task SpotKnownPhonesAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(SpotInterval, ct); } catch (OperationCanceledException) { return; }
+            if (State is not LinkState.Searching || registry.PairedSerial is not { } active) continue;
+            if (registry.KnownDevices.FirstOrDefault(d => d.Serial == active) is not { WifiMacs.Count: > 0 }) continue;
+
+            foreach (var (address, mac) in NeighborTable.Read())
+            {
+                var match = PhoneFingerprint.Best(registry.KnownDevices, new PhoneSignals(WifiMac: mac));
+                if (match?.Serial != active) continue;
+                lock (_spottedAt)
+                {
+                    if (_spottedAt.TryGetValue(address, out var last) && DateTime.UtcNow - last < SpotRetry) break;
+                    _spottedAt[address] = DateTime.UtcNow;
+                }
+                log.Log(LogLevel.Info, $"Spotted {match.Model} on this network at {address} (by its Wi-Fi address); connecting.");
+                discovery.ScanNow();
+                foreach (var port in CandidatePorts())
+                {
+                    await ConnectAsync($"{address}:{port}", manual: false, knownPhone: true);
+                    if (State == LinkState.Connected) break;
+                }
+                break;
+            }
+        }
+    }
+
+    /// <summary>The port wireless debugging last answered on, then the standard one the phone can arm (M13c).</summary>
+    private IEnumerable<int> CandidatePorts()
+    {
+        var ports = new List<int>();
+        if (registry.LastHostPort is { } last && int.TryParse(last[(last.LastIndexOf(':') + 1)..], out var port))
+            ports.Add(port);
+        if (!ports.Contains(5555)) ports.Add(5555);
+        return ports;
+    }
+
     private void OnBleSighting(string serial)
     {
         if (State is not (LinkState.Searching or LinkState.NoDevice) ||
@@ -631,6 +706,7 @@ public sealed class ConnectionSupervisor(
                 SetState(LinkState.Connected);
                 StartHealthLoop();
                 log.Log(LogLevel.Info, $"Connected to {Device.Model} ({address})");
+                LearnWifiMac(Device.SerialNo, HostOf(address));
             }
             catch (LincException ex)
             {
@@ -692,6 +768,7 @@ public sealed class ConnectionSupervisor(
                     SetState(LinkState.Connected);
                     StartHealthLoop();
                     log.Log(LogLevel.Info, $"Connected to {Device.Model} (direct, no ADB)");
+                    LearnWifiMac(registry.PairedSerial, peer?.Address.ToString());
                 }
                 catch (Exception ex) when (ex is LincException or System.IO.IOException)
                 {

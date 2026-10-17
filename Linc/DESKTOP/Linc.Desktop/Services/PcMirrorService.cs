@@ -135,6 +135,12 @@ public sealed class PcMirrorService(
             case MessageType.PcVoiceAccessGet:
                 _ = Task.Run(() => VoiceAccess.SendStateAsync());
                 break;
+
+            // v22 (D-076): the phone as this PC's speaker.
+            case MessageType.PcSpeakerSet:
+                bool speakerOn = (bool?)envelope.Payload["on"] ?? false;
+                _ = Task.Run(() => SetSpeakerAsync(speakerOn));
+                break;
         }
     }
 
@@ -164,7 +170,10 @@ public sealed class PcMirrorService(
             audio.Ended += reason =>
             {
                 log.Log(LogLevel.Info, $"PC audio ended: {reason}");
-                if (ReferenceEquals(_audio, audio)) StopAudio();
+                if (!ReferenceEquals(_audio, audio)) return;
+                StopAudio();
+                // The phone is gone, so the cable is playing to no one: give the PC its sound back.
+                _speaker?.Disable();
             };
             _audio = audio;
             log.Log(LogLevel.Info, $"Playing this PC's sound on the phone (AAC, {rate} Hz)");
@@ -174,6 +183,56 @@ public sealed class PcMirrorService(
             log.Log(LogLevel.Warn, $"Couldn't play this PC's sound on the phone: {ex.Message}");
         }
         finally { Interlocked.Exchange(ref _audioStarting, 0); }
+    }
+
+    // ---- phone as PC speaker (v22, D-076) ------------------------------------------
+
+    private PcSpeakerMode? _speaker;
+    private PcSpeakerMode Speaker => _speaker ??= new PcSpeakerMode(log);
+
+    private async Task SetSpeakerAsync(bool on)
+    {
+        string? error = null;
+        if (on)
+        {
+            error = Speaker.Enable();
+            if (error is null)
+            {
+                // Loopback follows the default output only when it opens, so start it afresh
+                // on the cable.
+                StopAudio();
+                await StartAudioAsync();
+                if (_audio is null)
+                {
+                    Speaker.Disable();
+                    error = "audio";
+                }
+            }
+        }
+        else
+        {
+            Speaker.Disable();
+            StopAudio();
+        }
+        await SendSpeakerStateAsync(error);
+    }
+
+    private async Task SendSpeakerStateAsync(string? error)
+    {
+        try
+        {
+            var payload = new JsonObject
+            {
+                ["on"] = _speaker?.On == true,
+                ["cable"] = await Task.Run(PcVoiceAccess.CablePresent),
+            };
+            if (error is not null) payload["error"] = error;
+            await connection.SendToPhoneAsync(Envelope.Create(MessageType.PcSpeakerState, payload), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Couldn't tell the phone about speaker mode: {ex.Message}");
+        }
     }
 
     private void StopAudio()
@@ -510,6 +569,7 @@ public sealed class PcMirrorService(
         if (_disposed) return;
         _disposed = true;
         StopAudio();
+        _speaker?.Disable();      // puts the user's own speakers back
         _voiceAccess?.Dispose(); // puts the user's own default microphone back
         try { StopAsync().GetAwaiter().GetResult(); } catch { }
         _gate.Dispose();

@@ -204,6 +204,7 @@ public partial class App : Application
             var storeRoot = Services.GetRequiredService<IDeviceRegistry>().RootPath;
             VirtualCablePackage.StoreRoot = storeRoot;
             PcVoiceAccess.StoreRoot = storeRoot;
+            PcSpeakerMode.StoreRoot = storeRoot;
             // D-071: a phone-mic session cut short by a crash or a kill left the virtual cable as
             // the default microphone; put the user's own back. COM, so off the UI thread.
             var restoreLog = Services.GetRequiredService<ILogService>();

@@ -1021,3 +1021,68 @@ with `E_INVALIDARG`.
 
 Not verified on the owner's hardware yet: the encoder fallback needs a multi-adapter PC.
 
+## D-075: Background clipboard via the system's own denial log
+
+**2026-10-17.** Owner: copy on one device, find it on the other, without opening Linc.
+
+PC → phone already worked from the companion service (writing the clipboard is allowed in the
+background). Phone → PC did not: Android 10+ lets only the focused app *read* it. Linc now uses
+the approach KDE Connect does. The companion registers a clipboard listener; on every copy the
+system logs `Denying clipboard access to app.linc.android` because Linc is not focused.
+`ClipboardWatcher` reads that line from logcat (READ_LOGS, a "development" permission the PC grants
+over ADB) and starts `ClipboardSyncActivity`, an invisible translucent window. That window takes
+focus for an instant, sends the clip and closes. Starting it from the background needs the overlay
+appop, also granted over ADB.
+
+- Both grants live in `PhoneSetupCommands.UpkeepPlan`, run after install *and* once per phone per
+  session on every ADB connect, so phones set up before this get them too.
+- Without the grants nothing changes: the clip goes to the PC the next time Linc is opened, as
+  before. The watcher logs which of the two applies.
+- The match is on the exact package (`app.linc.android.debug` is a different app), with an 800 ms
+  debounce, since one copy can log once per listener. `ClipboardWatcherTest` covers the parsing.
+
+Also in this round, from the same owner message: the share sheet's "Send to PC" reports through a
+notification (sending, i of n → "Sent" → gone after 3 s); the mirror draws a click ring and ticks
+haptically the moment a button goes down; the pointer's trust window scales with the measured
+round trip (2×RTT + 150 ms, 400–1500 ms), and the PC's position is re-applied once the window ends
+even if no new report arrives; Home gains a "Your PC" card (battery, network, volume and
+brightness sliders); the onboarding pairing step shows live checks; the PC Remote bubble menu is
+now "Tools".
+
+## D-076: Phone as PC speaker moves the sound, it doesn't copy it
+
+**2026-10-17.** Owner: the phone as the PC's speaker, with both devices' audio "at the same time".
+
+Plain pc-audio (v20) captures what the PC is already playing, so the PC's speakers carry on and the
+phone (~150 ms behind, by design: late audio is dropped, not queued) sounds like their echo. The
+PC's own output can't be delayed to meet it without a driver of our own. So instead of syncing two
+outputs, speaker mode leaves one. It makes VB-CABLE's playback side the default output (the cable
+Voice Access already installs, D-071); apps play into it, the speakers go quiet, and loopback
+(which always follows the default output) sends it to the phone. One output, nothing to sync. The
+user's output is restored on stop, phone loss, exit, or the next start after a crash (a note file,
+the same pattern as D-071's microphone). Protocol v22.
+
+## D-077: Recognising a phone by any signal, including its Wi-Fi address
+
+**2026-10-17.** Owner: "fingerprint" phone and PC so they find each other by every means available.
+
+The PC already recognised phones by certificate (Direct TLS), ADB serial (USB, wireless) and the
+serial embedded in wireless debugging's mDNS name. `PhoneFingerprint` scores all of them together
+and adds the Wi-Fi MAC. Certificate (±100) and serial (±80) are decisive both ways, so a mismatch
+can't be outvoted. The MAC (+40) is enough on its own. Model (+5/−20) only breaks ties. A match
+needs 40 points and a 20-point lead over the runner-up; anything closer is "don't know", never a
+guess (two phones of one model). `fingerprintsim` proves the rules.
+
+Android randomises the MAC per network but keeps it stable on each, so the PC learns one per Wi-Fi
+(up to 8, newest first) whenever the phone connects over the LAN (an ARP lookup of the peer).
+While searching, the supervisor reads the PC's neighbour table every 15 s. That table fills as soon
+as the phone joins the Wi-Fi and sends anything, and reading it sends nothing. On a sighting of the
+active phone, it asks discovery to look now and dials wireless debugging at that address (last
+port, then 5555), at most once a minute per address. NFC (tap-to-connect) and BLE beacons were
+already in place; BLE sightings keep their own path.
+
+Not built, and why: **PC as phone camera** and **phone as PC camera**. Windows only shows a camera
+that a media-source driver or a `MFCreateVirtualCamera` COM source (Windows 11) provides, so either
+direction needs native code registered on the PC. Android cannot present a virtual camera to other
+apps without root. Both need their own task, not a line in this one.
+

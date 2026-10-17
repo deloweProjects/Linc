@@ -365,6 +365,9 @@ public sealed class PcVoiceAccess : IDisposable
     /// </summary>
     public static void RestorePendingDefaultMic(ILogService log)
     {
+        // Speaker mode leaves the same kind of note for the default playback device (D-076).
+        PcSpeakerMode.RestorePending(log);
+
         string? id;
         try { id = File.Exists(RestoreFile) ? File.ReadAllText(RestoreFile).Trim() : null; }
         catch { return; }
@@ -427,17 +430,30 @@ public sealed class PcVoiceAccess : IDisposable
         finally { Marshal.ReleaseComObject(store); }
     }
 
-    private static string? DefaultCaptureId()
+    private static string? DefaultCaptureId() => DefaultEndpointId(1 /* eCapture */);
+
+    /// <summary>The current default playback device (speaker mode remembers it to put it back).</summary>
+    internal static string? DefaultRenderId() => DefaultEndpointId(0 /* eRender */);
+
+    private static string? DefaultEndpointId(int flow)
     {
         var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(Type.GetTypeFromCLSID(CLSID_MMDeviceEnumerator)!)!;
         try
         {
-            if (enumerator.GetDefaultAudioEndpoint(1 /* eCapture */, 0 /* eConsole */, out IMMDevice device) != 0) return null;
+            if (enumerator.GetDefaultAudioEndpoint(flow, 0 /* eConsole */, out IMMDevice device) != 0) return null;
             device.GetId(out string id);
             Marshal.ReleaseComObject(device);
             return id;
         }
         finally { Marshal.ReleaseComObject(enumerator); }
+    }
+
+    /// <summary>The virtual cable's playback side ("CABLE Input"), or null when no cable is installed.</summary>
+    internal static string? CableRenderId()
+    {
+        if (FindCable() is not { } pair) return null;
+        try { return pair.Render.GetId(out string id) == 0 ? id : null; }
+        finally { Marshal.ReleaseComObject(pair.Render); }
     }
 
     /// <summary>
@@ -447,16 +463,28 @@ public sealed class PcVoiceAccess : IDisposable
     /// </summary>
     private static void SetDefaultCapture(string id, ILogService log)
     {
+        if (!SetDefaultEndpoint(id))
+            log.Log(LogLevel.Warn, "Voice Access: couldn't switch the default microphone");
+    }
+
+    /// <summary>
+    /// Make <paramref name="id"/> the default device of its kind (playback or recording, which
+    /// the id itself decides) for every role. False if Windows refused.
+    /// </summary>
+    internal static bool SetDefaultEndpoint(string id)
+    {
         try
         {
             var policy = (IPolicyConfig)Activator.CreateInstance(Type.GetTypeFromCLSID(CLSID_PolicyConfigClient)!)!;
-            try { for (int role = 0; role < 3; role++) policy.SetDefaultEndpoint(id, role); }
+            try
+            {
+                bool ok = true;
+                for (int role = 0; role < 3; role++) ok &= policy.SetDefaultEndpoint(id, role) >= 0;
+                return ok;
+            }
             finally { Marshal.ReleaseComObject(policy); }
         }
-        catch (Exception ex)
-        {
-            log.Log(LogLevel.Warn, $"Voice Access: couldn't switch the default microphone: {ex.Message}");
-        }
+        catch { return false; }
     }
 
     public void Dispose() => StopMic();

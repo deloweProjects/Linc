@@ -18,6 +18,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopLaunchService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AdbServerHost.cs" />

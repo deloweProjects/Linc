@@ -196,6 +196,8 @@ fun ToolsScreen(onBack: () -> Unit) {
                 onAction = { action -> PresentationControl.send(action) },
             )
 
+            PcSpeakerCard()
+
             VoiceAccessCard()
 
             if (confirmAction != null) {

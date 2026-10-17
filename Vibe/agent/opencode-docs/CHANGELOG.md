@@ -9,6 +9,21 @@ first.
 
 ## [Unreleased]
 
+### Added — 2026-10-17 — Background clipboard, phone as PC speaker, smarter recognition (D-075–D-077)
+
+- **Clipboard without opening Linc**: copy on the phone and it reaches the PC with Linc in the
+  background, after the PC has connected over ADB once (it grants what this needs).
+- **Phone as PC speaker** (Tools): the PC's sound moves to the phone instead of playing on both,
+  so nothing echoes; the PC's own speakers come back when you stop or disconnect.
+- **Send to PC** shows a notification while sending, then "Sent", then disappears.
+- **Mirror**: a click ring and a haptic tick the instant you click; the pointer stays in step with
+  the PC on slow links and after the PC moves it itself.
+- **Home → Your PC**: battery, network, volume and brightness at a glance.
+- **Setup** explains ADB pairing and shows live checks that it worked.
+- **Recognition**: the PC also knows your phone by its Wi-Fi address and connects as soon as it
+  joins the network.
+- The PC Remote bubble menu is now called **Tools**. Protocol v22.
+
 ### Fixed — 2026-10-17 — Mirror PC on PCs with more than one graphics adapter (D-074)
 
 - **Mirror PC starts on multi-GPU PCs.** Linc picks the hardware encoder on the same adapter as the

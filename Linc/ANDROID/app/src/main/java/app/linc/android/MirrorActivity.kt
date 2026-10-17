@@ -192,14 +192,14 @@ class MirrorActivity : ComponentActivity() {
         gestures = PointerGestures(
             out = object : PointerGestures.Output {
                 override fun pointerTo(x: Float, y: Float) {
-                    lastLocalInputMs = SystemClock.uptimeMillis()
+                    markLocalInput()
                     drawCursor()
                     followCursor()
                     toNormalized(x, y)?.let { (nx, ny) -> MirrorControl.pointer("move", nx, ny, "touch") }
                 }
 
                 override fun button(button: String, down: Boolean) {
-                    lastLocalInputMs = SystemClock.uptimeMillis()
+                    markLocalInput()
                     val (nx, ny) = toNormalized(gestures.cursorX, gestures.cursorY) ?: return
                     if (down) {
                         // Feedback now, not when the PC's next frame arrives.
@@ -417,7 +417,7 @@ class MirrorActivity : ComponentActivity() {
                 // The PC's report trails a finger by a round trip, so while this phone is
                 // driving the pointer it trusts itself; otherwise the PC moved it (its own
                 // mouse, a jump to a dialog) and the phone follows.
-                if (!gestures.active && SystemClock.uptimeMillis() - lastLocalInputMs > LOCAL_AUTHORITY_MS) {
+                if (!gestures.active && SystemClock.uptimeMillis() - lastLocalInputMs > localAuthorityMs()) {
                     gestures.syncCursor(cursor.x.toFloat(), cursor.y.toFloat())
                 }
                 drawCursor()
@@ -835,6 +835,36 @@ class MirrorActivity : ComponentActivity() {
      * the app is in the foreground with the screen on — which is precisely when the mirror
      * is being watched, so it costs no battery the rest of the time. Released in [onPause].
      */
+    /**
+     * How long the phone keeps trusting its own pointer after the last touch. A fixed 400 ms let
+     * a report the PC sent before the finger lifted arrive after the window on a slow link and
+     * pull the pointer back to where it had been. So the window covers two round trips (the
+     * move out, the report back) with margin, and never less than 400 ms.
+     */
+    /**
+     * The phone just drove the pointer. Once its trust window ends, take the PC's word again —
+     * even if no new report comes, since the PC may have moved the pointer itself during the
+     * window (a dialog grabbing it) and then left it still, which sends nothing more.
+     */
+    private fun markLocalInput() {
+        lastLocalInputMs = SystemClock.uptimeMillis()
+        handler.removeCallbacks(resyncCursor)
+        handler.postDelayed(resyncCursor, localAuthorityMs() + 20)
+    }
+
+    private val resyncCursor = Runnable {
+        val cursor = MirrorSession.cursor.value ?: return@Runnable
+        if (gestures.active || SystemClock.uptimeMillis() - lastLocalInputMs <= localAuthorityMs()) return@Runnable
+        gestures.syncCursor(cursor.x.toFloat(), cursor.y.toFloat())
+        drawCursor()
+    }
+
+    private fun localAuthorityMs(): Long {
+        val rtt = MirrorSession.rttMs.value
+        if (rtt < 0) return LOCAL_AUTHORITY_MS
+        return (rtt * 2L + 150L).coerceIn(LOCAL_AUTHORITY_MS, LOCAL_AUTHORITY_MAX_MS)
+    }
+
     override fun onResume() {
         super.onResume()
         if (wifiLock == null) {
@@ -875,6 +905,7 @@ class MirrorActivity : ComponentActivity() {
         const val STALL_RESTART_S = 8
         /** After the phone moves the pointer, the PC's (older) reports are ignored this long. */
         const val LOCAL_AUTHORITY_MS = 400L
+        const val LOCAL_AUTHORITY_MAX_MS = 1_500L
         const val PANEL_IDLE_MS = 10_000L
         /** Two-finger scroll: wheel units per view pixel (120 = one notch per ~50 px). */
         const val WHEEL_PER_PX = 2.4f

@@ -32,6 +32,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppCatalog.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppsPayload.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DisplayPayload.cs" />

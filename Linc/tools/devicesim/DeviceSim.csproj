@@ -11,6 +11,7 @@
     <!-- The real registry, compiled verbatim (D-036). It is plain System.IO + System.Text.Json
          with no WinUI dependency, so it links into an ordinary net8.0 console. -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
     <!-- DeviceRegistry.cs's KnownDevice record references these two settings types (D-055 era
          M5b/M5c), so they must be compiled in alongside it. D-054 records that MirrorSettings'

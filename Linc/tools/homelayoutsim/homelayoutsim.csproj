@@ -12,6 +12,7 @@
     <!-- Compiled verbatim from Linc.Desktop Services -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ToolLocator.cs" />

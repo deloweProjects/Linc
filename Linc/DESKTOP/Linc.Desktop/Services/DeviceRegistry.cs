@@ -183,6 +183,9 @@ public interface IDeviceRegistry
 
     /// <summary>Removes one device from the list (closing its tab is not this — that's explicit forget).</summary>
     void ForgetKnownDevice(string serial);
+
+    /// <summary>Remember a Wi-Fi MAC <paramref name="serial"/>'s phone was seen using (D-077).</summary>
+    void RememberWifiMac(string serial, string mac) { }
 }
 
 /// <summary>
@@ -203,7 +206,11 @@ public sealed record KnownDevice(
     ConnectionPreference Preference = ConnectionPreference.Auto,
     DesktopModeSettings? DesktopMode = null,
     MirrorSettings? Mirror = null,
-    HomeLayout? Home = null);
+    HomeLayout? Home = null,
+    // D-077: Wi-Fi hardware addresses this phone has used, learned when it connects over the LAN.
+    // Android randomises the MAC per network but keeps it stable on each, so there is one per
+    // Wi-Fi it has joined. Newest first, at most WifiMacLimit.
+    List<string>? WifiMacs = null);
 
 /// <summary>Persists known-device data under %LOCALAPPDATA%\Linc.</summary>
 public sealed class DeviceRegistry : IDeviceRegistry
@@ -516,6 +523,22 @@ public sealed class DeviceRegistry : IDeviceRegistry
         _knownDevices[index] = _knownDevices[index] with { Hidden = hidden };
         Persist();
         KnownDevicesChanged?.Invoke();
+    }
+
+    private const int WifiMacLimit = 8;
+
+    public void RememberWifiMac(string serial, string mac)
+    {
+        if (PhoneFingerprint.NormalizeMac(mac) is not { } normalized) return;
+        var index = _knownDevices.FindIndex(d => d.Serial == serial);
+        if (index < 0) return;
+        var known = _knownDevices[index];
+        var macs = known.WifiMacs ?? [];
+        if (macs.Count > 0 && macs[0] == normalized) return; // already the newest: no write
+        var updated = new List<string> { normalized };
+        updated.AddRange(macs.Where(m => m != normalized).Take(WifiMacLimit - 1));
+        _knownDevices[index] = known with { WifiMacs = updated };
+        Persist();
     }
 
     public void ForgetKnownDevice(string serial)
