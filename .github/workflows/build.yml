@@ -77,7 +77,9 @@ jobs:
           $failed = @()
           foreach ($proj in Get-ChildItem Linc\tools\*\*.csproj) {
             Write-Host "::group::$($proj.Directory.Name)"
-            msbuild $proj.FullName -restore -p:Configuration=Debug -v:m
+            # WinUI harnesses (appgridprobe) declare <Platforms> and need one picked, like the app.
+            $platform = if (Select-String -Path $proj.FullName -Pattern '<Platforms>' -Quiet) { @('-p:Platform=x64') } else { @() }
+            msbuild $proj.FullName -restore -p:Configuration=Debug @platform -v:m
             if ($LASTEXITCODE -ne 0) { $failed += $proj.Directory.Name }
             Write-Host "::endgroup::"
           }
