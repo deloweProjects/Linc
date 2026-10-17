@@ -94,15 +94,19 @@ jobs:
 
       # packagesim and cleanroomsim inspect and launch the real Beta publish output.
       # Beta.pubxml looks for the VC++ redist under VS 18 Community, set inside its target so a
-      # command-line property can't override it. The runner has Enterprise, so link the
-      # Community path to whichever VS install is present.
+      # command-line property can't override it, and requires exactly one copy of each DLL. The
+      # runner has Enterprise with several toolsets, so build a Community redist folder holding
+      # only the newest one.
       - name: Publish desktop app (Beta)
         shell: pwsh
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC1*.CRT\vcruntime140.dll" | ForEach-Object FullName
-          $community = 'C:\Program Files\Microsoft Visual Studio\18\Community'
-          if (-not (Test-Path $community)) { New-Item -ItemType Junction -Path $community -Target $vs | Out-Null }
+          $latest = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } |
+            Sort-Object { [version]$_.Name } | Select-Object -Last 1
+          Write-Host "VC++ redist: $($latest.FullName)"
+          $redist = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC'
+          New-Item -ItemType Directory -Force $redist | Out-Null
+          New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
           msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
 
       # Each harness exits 0 when green and 1 when not (CONTRIBUTING.md), and must run from Linc/.
