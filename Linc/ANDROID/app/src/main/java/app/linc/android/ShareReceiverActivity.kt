@@ -11,6 +11,7 @@ import app.linc.android.protocol.MessageType
 import app.linc.android.service.CompanionOutbox
 import app.linc.android.service.LogLevel
 import app.linc.android.service.LogStore
+import app.linc.android.service.ShareProgress
 import app.linc.android.service.ShareSender
 import app.linc.android.service.ShareSizeLimits
 import app.linc.android.service.resolveShareUris
@@ -52,6 +53,7 @@ class ShareReceiverActivity : ComponentActivity() {
 
     private fun sendText(text: String) {
         val kind = if (URL_REGEX.matches(text)) "url" else "text"
+        val connected = CompanionOutbox.canSend(SHARE_ITEM_VERSION)
         CompanionOutbox.trySend(
             Envelope(
                 type = MessageType.SHARE_ITEM,
@@ -62,7 +64,7 @@ class ShareReceiverActivity : ComponentActivity() {
             ),
             requiredVersion = SHARE_ITEM_VERSION,
         )
-        Toast.makeText(this, R.string.share_sent, Toast.LENGTH_SHORT).show()
+        ShareProgress(this, 1).done(failed = if (connected) 0 else 1)
     }
 
     private fun handleFiles(uris: List<Uri>) {
@@ -79,12 +81,10 @@ class ShareReceiverActivity : ComponentActivity() {
         }
 
         LogStore.log(LogLevel.INFO, "Sharing ${uris.size} item(s) with the PC")
-        Toast.makeText(
-            this,
-            if (uris.size == 1) getString(R.string.share_sending_one)
-            else getString(R.string.share_sending_many, uris.size),
-            Toast.LENGTH_SHORT,
-        ).show()
+        // The notification, not a toast, carries the feedback: it stays while the copy runs
+        // and turns into "Sent" when it is done, then dismisses itself.
+        val progress = ShareProgress(this, uris.size)
+        progress.sending(0, ShareSender.nameFor(this, uris[0]))
 
         // Copying + sending can be slow (I/O over a large file); the activity must finish
         // promptly and never hold the UI open for a transfer (B2.6), so this rides a
@@ -93,9 +93,12 @@ class ShareReceiverActivity : ComponentActivity() {
         val appContext = applicationContext
         backgroundScope.launch {
             // Sequential, in selection order (B2.3) — not a new batch message.
-            for (uri in uris) {
-                ShareSender.sendFile(appContext, uri)
+            var failed = 0
+            uris.forEachIndexed { index, uri ->
+                progress.sending(index, ShareSender.nameFor(appContext, uri))
+                if (!ShareSender.sendFile(appContext, uri)) failed++
             }
+            progress.done(failed)
         }
     }
 

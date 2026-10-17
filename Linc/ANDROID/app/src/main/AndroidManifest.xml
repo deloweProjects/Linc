@@ -13,6 +13,15 @@
          connectedDevice FGS type; CHANGE_NETWORK_STATE is normal (auto-granted). -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Background clipboard (D-075). Both are granted by the PC over ADB, never asked for:
+         READ_LOGS shows Linc the system's "denied clipboard access" line when something is
+         copied, and the overlay grant lets it briefly show an invisible window to read the clip
+         (Android 10+ lets only the focused app read the clipboard). Without them, phone-to-PC
+         clipboard still works whenever Linc is open, as before. -->
+    <uses-permission
+        android:name="android.permission.READ_LOGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!--
         M17b C: lets Linc ask Android to open its own package installer for a downloaded update.
         It does NOT allow a silent install — Android still shows its confirmation, and the user
@@ -138,6 +147,18 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- Background clipboard (D-075): an invisible window that takes focus just long enough
+             to read the clipboard and send it to the PC, then closes. Started by
+             ClipboardWatcher only. -->
+        <activity
+            android:name=".ClipboardSyncActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Linc.Invisible"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
 
         <!-- NFC tap-to-connect: opened by the linc://tap record on a Linc desk tag. No UI;
              starts the companion, pokes the presence loop, finishes. -->

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Linc" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- ClipboardSyncActivity (D-075): a real window, so it can take focus, but one nobody sees. -->
+    <style name="Theme.Linc.Invisible" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowNoDisplay">false</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
 </resources>

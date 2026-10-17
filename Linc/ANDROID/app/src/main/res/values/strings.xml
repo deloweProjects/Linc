@@ -11,8 +11,12 @@
     <string name="onboard_wireless_title">Step 2: Turn on wireless debugging</string>
     <string name="onboard_wireless_body">In Developer options, find “Wireless debugging” and switch it on. Keep the phone on the same Wi-Fi network as your PC.</string>
     <string name="onboard_open_devsettings_action">Open Developer options</string>
-    <string name="onboard_pair_title">Step 3: Pair with your PC</string>
-    <string name="onboard_pair_body">Open Linc on your PC and choose “Pair phone”. Then, inside Wireless debugging on this phone, tap “Pair device with QR code” and scan the code your PC shows. Pairing with a 6-digit code works too.</string>
+    <string name="onboard_pair_title">Step 3: Pair with your PC over ADB</string>
+    <string name="onboard_pair_body">Do this now, while you are setting up. Your PC already has ADB and walks you through it: open Linc on your PC and choose “Pair phone”. Then, in Wireless debugging on this phone, tap “Pair device with QR code” and scan the code your PC shows (a 6-digit pairing code works too). A USB cable works as well: plug in and tap Allow on the “Allow USB debugging?” prompt.\n\nPairing once lets your PC set up everything else for you: background clipboard sync, notification access and screen mirroring, with no more prompts.</string>
+    <string name="onboard_pair_check_wireless_on">Wireless debugging is on</string>
+    <string name="onboard_pair_check_wireless_off">Wireless debugging is off — switch it on in Developer options</string>
+    <string name="onboard_pair_check_linked">Your PC has connected — you can go on</string>
+    <string name="onboard_pair_check_waiting">Waiting for your PC… (you can continue and pair later)</string>
     <string name="onboard_done_title">All set!</string>
     <string name="onboard_done_body">Start the companion service on the next screen and your PC will take it from there. You will never need a cable or a terminal.</string>
     <string name="onboard_back">Back</string>
@@ -45,10 +49,7 @@
     <string name="call_access_off">Let your PC see your call log and dial (Calls lane on the PC)</string>
     <string name="call_access_action">Allow Calls access</string>
     <string name="share_label">Send to PC (Linc)</string>
-    <string name="share_sent">Sent to your PC</string>
     <string name="share_not_connected">Linc isn\'t connected to your PC right now.</string>
-    <string name="share_sending_one">Sending file to your PC…</string>
-    <string name="share_sending_many">Sending %1$d files to your PC…</string>
     <string name="action_start">Start companion service</string>
     <string name="action_stop">Stop companion service</string>
     <string name="action_rerun_setup">Run setup again</string>

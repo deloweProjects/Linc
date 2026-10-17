@@ -214,7 +214,7 @@ fun PcRemoteOverlay(state: RemoteUiState, actions: RemoteActions) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         if (state.panelOpen) LincSymbols.Close else icon,
-                        contentDescription = if (state.panelOpen) "Close PC Remote menu" else "PC Remote menu",
+                        contentDescription = if (state.panelOpen) "Close Tools menu" else "Tools menu",
                         tint = if (state.panelOpen) MaterialTheme.colorScheme.onSurface else tint,
                         modifier = Modifier.size(26.dp).rotate(-spin),
                     )
@@ -245,7 +245,7 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("PC Remote", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Tools", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
                         if (state.stalled) "Picture stalled — recovering" else "${state.quality.label} connection",
                         style = MaterialTheme.typography.bodySmall,

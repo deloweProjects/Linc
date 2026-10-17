@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.provider.Settings
 import androidx.annotation.StringRes
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +18,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -26,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import app.linc.android.R
+import app.linc.android.service.CompanionStateHolder
+import app.linc.android.service.CompanionStateHolder.ServiceState
 import app.linc.android.ui.theme.Dimens
 
 private data class OnboardStep(
@@ -33,6 +40,8 @@ private data class OnboardStep(
     @StringRes val body: Int,
     @StringRes val actionLabel: Int? = null,
     val settingsAction: String? = null,
+    /** Show live "is it paired yet?" checks under the instructions. */
+    val pairChecks: Boolean = false,
 )
 
 private val steps = listOf(
@@ -48,6 +57,7 @@ private val steps = listOf(
     OnboardStep(
         R.string.onboard_pair_title, R.string.onboard_pair_body,
         R.string.onboard_open_devsettings_action, Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS,
+        pairChecks = true,
     ),
     OnboardStep(R.string.onboard_done_title, R.string.onboard_done_body),
 )
@@ -66,6 +76,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
         )
         LincCard {
             Text(stringResource(step.body), style = MaterialTheme.typography.bodyMedium)
+            if (step.pairChecks) PairChecks()
             if (step.actionLabel != null && step.settingsAction != null) {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touchTarget),
@@ -96,4 +107,40 @@ fun OnboardingScreen(onDone: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * Live answers to "did pairing work?": whether Wireless debugging is switched on, and whether the
+ * PC has actually reached Linc. Re-checked every second while this step is showing; advisory
+ * only, so Next is never blocked (USB, or pairing later, are both fine).
+ */
+@Composable
+private fun PairChecks() {
+    val context = LocalContext.current
+    val connection by CompanionStateHolder.state.collectAsState()
+    var wirelessOn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            wirelessOn = runCatching {
+                Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
+            }.getOrDefault(false)
+            delay(1_000)
+        }
+    }
+    val linked = connection is ServiceState.Connected
+    Column(verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+        CheckLine(ok = wirelessOn || linked,
+            text = stringResource(if (wirelessOn) R.string.onboard_pair_check_wireless_on else R.string.onboard_pair_check_wireless_off))
+        CheckLine(ok = linked,
+            text = stringResource(if (linked) R.string.onboard_pair_check_linked else R.string.onboard_pair_check_waiting))
+    }
+}
+
+@Composable
+private fun CheckLine(ok: Boolean, text: String) {
+    Text(
+        (if (ok) "✓  " else "•  ") + text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }

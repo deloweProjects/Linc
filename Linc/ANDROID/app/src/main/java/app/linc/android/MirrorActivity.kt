@@ -201,6 +201,11 @@ class MirrorActivity : ComponentActivity() {
                 override fun button(button: String, down: Boolean) {
                     lastLocalInputMs = SystemClock.uptimeMillis()
                     val (nx, ny) = toNormalized(gestures.cursorX, gestures.cursorY) ?: return
+                    if (down) {
+                        // Feedback now, not when the PC's next frame arrives.
+                        cursorView.pulse(button)
+                        video.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    }
                     MirrorControl.pointer(if (down) "down" else "up", nx, ny, "touch", button)
                 }
 

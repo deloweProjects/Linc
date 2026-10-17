@@ -44,6 +44,8 @@ class CompanionService : Service() {
             buildNotification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
+        // Phone → PC clipboard in the background, when the PC granted READ_LOGS (D-075).
+        ClipboardWatcher.start(this)
         if (server == null) {
             val mediaBridge = MediaBridge(this).also { it.start() }
             media = mediaBridge
@@ -127,6 +129,7 @@ class CompanionService : Service() {
     }
 
     override fun onDestroy() {
+        ClipboardWatcher.stop(this)
         watch?.stop()
         watch = null
         callWatcher?.stop()

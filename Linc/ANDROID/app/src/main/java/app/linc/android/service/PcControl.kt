@@ -27,6 +27,11 @@ object PcControl {
         val canBrightness: Boolean,
         val canSleep: Boolean,
         val canShutdown: Boolean,
+        /** 0-100, or null on a PC with no battery or an older desktop. */
+        val batteryPercent: Int? = null,
+        val charging: Boolean = false,
+        /** "wifi", "ethernet", or null when unknown. */
+        val network: String? = null,
     )
 
     private val _state = MutableStateFlow<State?>(null)
@@ -44,6 +49,9 @@ object PcControl {
             canBrightness = (payload["canBrightness"] as? JsonPrimitive)?.booleanOrNull ?: false,
             canSleep = (payload["canSleep"] as? JsonPrimitive)?.booleanOrNull ?: false,
             canShutdown = (payload["canShutdown"] as? JsonPrimitive)?.booleanOrNull ?: false,
+            batteryPercent = ((payload["battery"] as? JsonObject)?.get("percent") as? JsonPrimitive)?.intOrNull,
+            charging = ((payload["battery"] as? JsonObject)?.get("charging") as? JsonPrimitive)?.booleanOrNull ?: false,
+            network = (payload["network"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
         )
     }
 

@@ -78,6 +78,7 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
     // M12c-amend C2.3: in-memory only, for this process's lifetime — never persisted to disk,
     // and never re-asked for a phone that already got an answer this session.
     private readonly HashSet<string> _declinedThisSession = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _upkeptThisSession = new(StringComparer.Ordinal);
     private readonly HashSet<string> _awaitingAnswer = new(StringComparer.Ordinal);
 
     public event Action<DeviceData>? InstallConfirmationNeeded;
@@ -117,6 +118,7 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
         switch (decision)
         {
             case CompanionInstallDecision.Skip:
+                if (installed) await UpkeepAsync(device, ct);
                 return false; // already set up, or already declined this session
             case CompanionInstallDecision.Ask:
                 // M12c-amend C2.5: never block the connect on the answer — fire the request and
@@ -132,6 +134,17 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
             default: // InstallSilently — the wizard is already the user's explicit consent (C2.4)
                 return await InstallCompanionAsync(device, ct);
         }
+    }
+
+    /// <summary>Phones set up before a grant existed get it here, once per phone per session.</summary>
+    private async Task UpkeepAsync(DeviceData device, CancellationToken ct)
+    {
+        if (device.Serial is null || !_upkeptThisSession.Add(device.Serial)) return;
+        await PhoneSetupCommands.RunPlanAsync(
+            PhoneSetupCommands.UpkeepPlan(ProtocolConstants.CompanionPackage),
+            (command, token) => ShellAsync(device, command, token),
+            (command, ex) => log.Log(LogLevel.Info, $"A phone setup step didn't apply ({command}): {ex.Message}"),
+            ct);
     }
 
     public async Task<bool> ConfirmInstallAsync(DeviceData device, CancellationToken ct)
