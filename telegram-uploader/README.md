@@ -17,7 +17,8 @@ each file's SHA256 in the caption. It works three ways:
 | `send.sh` | Linux, macOS, Git Bash: same thing |
 | `start-local-server.cmd` / `.ps1` / `.sh` | Optional: runs a local Bot API server in Docker so the PC can send files over 50 MB |
 | `.env.example` | Template for your settings. Copy it to `.env` |
-| `../.github/workflows/telegram-upload.yml` | The GitHub workflow |
+| `../.github/workflows/telegram-upload.yml` | GitHub workflow: posts release files |
+| `../.github/workflows/telegram-message.yml` | GitHub workflow: posts a text message |
 
 ---
 
@@ -57,6 +58,8 @@ Copy `.env.example` to `.env` in this folder and fill in the same values.
 - **Automatic:** publish a release (with files attached) → the files land in the channel.
 - **By hand:** Actions tab → **Upload release to Telegram** → **Run workflow**.
   Leave "tag" empty for the latest release.
+- **Text only:** Actions tab → **Send text to Telegram** → **Run workflow** → type the message.
+  Claude can trigger this one too ("send X to Telegram").
 
 ### PC (you or your local agent)
 ```bat

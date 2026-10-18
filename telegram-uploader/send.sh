@@ -66,7 +66,14 @@ call() {
 }
 
 if [[ $# -eq 0 ]]; then
-  call sendMessage --form-string chat_id="$TELEGRAM_CHAT_ID" --form-string text="$message"
+  # Telegram caps a message at 4096 characters; send longer text in parts.
+  # A UTF-8 locale makes the slicing count characters, not bytes.
+  locale -a 2>/dev/null | grep -qix 'c.utf-\?8' && export LC_ALL=C.UTF-8
+  rest="$message"
+  while [[ -n "$rest" ]]; do
+    call sendMessage --form-string chat_id="$TELEGRAM_CHAT_ID" --form-string text="${rest:0:4096}"
+    rest="${rest:4096}"
+  done
   echo "sent message"
   exit 0
 fi
