@@ -127,6 +127,7 @@ public partial class App : Application
             .AddSingleton<IHotspotPromotion, HotspotPromotion>()
             .AddSingleton<IHotspotLinkService, HotspotLinkService>()
             .AddSingleton<IShareService, ShareService>()
+            .AddSingleton<PcToolsService>()
             .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()
             .AddSingleton<QuickShareViewModel>()
             .AddSingleton<ClipboardViewModel>()

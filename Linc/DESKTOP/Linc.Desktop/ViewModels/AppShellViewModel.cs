@@ -39,7 +39,8 @@ public partial class AppShellViewModel : ObservableObject
         IOnboardingState onboardingState,
         IPhoneSetupService phoneSetup,
         IDeviceRegistry registry,
-        UpdateCheckService updates)
+        UpdateCheckService updates,
+        PcToolsService pcTools)
     {
         // Reverse mirror (M05): start answering the phone's pc.mirror.* / pc.displays.get
         // requests now, so the phone can view the PC without the Device page being open
@@ -48,6 +49,7 @@ public partial class AppShellViewModel : ObservableObject
         // Quick controls (v17, M4b): same reasoning — the phone's Tools page must be able to
         // lock/sleep/volume/brightness this PC without the Device page being open.
         pcControl.Attach();
+        pcTools.Attach(); // v27 (D-097): the phone's PC tools — look, files, terminal
         // Hotspot link-up (v18, M13b): adb.announce is unsolicited and arrives as soon as the
         // phone's control connection comes up, so this has to be listening from launch — the
         // same reasoning as the two above, and more so, since nobody navigates to it at all.

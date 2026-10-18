@@ -6,7 +6,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import app.linc.android.ui.PcFilesScreen
+import app.linc.android.ui.PcScreen
 import app.linc.android.ui.SoundScreen
+import app.linc.android.ui.TerminalScreen
 import app.linc.android.ui.theme.LincTheme
 
 /**
@@ -22,6 +25,9 @@ class PcToolActivity : ComponentActivity() {
         setContent {
             LincTheme {
                 when (tool) {
+                    PC -> PcScreen(onBack = { finish() })
+                    TERMINAL -> TerminalScreen(onBack = { finish() })
+                    FILES -> PcFilesScreen(onBack = { finish() })
                     else -> SoundScreen(onBack = { finish() })
                 }
             }

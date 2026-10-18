@@ -198,6 +198,8 @@ class SocketServer(
             CHANNEL_AUDIO -> audioReceive(input, output)
             CHANNEL_MIC -> PcVoiceAccess.stream(output)
             CHANNEL_PHONE_AUDIO -> PhoneSource.serve(input, output)
+            CHANNEL_TERMINAL -> PcTools.serveTerminal(input, output)
+            CHANNEL_PC_FILES -> PcTools.serveFiles(input, output)
         }
     }
 
@@ -609,6 +611,13 @@ class SocketServer(
                     MessageType.PC_SPEAKER_STATE -> if (negotiated >= 25) PcSpeaker.onState(message.payload)
                     MessageType.AUDIO_EVERYWHERE_STATE -> if (negotiated >= 26) AudioEverywhere.onState(message.payload)
                     MessageType.AUDIO_EVERYWHERE_TEST -> if (negotiated >= 26) AudioEverywhere.onTest(message.payload)
+                    // v27 (D-097): answers for the PC tools.
+                    MessageType.PC_LOOK_STATE -> if (negotiated >= 27) PcTools.onLook(message.payload)
+                    MessageType.PC_INFO -> if (negotiated >= 27) PcTools.onInfo(message.payload)
+                    MessageType.PC_APPS -> if (negotiated >= 27) PcTools.onApps(message.payload)
+                    MessageType.PC_FILES_LISTING -> if (negotiated >= 27) PcTools.onListing(message.payload)
+                    MessageType.PC_FILES_DONE -> if (negotiated >= 27) PcTools.onDone(message.payload)
+                    MessageType.PC_TERM_STATE -> if (negotiated >= 27) PcTools.onTermState(message.payload)
                     // v15: the PC sets the phone's screen orientation (D-055). Bad payload →
                     // internal; WRITE_SETTINGS not granted → not-granted (a plain-language route
                     // to the Settings screen — same wording style as v7 dnd.set).
@@ -803,5 +812,9 @@ class SocketServer(
         const val CHANNEL_MIC = 7
         /** v27 (D-097): the phone's own sound, phone → desktop, for Play everywhere. */
         const val CHANNEL_PHONE_AUDIO = 8
+        /** v27 (D-097): a terminal on the PC, both ways. */
+        const val CHANNEL_TERMINAL = 9
+        /** v27 (D-097): one PC file, either way. */
+        const val CHANNEL_PC_FILES = 10
     }
 }

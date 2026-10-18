@@ -106,6 +106,24 @@ object MessageType {
     const val AUDIO_EVERYWHERE_STATE = "audio.everywhere.state"     // desktop → phone
     const val AUDIO_EVERYWHERE_REPORT = "audio.everywhere.report"   // phone → desktop
     const val AUDIO_EVERYWHERE_TEST = "audio.everywhere.test"       // desktop → phone
+    // v27 (D-097): the full-page PC tools — look, info, running apps, files, terminal.
+    const val PC_LOOK_GET = "pc.look.get"
+    const val PC_LOOK_SET = "pc.look.set"
+    const val PC_LOOK_STATE = "pc.look.state"
+    const val PC_WALLPAPER_SET = "pc.wallpaper.set"
+    const val PC_INFO_GET = "pc.info.get"
+    const val PC_INFO = "pc.info"
+    const val PC_APPS_GET = "pc.apps.get"
+    const val PC_APPS = "pc.apps"
+    const val PC_APPS_END = "pc.apps.end"
+    const val PC_OPEN = "pc.open"
+    const val PC_FILES_LIST = "pc.files.list"
+    const val PC_FILES_LISTING = "pc.files.listing"
+    const val PC_FILES_OP = "pc.files.op"
+    const val PC_FILES_DONE = "pc.files.done"
+    const val PC_TERM_GET = "pc.term.get"
+    const val PC_TERM_OPEN = "pc.term.open"
+    const val PC_TERM_STATE = "pc.term.state"
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

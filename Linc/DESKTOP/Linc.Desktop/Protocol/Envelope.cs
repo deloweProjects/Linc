@@ -115,6 +115,25 @@ public static class MessageType
     public const string AudioEverywhereReport = "audio.everywhere.report"; // phone → desktop: its outputs, their needs, calibration results
     public const string AudioEverywhereTest = "audio.everywhere.test";     // desktop → phone: test sounds to play / listen for
 
+    // v27 (D-097) — the phone's full-page PC tools: look, info, running apps, files, terminal.
+    public const string PcLookGet = "pc.look.get";             // phone → desktop: {}
+    public const string PcLookSet = "pc.look.set";             // phone → desktop: {appsDark?, systemDark?, accent?, autoAccent?, transparency?}
+    public const string PcLookState = "pc.look.state";         // desktop → phone
+    public const string PcWallpaperSet = "pc.wallpaper.set";   // phone → desktop: {jpeg (base64), fit}
+    public const string PcInfoGet = "pc.info.get";             // phone → desktop: {}
+    public const string PcInfo = "pc.info";                    // desktop → phone: name, os, cpu, memory, disks, battery
+    public const string PcAppsGet = "pc.apps.get";             // phone → desktop: {}
+    public const string PcApps = "pc.apps";                    // desktop → phone: {apps: [{pid, name, title, memMb}]}
+    public const string PcAppsEnd = "pc.apps.end";             // phone → desktop: {pid}
+    public const string PcOpen = "pc.open";                    // phone → desktop: {url} or {path}
+    public const string PcFilesList = "pc.files.list";         // phone → desktop: {path} ("" = the starting places)
+    public const string PcFilesListing = "pc.files.listing";   // desktop → phone: {path, parent, entries, error?}
+    public const string PcFilesOp = "pc.files.op";             // phone → desktop: {op: mkdir|rename|delete|open|download|upload, id, ...}
+    public const string PcFilesDone = "pc.files.done";         // desktop → phone: {op, id, ok, path?, error?}
+    public const string PcTermGet = "pc.term.get";             // phone → desktop: {}
+    public const string PcTermOpen = "pc.term.open";           // phone → desktop: {shell, cols, rows} → channel 9
+    public const string PcTermState = "pc.term.state";         // desktop → phone: {shells, running, error?}
+
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies
     // them through Settings.System (it has the WRITE_SETTINGS appop, the desktop doesn't).
