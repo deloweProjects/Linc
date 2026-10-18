@@ -72,8 +72,18 @@ jobs:
           $dir = Join-Path $env:USERPROFILE '.android'
           New-Item -ItemType Directory -Force $dir | Out-Null
           if ($env:KEYSTORE) {
-            [IO.File]::WriteAllBytes((Join-Path $dir 'debug.keystore'), [Convert]::FromBase64String($env:KEYSTORE))
-            Write-Host "Using the owner's debug key: the APK updates installed copies."
+            $ks = Join-Path $dir 'debug.keystore'
+            [IO.File]::WriteAllBytes($ks, [Convert]::FromBase64String($env:KEYSTORE))
+            # The certificate every released APK so far carries (1.0.0.2-1.0.0.15). Public, read
+            # from any release APK; a secret holding a different key would break every update.
+            $expected = '8182d31662613b85f418e3d8601997ff957d5b7104a1ddd25ad7eed9ecd9d969'
+            $line = keytool -list -v -keystore $ks -storepass android -alias androiddebugkey | Select-String 'SHA256:'
+            $actual = ($line.ToString() -replace '.*SHA256:\s*', '' -replace ':', '').Trim().ToLower()
+            if ($actual -ne $expected -and $env:ALLOW_NEW -ne 'true') {
+              Write-Host "::error::ANDROID_DEBUG_KEYSTORE holds a key with certificate SHA-256 $actual, not the released one ($expected). Installed copies would refuse the update. Put the right key in the secret, or run with allow_new_apk_key."
+              exit 1
+            }
+            Write-Host "Signing with certificate SHA-256 $actual."
           } elseif ($env:ALLOW_NEW -eq 'true') {
             Write-Host "::warning::No ANDROID_DEBUG_KEYSTORE secret: the APK gets a new key. Phones that have Linc must uninstall it first."
           } else {

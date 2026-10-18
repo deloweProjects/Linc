@@ -32,6 +32,12 @@ failure with its log rather than saying it was sent. Details: `telegram-uploader
   posts itself to Telegram (above).
 - **APK signature.** Released APKs are debug builds signed with the owner's debug key, and Android
   only installs an update signed with the same key. `release.yml` restores that key from the
-  `ANDROID_DEBUG_KEYSTORE` secret, and stops without it unless `allow_new_apk_key` is ticked.
+  `ANDROID_DEBUG_KEYSTORE` secret (base64 of the owner's `%USERPROFILE%\.android\debug.keystore`,
+  alias `androiddebugkey`, passwords `android`) and checks it against the released certificate,
+  SHA-256 `8182d31662613b85f418e3d8601997ff957d5b7104a1ddd25ad7eed9ecd9d969` (1.0.0.2-1.0.0.15).
+  It stops without the secret, or with a different key, unless `allow_new_apk_key` is ticked.
+  **Never commit a keystore**: the repo is public, and anyone holding the key can ship an "update"
+  that installs over Linc with its SMS, call and notification access. The plan is to move to a
+  Play Console upload key later.
 - Check the newest tag on GitHub before choosing a version number. Releases have been cut from
   `feature/quick-share-and-recognition`, ahead of `main`, so the version in `main` can lag.
