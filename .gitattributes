@@ -3,6 +3,8 @@
 # Gradle wrapper scripts need fixed line endings
 gradlew text eol=lf
 *.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh text eol=lf
 
 # Binaries
 *.jar binary
