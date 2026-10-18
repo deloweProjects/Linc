@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 25
+const val PROTOCOL_VERSION = 26
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -101,6 +101,11 @@ object MessageType {
     const val PC_MIC_AUTO = "pc.mic.auto"                   // phone → desktop: PC Remote, "Phone" chosen (v23)
     const val PC_SPEAKER_SET = "pc.speaker.set"             // phone → desktop: {on} phone as PC speaker (v25)
     const val PC_SPEAKER_STATE = "pc.speaker.state"         // desktop → phone: {on, cable, error?} (v25)
+    // v26 (D-096): Play everywhere — PC, PC Bluetooth and phone speakers at once, in step.
+    const val AUDIO_EVERYWHERE_SET = "audio.everywhere.set"         // phone → desktop
+    const val AUDIO_EVERYWHERE_STATE = "audio.everywhere.state"     // desktop → phone
+    const val AUDIO_EVERYWHERE_REPORT = "audio.everywhere.report"   // phone → desktop
+    const val AUDIO_EVERYWHERE_TEST = "audio.everywhere.test"       // desktop → phone
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

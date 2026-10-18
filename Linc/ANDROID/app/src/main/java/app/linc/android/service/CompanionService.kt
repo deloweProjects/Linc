@@ -72,6 +72,8 @@ class CompanionService : Service() {
         )
         // Phone → PC clipboard in the background, when the PC granted READ_LOGS (D-092).
         ClipboardWatcher.start(this)
+        // Play everywhere's outputs open from the sound channel, mixer opened or not (D-096).
+        AudioEverywhere.attach(this)
         if (server == null) {
             val gate = PcGate(this).also { PcGate.instance = it }
             val mediaBridge = MediaBridge(this).also { it.start() }

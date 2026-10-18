@@ -1588,3 +1588,39 @@ session's change:
 - `Beta.pubxml` finds the VC++ redist from `$(VsInstallRoot)` and VS's default redist version,
   not a fixed VS 18 Community path, so the publish works on any edition and with several toolsets.
 
+
+## D-096: Play everywhere — every speaker at once, in step, by rendering them all
+
+**2026-10-18.** Owner's ask: in Tools → Media, play the PC's sound on the PC's speakers, its
+Bluetooth devices and the phone (and the phone's Bluetooth) all at once, with a volume per device,
+"zero delay", an automatic alignment that is foolproof, settings to align by hand, and logging.
+
+- **Why it can work now.** D-093 said the PC's own output can't be delayed, so the phone could
+  only replace it. With speaker mode's routing (apps play into the cable), Linc captures the cable
+  once and plays it to every chosen PC device itself (WASAPI shared mode, `PcRenderSink`) as well
+  as to the phone. Linc rendering every speaker is what lets every speaker be held back.
+- **"Zero delay" is impossible; zero *between* speakers is the goal.** A Bluetooth device buffers
+  100–250 ms and no software can make it faster, so every speaker waits for the slowest: the group
+  delay `D`. The mixer says how far sound is behind the picture. Target: within ~1 ms of each other.
+- **Algorithm.** Capture-time stamps (QPC, continuous across WASAPI packets); per speaker a
+  playout engine aiming each sample at `Tc + D` from the device's own position clock plus a hidden
+  latency; jump when >40 ms out or after any gap, else a PI loop within ±0.5% (same-rate: drop or
+  repeat one frame now and then; otherwise a linear resampler whose ratio the loop trims). `D`
+  rises at once to the worst need and falls after 20 s. The phone learns the PC's clock NTP-style
+  over channel 6's back direction (min-RTT samples, line fit for drift). Pinned by
+  `tools/audiosyncsim` and `AudioSyncTest`, which found three real bugs while being written
+  (truncated jumps slewing for 6 s, a dry spell not re-aligning, the resampler losing its fraction
+  at each block: ~500 ppm).
+- **Foolproof part: the microphone.** Hidden latency (Bluetooth, TV processing, the AAC path to the
+  phone) is invisible to every clock, so the phone's mic times a 60 ms chirp from each device in turn
+  (3 rounds, median, two must agree within 4 ms; refused beyond ±600 ms). Any bias in the mic's own
+  timing or in the clock offset is common to every device, so it cannot put them out of step with
+  each other. Hand nudges (±300 ms) and test clicks remain for the ear.
+- **Kept safe.** The user's own output comes back on off, disconnect, exit and after a crash
+  (D-093's note). If Windows moves the default output (a headset connects), Linc puts the cable
+  back and plays that device in step instead, and logs it. Bluetooth hands-free endpoints and
+  virtual cables are never offered. Settings per device in `audio-everywhere.json`.
+- **Not verified on hardware.** Built and unit-tested on Linux (Android build and tests; the
+  desktop's audio files compile and the playout runs in the sim). WASAPI rendering, Bluetooth on
+  Windows, two simultaneous phone outputs (`setPreferredDevice`, which some phones ignore — the
+  phone says so) and the microphone timing need the owner's PC and phone.

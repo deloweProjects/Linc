@@ -605,6 +605,35 @@ Remote Desktop feels instant on links where its video is visibly behind, because
 
 `pc.state` (v17) also gains two optional, read-only fields for the phone's Home "Your PC" card: `battery: {percent, charging}` (absent on a PC without a battery) and `network: "wifi" | "ethernet"` (absent when unknown). Older phones ignore them.
 
+## v26 — Play everywhere (2026-10-18; D-096)
+
+The PC's sound on its own speakers, its Bluetooth devices and the phone's outputs at once, heard in
+step, with a volume per device. Built on speaker mode's routing (v25): the cable is the default
+output, Linc captures it once and renders it to every chosen PC device itself (so each can be
+delayed) and to the phone over pc-audio.
+
+**Timing model.** Every block carries the PC-clock (QPC, µs) time it was captured, `Tc`. Every
+speaker aims to be heard at `Tc + D`; the desktop sets the group delay `D` from what each speaker
+needs (rises at once, falls only after 20 s of needing 30 ms less). A speaker's "heard" time is its
+own position clock plus a per-device hidden latency (a Bluetooth buffer, a TV's processing) that
+the phone's microphone measures. Each speaker corrects its error by a jump when unlocked or more
+than 40 ms out, otherwise by playing up to ±0.5% fast or slow (PI loop). The playout is pinned by
+`tools/audiosyncsim` (desktop) and `AudioSyncTest` (phone), which must agree.
+
+**pc-audio channel 6 with `clock`.** When the config frame has `"clock": true` (only Play
+everywhere's stream; a v25 phone never sees it): packet timestamps are PC-clock capture times, and
+the channel's back direction carries clock probes. Phone → desktop: 16 bytes, big-endian:
+`int32 0x4C434C4B ("LCLK")`, `int32 0`, `int64 phone µs (t0)`. Desktop → phone: a packet with the
+**config flag** set and a 24-byte payload: `int64 t0`, `int64 arrived (t1)`, `int64 leaving (t2)`
+(PC µs). The phone keeps the quickest round trips and fits offset + drift over the last minute.
+
+| Type | Direction | Payload | Notes |
+|---|---|---|---|
+| `audio.everywhere.set` | phone → desktop | `{on?, device?: {id, enabled?, volume? 0–100, muted?, manualMs?}, marginMs?, calibrate?, clicks?, resetAlignment?}` | Any of these; an empty `{}` just asks for the state. `on: true` turns speaker mode's routing on, restarts pc-audio with `clock`, and opens a render stream on each enabled PC output. `manualMs` (±500) is the user's nudge: positive plays earlier. `marginMs` (0–500) is added to the group delay. Answered with `audio.everywhere.state`. |
+| `audio.everywhere.state` | desktop → phone | `{on, delayMs, marginMs, testing, note?, error?, devices: [{id, name, kind: "pc"\|"phone", bluetooth, enabled, volume, muted, autoMs, manualMs, hiddenUs, calibrated, status, offByMs, needMs, problem?}]}` | After every `set`, on a change of `D`, and every 2 s while on. Phone entries come from the phone's report; the desktop stores every device's settings in `audio-everywhere.json` under the store root. `testing`: `"calibrate"`, `"clicks"` or null. `error` as `pc.speaker.state`'s. |
+| `audio.everywhere.report` | phone → desktop | `{outputs: [{id, name, bluetooth, needUs, status, offByUs}], clockReady, clock?: {uncertaintyUs, driftPpm}, calibration?: {seq, results: [{id, ok, errorUs, snr}], error?}}` | Every 2 s while the clocked stream plays. Phone output ids are `phone:speaker`, `phone:bt:<name>`, `phone:wired`, `phone:usb:<name>`; a new one is enabled by default. `needUs` includes the output's hidden latency. |
+| `audio.everywhere.test` | desktop → phone | `{seq, mode: "calibrate"\|"clicks", sounds: [{id, atUs, kind: "chirp"\|"click"}], listenFromUs, listenToUs}` | Program sound is muted on every speaker until the last sound. Each speaker plays its own sounds so they are heard at `atUs` (PC clock). `calibrate`: each device, one at a time, 3 rounds, 800 ms apart, a 60 ms 1.5→6 kHz chirp; the phone records `listenFromUs`–`listenToUs`, finds each chirp by cross-correlation within −200/+600 ms of when it was due, and reports per device the median error (ok only when two rounds agree within 4 ms). The desktop adds `errorUs` to that device's measured hidden latency (refusing beyond ±600 ms). `clicks`: every device at once, twice a second, for the user to judge by ear. |
+
 ## Protocol draft — later milestones (not implemented)
 
 Everything below is **draft until its milestone ships**. These message types are ignored by current peers per the envelope's unknown-type rule.

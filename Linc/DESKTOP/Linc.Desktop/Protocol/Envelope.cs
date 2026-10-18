@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 25;
+    public const int Version = 26;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -106,6 +106,14 @@ public static class MessageType
     public const string PcMicAuto = "pc.mic.auto";                   // phone → desktop: PC Remote with "Phone" chosen (v23)
     public const string PcSpeakerSet = "pc.speaker.set";       // phone → desktop: {on} phone as PC speaker (v25)
     public const string PcSpeakerState = "pc.speaker.state";   // desktop → phone: {on, cable, error?} (v25)
+
+    // v26 (D-096) — Play everywhere: the PC's sound on its own speakers, its Bluetooth devices
+    // and the phone's at once, in step. Audio rides pc-audio channel 6 with PC-clock capture
+    // timestamps; the phone times the PC's clock over the same channel's back direction.
+    public const string AudioEverywhereSet = "audio.everywhere.set";       // phone → desktop: {on?, device?, marginMs?, calibrate?, clicks?, resetAlignment?}
+    public const string AudioEverywhereState = "audio.everywhere.state";   // desktop → phone: the mixer, the group delay
+    public const string AudioEverywhereReport = "audio.everywhere.report"; // phone → desktop: its outputs, their needs, calibration results
+    public const string AudioEverywhereTest = "audio.everywhere.test";     // desktop → phone: test sounds to play / listen for
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies

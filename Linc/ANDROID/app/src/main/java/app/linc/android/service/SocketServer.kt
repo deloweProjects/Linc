@@ -195,18 +195,23 @@ class SocketServer(
             CHANNEL_BULK -> bulkLoop(input, output)
             CHANNEL_FILES -> fileServe(input, output)
             CHANNEL_VIDEO -> videoReceive(input)
-            CHANNEL_AUDIO -> audioReceive(input)
+            CHANNEL_AUDIO -> audioReceive(input, output)
             CHANNEL_MIC -> PcVoiceAccess.stream(output)
         }
     }
 
-    /** Channel 6 (pc-audio, v20): like pc-video, the desktop serves; config frame, then AAC. */
-    private fun audioReceive(input: DataInputStream) {
+    /**
+     * Channel 6 (pc-audio, v20): like pc-video, the desktop serves; config frame, then AAC. A v26
+     * config with `clock` is Play everywhere's stream: PC-clock timestamps, and clock probes
+     * answered on the channel's back direction (D-096).
+     */
+    private fun audioReceive(input: DataInputStream, output: DataOutputStream) {
         val configJson = Framing.read(input) ?: return
         val config = ProtocolJson.parseToJsonElement(configJson).jsonObject
         val rate = (config["sampleRate"] as? JsonPrimitive)?.intOrNull ?: return
         val channels = (config["channels"] as? JsonPrimitive)?.intOrNull ?: 2
-        AudioReceiver.receive(input, rate, channels)
+        if ((config["clock"] as? JsonPrimitive)?.booleanOrNull == true) SyncedAudio.receive(input, output, rate, channels)
+        else AudioReceiver.receive(input, rate, channels)
     }
 
     /**
@@ -601,6 +606,8 @@ class SocketServer(
                     MessageType.PC_VOICEACCESS_STATE -> if (negotiated >= 21) PcVoiceAccess.onState(message.payload)
                     MessageType.PC_TABLETMODE_STATE -> if (negotiated >= 22) PcTabletMode.onState(message.payload)
                     MessageType.PC_SPEAKER_STATE -> if (negotiated >= 25) PcSpeaker.onState(message.payload)
+                    MessageType.AUDIO_EVERYWHERE_STATE -> if (negotiated >= 26) AudioEverywhere.onState(message.payload)
+                    MessageType.AUDIO_EVERYWHERE_TEST -> if (negotiated >= 26) AudioEverywhere.onTest(message.payload)
                     // v15: the PC sets the phone's screen orientation (D-055). Bad payload →
                     // internal; WRITE_SETTINGS not granted → not-granted (a plain-language route
                     // to the Settings screen — same wording style as v7 dnd.set).

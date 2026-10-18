@@ -670,6 +670,7 @@ private fun MediaSheet(transportReason: String?, volumeReason: String?) {
         Text("${volume.toInt()}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(36.dp))
     }
     PcSpeakerSection()
+    PlayEverywhereSection()
 }
 
 private fun nowPlayingTitle(media: PcMedia?): String = when {

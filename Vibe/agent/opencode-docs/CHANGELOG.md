@@ -9,6 +9,16 @@ first.
 
 ## [Unreleased]
 
+### Added — 2026-10-18 — Play everywhere (D-096)
+
+- **Play everywhere** (Tools → Media): the PC's sound on its own speakers, its Bluetooth devices
+  and the phone's speaker or Bluetooth at once, in step, with a volume and mute per device.
+- **Align automatically** times each speaker with the phone's microphone; **Play test clicks** and
+  a per-speaker nudge let you align by ear; an extra safety margin helps on a busy Wi-Fi.
+- Everything it does is in the logs on both sides. Protocol v26.
+- File sharing to the PC no longer stops at 100 MB per file (250 MB per selection).
+- PC Remote: the Pointer buttons show the mode you picked; the click ring shows in Touch mode too.
+
 ### Added — 2026-10-17 — Background clipboard, phone as PC speaker, smarter recognition (D-092–D-094)
 
 - **Clipboard without opening Linc**: copy on the phone and it reaches the PC with Linc in the

@@ -10,6 +10,14 @@ using static Linc.Desktop.Services.Mf;
 namespace Linc.Desktop.Services;
 
 /// <summary>
+/// How a stream runs. The defaults are PC Remote's plain stream (v20). Play everywhere (v26,
+/// D-096) captures the virtual cable by id, stamps every packet with the PC-clock time it was
+/// captured, answers the phone's clock probes on the channel's back direction, and hands each
+/// block of raw sound to <paramref name="Tap"/> for the PC's own speakers.
+/// </summary>
+public sealed record AudioStreamOptions(string? LoopbackDeviceId = null, bool Clock = false, Action<SoundBlock>? Tap = null);
+
+/// <summary>
 /// Plays the PC's sound on the phone while PC Remote is open (v20 <c>pc.audio.start</c>,
 /// pc-audio channel 6, D-067) — Windows App's "play remote audio on this device".
 ///
@@ -26,6 +34,13 @@ namespace Linc.Desktop.Services;
 /// sound that arrives half a second after the picture is worse than a click.</para>
 ///
 /// <para>Loopback delivers nothing while the PC is silent, so silence costs no bandwidth.</para>
+///
+/// <para><b>Timestamps.</b> Each packet carries the PC-clock time (µs, QPC) its first sample was
+/// captured, from WASAPI's own capture stamp. A block that straddles a silence is padded and sent
+/// at once, so a timestamp never spans a gap. With <see cref="AudioStreamOptions.Clock"/>, the
+/// phone writes 16-byte probes up the channel (<c>"LCLK"</c>, 0, its time) and each is answered
+/// with a config-flagged packet of three longs: the probe's time, when it arrived, when the
+/// answer left.</para>
 /// </summary>
 public sealed class PcAudioStreamer : IDisposable
 {
@@ -41,7 +56,16 @@ public sealed class PcAudioStreamer : IDisposable
     private readonly SemaphoreSlim _pending = new(0);
     private readonly Thread _capture;
     private readonly Thread _writer;
+    private readonly Thread? _clockReader;
+    private readonly object _writeLock = new();
+    private readonly AudioStreamOptions _options;
+    private readonly Queue<long> _blockTimes = new(); // capture time of each block handed to the encoder, oldest first
     private bool _disposed;
+
+    /// <summary>The probe a phone writes up the channel: "LCLK".</summary>
+    public const int ClockMagic = 0x4C434C4B;
+    public const int ClockProbeBytes = 16;
+    public const int ClockReplyBytes = 24;
 
     /// <summary>Raised once when the stream ends (the phone hung up, or capture failed).</summary>
     public event Action<string>? Ended;
@@ -49,22 +73,27 @@ public sealed class PcAudioStreamer : IDisposable
     public int SampleRate { get; }
     public int Channels => 2;
 
-    private PcAudioStreamer(Stream channel, int sampleRate, ILogService log)
+    private PcAudioStreamer(Stream channel, int sampleRate, ILogService log, AudioStreamOptions options)
     {
         _channel = channel;
         _log = log;
+        _options = options;
         SampleRate = sampleRate;
         _capture = new Thread(CaptureLoop) { IsBackground = true, Name = "linc-audio-capture" };
         _writer = new Thread(WriteLoop) { IsBackground = true, Name = "linc-audio-writer" };
+        if (options.Clock)
+            _clockReader = new Thread(ClockLoop) { IsBackground = true, Name = "linc-audio-clock", Priority = ThreadPriority.AboveNormal };
     }
+
+    public AudioStreamOptions Options => _options;
 
     /// <summary>
     /// The mix rate of the default output device. AAC is encoded at that rate (the MFT takes
     /// 44.1 and 48 kHz), so no resampler is needed; anything else is refused up front.
     /// </summary>
-    public static int ProbeSampleRate()
+    public static int ProbeSampleRate(string? deviceId = null)
     {
-        var client = Wasapi.OpenLoopback(out var format);
+        var client = Wasapi.OpenLoopback(deviceId, out var format);
         try
         {
             if (format.SampleRate is not (44100 or 48000))
@@ -75,20 +104,27 @@ public sealed class PcAudioStreamer : IDisposable
     }
 
     /// <summary>Begin streaming onto an already-open channel, after its config frame is written.</summary>
-    public static PcAudioStreamer Start(Stream channel, int sampleRate, ILogService log)
+    public static PcAudioStreamer Start(Stream channel, int sampleRate, ILogService log, AudioStreamOptions? options = null)
     {
-        var streamer = new PcAudioStreamer(channel, sampleRate, log);
+        var streamer = new PcAudioStreamer(channel, sampleRate, log, options ?? new AudioStreamOptions());
         streamer._capture.Start();
         streamer._writer.Start();
+        streamer._clockReader?.Start();
         return streamer;
     }
 
-    public static JsonObject Config(int sampleRate) => new()
+    public static JsonObject Config(int sampleRate, bool clock = false)
     {
-        ["codec"] = "aac",
-        ["sampleRate"] = sampleRate,
-        ["channels"] = 2,
-    };
+        var config = new JsonObject
+        {
+            ["codec"] = "aac",
+            ["sampleRate"] = sampleRate,
+            ["channels"] = 2,
+        };
+        // v26: timestamps are PC-clock capture times and probes are answered (a v25 phone never sends one).
+        if (clock) config["clock"] = true;
+        return config;
+    }
 
     // ---- capture + encode (one MTA thread owns both COM objects) ----------
 
@@ -100,37 +136,67 @@ public sealed class PcAudioStreamer : IDisposable
         AacEncoder? encoder = null;
         try
         {
-            client = Wasapi.OpenLoopback(out var format);
+            client = Wasapi.OpenLoopback(_options.LoopbackDeviceId, out var format);
             capture = Wasapi.StartCapture(client);
             encoder = new AacEncoder(format.SampleRate, Bitrate);
 
             var pcm = new short[FramesPerAac * 2];
             int filled = 0;
-            var clock = System.Diagnostics.Stopwatch.StartNew();
+            long blockStartUs = 0;
+            // The capture timeline, µs: continuous across packets so consecutive blocks follow on
+            // exactly (WASAPI's per-packet stamps jitter by a little, and a jump between blocks
+            // reads as a gap to every speaker), pulled gently towards the stamps so it keeps
+            // following the device's own clock.
+            double timelineUs = 0;
+            bool timelineSet = false;
+            double frameUs = 1_000_000.0 / format.SampleRate;
+
+            void Flush()
+            {
+                if (filled == 0) return;
+                Array.Clear(pcm, filled * 2, pcm.Length - filled * 2); // a block cut short by silence is padded
+                _options.Tap?.Invoke(new SoundBlock((short[])pcm.Clone(), blockStartUs));
+                lock (_blockTimes) _blockTimes.Enqueue(blockStartUs);
+                foreach (var aac in encoder.Encode(pcm))
+                    Enqueue(aac, NextBlockTime());
+                filled = 0;
+            }
 
             while (!token.IsCancellationRequested)
             {
                 while (capture.GetNextPacketSize(out uint packet) == 0 && packet > 0)
                 {
-                    Check(capture.GetBuffer(out IntPtr data, out uint frames, out uint flags, out _, out _), "GetBuffer");
+                    Check(capture.GetBuffer(out IntPtr data, out uint frames, out uint flags, out _, out ulong qpc), "GetBuffer");
                     try
                     {
                         bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+                        bool stampOk = (flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR) == 0 && qpc != 0;
+                        long packetUs = stampOk ? PcClock.QpcHnsToUs(qpc) : PcClock.NowUs();
+                        // A packet that doesn't follow on (the PC was silent in between, or
+                        // WASAPI says so): finish the block being filled, and start the timeline
+                        // afresh from this packet's stamp.
+                        if (!timelineSet || (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0 || Math.Abs(packetUs - timelineUs) > 5_000)
+                        {
+                            Flush();
+                            timelineUs = packetUs;
+                            timelineSet = true;
+                        }
+                        else timelineUs += (packetUs - timelineUs) / 64;
                         for (uint f = 0; f < frames; f++)
                         {
+                            if (filled == 0) blockStartUs = (long)timelineUs;
                             Wasapi.ReadStereo(data, f, format, silent, out short left, out short right);
                             pcm[filled * 2] = left;
                             pcm[filled * 2 + 1] = right;
-                            if (++filled == FramesPerAac)
-                            {
-                                foreach (var aac in encoder.Encode(pcm))
-                                    Enqueue(aac, clock.Elapsed.Ticks / 10);
-                                filled = 0;
-                            }
+                            timelineUs += frameUs;
+                            if (++filled == FramesPerAac) Flush();
                         }
                     }
                     finally { capture.ReleaseBuffer(frames); }
                 }
+                // The PC went quiet mid-block (loopback then sends nothing at all): send what
+                // there is now, rather than holding the end of a sound until the next one starts.
+                if (filled > 0 && PcClock.NowUs() - timelineUs > 30_000) Flush();
                 token.WaitHandle.WaitOne(5);
             }
         }
@@ -147,6 +213,16 @@ public sealed class PcAudioStreamer : IDisposable
             if (capture is not null) Marshal.ReleaseComObject(capture);
             if (client is not null) Marshal.ReleaseComObject(client);
         }
+    }
+
+    /// <summary>
+    /// The capture time for the encoder's next output frame. The encoder gives one frame per
+    /// block, in order, after a fixed start-up delay; that constant offset is part of what the
+    /// phone's alignment measures, so it needs no modelling here.
+    /// </summary>
+    private long NextBlockTime()
+    {
+        lock (_blockTimes) return _blockTimes.Count > 0 ? _blockTimes.Dequeue() : PcClock.NowUs();
     }
 
     private void Enqueue(byte[] aac, long timestampUs)
@@ -180,8 +256,11 @@ public sealed class PcAudioStreamer : IDisposable
                     if (_queue.Count == 0) continue;
                     packet = _queue.Dequeue();
                 }
-                _channel.Write(packet, 0, packet.Length);
-                _channel.Flush();
+                lock (_writeLock)
+                {
+                    _channel.Write(packet, 0, packet.Length);
+                    _channel.Flush();
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -189,6 +268,51 @@ public sealed class PcAudioStreamer : IDisposable
         catch (Exception ex)
         {
             if (!token.IsCancellationRequested) Ended?.Invoke(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Answer the phone's clock probes (v26). Its own thread, reading the channel's back
+    /// direction, so the arrival time is taken the instant the probe is read and the answer
+    /// goes out straight away, ahead of any queued sound.
+    /// </summary>
+    private void ClockLoop()
+    {
+        var token = _stopping.Token;
+        var probe = new byte[ClockProbeBytes];
+        var reply = new byte[VideoFraming.HeaderBytes + ClockReplyBytes];
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                int read = 0;
+                while (read < probe.Length)
+                {
+                    int n = _channel.Read(probe, read, probe.Length - read);
+                    if (n == 0) return; // the phone closed its side
+                    read += n;
+                }
+                long arrived = PcClock.NowUs();
+                if (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(probe) != ClockMagic) continue;
+                long sent = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(probe.AsSpan(8));
+                lock (_writeLock)
+                {
+                    long leaving = PcClock.NowUs();
+                    VideoFraming.WriteHeader(reply, arrived, config: true, keyframe: false, ClockReplyBytes);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(reply.AsSpan(12), sent);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(reply.AsSpan(20), arrived);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(reply.AsSpan(28), leaving);
+                    _channel.Write(reply, 0, reply.Length);
+                    _channel.Flush();
+                }
+            }
+        }
+        catch (Exception) when (token.IsCancellationRequested) { }
+        catch (ObjectDisposedException) { }
+        catch (Exception ex)
+        {
+            // The writer notices a dead channel too; this only says why the clock stopped.
+            _log.Log(LogLevel.Info, $"Play everywhere: the phone's clock probes stopped ({ex.Message})");
         }
     }
 
@@ -200,6 +324,7 @@ public sealed class PcAudioStreamer : IDisposable
         _capture.Join(1000);
         _writer.Join(1000);
         try { _channel.Dispose(); } catch { }
+        _clockReader?.Join(1000); // its blocking read ends when the channel closes
         _pending.Dispose();
         _stopping.Dispose();
     }
@@ -363,7 +488,9 @@ public sealed class PcAudioStreamer : IDisposable
 
     // ---- WASAPI loopback ----------------------------------------------------
 
+    private const uint AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY = 0x1;
     private const uint AUDCLNT_BUFFERFLAGS_SILENT = 0x2;
+    private const uint AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR = 0x4;
 
     /// <summary>The mix format, reduced to what the sample reader needs.</summary>
     private readonly record struct MixFormat(int SampleRate, int Channels, int BitsPerSample, bool Float, int BlockAlign);
@@ -378,14 +505,18 @@ public sealed class PcAudioStreamer : IDisposable
         private const int AUDCLNT_STREAMFLAGS_LOOPBACK = 0x00020000;
         private const int BufferHns = 1_000_000; // 100 ms of device buffer; we drain every ~5 ms
 
-        public static IAudioClient OpenLoopback(out MixFormat format)
+        /// <summary>Loopback on <paramref name="deviceId"/>, or on the default output when null.</summary>
+        public static IAudioClient OpenLoopback(string? deviceId, out MixFormat format)
         {
             var enumeratorType = Type.GetTypeFromCLSID(CLSID_MMDeviceEnumerator)!;
             var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(enumeratorType)!;
             try
             {
-                Check(enumerator.GetDefaultAudioEndpoint(0 /* eRender */, 0 /* eConsole */, out IMMDevice device),
-                    "GetDefaultAudioEndpoint");
+                IMMDevice device;
+                if (deviceId is null)
+                    Check(enumerator.GetDefaultAudioEndpoint(0 /* eRender */, 0 /* eConsole */, out device), "GetDefaultAudioEndpoint");
+                else
+                    Check(enumerator.GetDevice(deviceId, out device), "GetDevice");
                 try
                 {
                     var iid = IID_IAudioClient;
@@ -463,6 +594,7 @@ public sealed class PcAudioStreamer : IDisposable
     {
         [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
         [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice device);
+        [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
     }
 
     [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
