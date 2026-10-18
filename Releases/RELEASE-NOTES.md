@@ -15,6 +15,25 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.16 ("1.0.0-beta.16") — 2026-10-18
+
+Install both apps (protocol v25). Phones and settings are kept. Everything in 1.0.0.15 and earlier
+below, plus:
+
+- **Clipboard without opening Linc.** Copy on the phone and it reaches the PC with Linc in the
+  background, once the PC has connected over USB or wireless debugging (it grants what this needs).
+- **Phone as PC speaker** (Tools → Media). The PC's sound moves to the phone instead of playing on
+  both, so nothing echoes. The PC's own speakers come back when you stop or disconnect. Uses the
+  same virtual cable as the phone microphone.
+- **Home → Your PC**: the PC's battery and network, with volume and brightness sliders.
+- **Send to PC** shows a notification while sending, then "Sent", then goes away.
+- **Mirror PC**: a ring and a tap of vibration the moment you click, before the picture catches up;
+  the pointer stays in step on slow Wi-Fi and after the PC moves it itself.
+- **The PC finds your phone faster**: it also recognises it by its Wi-Fi address and connects as
+  soon as it joins the network.
+- **Setup** explains ADB pairing and ticks off when it worked. The Remote tab is called **Tools**.
+- Fixes: closing Linc's app windows on disconnect no longer leaves some open; clearer PC log.
+
 ## 1.0.0.15 ("1.0.0-beta.15") — 2026-10-11
 
 Install both apps. Phones and settings are kept. Everything in 1.0.0.14 and earlier below, plus:

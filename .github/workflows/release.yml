@@ -1,0 +1,110 @@
+# Cuts a Linc release on a GitHub Windows runner with the project's own Linc/tools/release.ps1:
+# version stamp, Android tests + APK, desktop publish, Inno Setup installer, zip, CHECKSUMS.txt,
+# update.json, the GitHub release with every asset, and the push. Run it from the Actions tab
+# ("Release" -> Run workflow) on main, after Releases/RELEASE-NOTES.md has a section for the version.
+#
+# APK signature: released APKs are debug builds signed with the owner's debug key, and Android only
+# installs an update signed with the same key. Put that key in the ANDROID_DEBUG_KEYSTORE secret
+# (base64 of %USERPROFILE%\.android\debug.keystore) and the APK matches every installed copy.
+# Without the secret the run stops, unless allow_new_apk_key is ticked: then the APK is signed with
+# a new key and phones that already have Linc must uninstall it before installing this one.
+#
+# A release made with this workflow's token does not trigger other workflows, so it then
+# dispatches "Upload release to Telegram" itself.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Four-part version, e.g. 1.0.0.16"
+        required: true
+      display_name:
+        description: "Display name, e.g. 1.0.0-beta.16"
+        required: true
+      notes:
+        description: "One-line update notes shown in the apps (optional)"
+        required: false
+      prerelease:
+        description: "Pre-release (hidden from Komi Store and /releases/latest)"
+        type: boolean
+        default: false
+      allow_new_apk_key:
+        description: "No ANDROID_DEBUG_KEYSTORE secret: sign the APK with a new key anyway"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: APK signing key
+        shell: pwsh
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
+          ALLOW_NEW: ${{ inputs.allow_new_apk_key }}
+        run: |
+          $dir = Join-Path $env:USERPROFILE '.android'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          if ($env:KEYSTORE) {
+            [IO.File]::WriteAllBytes((Join-Path $dir 'debug.keystore'), [Convert]::FromBase64String($env:KEYSTORE))
+            Write-Host "Using the owner's debug key: the APK updates installed copies."
+          } elseif ($env:ALLOW_NEW -eq 'true') {
+            Write-Host "::warning::No ANDROID_DEBUG_KEYSTORE secret: the APK gets a new key. Phones that have Linc must uninstall it first."
+          } else {
+            Write-Host "::error::No ANDROID_DEBUG_KEYSTORE secret. An APK signed with any other key can't update installed copies. Add the secret, or run again with allow_new_apk_key."
+            exit 1
+          }
+
+      - name: Tools (Inno Setup, MSBuild)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -property installationPath
+          "LINC_MSBUILD=$vs\MSBuild\Current\Bin\MSBuild.exe" >> $env:GITHUB_ENV
+          git config user.name "github-actions[bot]"
+          git config user.email "41898099+github-actions[bot]@users.noreply.github.com"
+
+      - name: Build and publish with release.ps1
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+          DISPLAY_NAME: ${{ inputs.display_name }}
+          NOTES: ${{ inputs.notes }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $params = @{ Version = $env:VERSION; DisplayName = $env:DISPLAY_NAME; Publish = $true }
+          if ($env:NOTES) { $params.Notes = $env:NOTES }
+          if ($env:PRERELEASE -eq 'true') { $params.Prerelease = $true }
+          & .\Linc\tools\release.ps1 @params
+
+      - name: Post the release to Telegram
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: gh workflow run telegram-upload.yml --repo "$env:GITHUB_REPOSITORY" --ref main -f tag="v$env:VERSION"

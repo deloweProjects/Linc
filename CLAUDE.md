@@ -22,12 +22,16 @@ failure with its log rather than saying it was sent. Details: `telegram-uploader
 
 ## Releases
 
-- Releases are cut by `Linc/tools/release.ps1` on the owner's Windows PC. It builds the APK, the
+- From a cloud session: dispatch `.github/workflows/release.yml` ("Release") on `main` with
+  `version` (next after the newest GitHub tag) and `display_name`. It runs `release.ps1` on a
+  Windows runner, publishes, and then dispatches the Telegram upload itself. Write the version's
+  section in `Releases/RELEASE-NOTES.md` first, or `release.ps1` stops.
+- Releases are cut by `Linc/tools/release.ps1`, on the owner's Windows PC or by `release.yml`. It builds the APK, the
   desktop publish, the Inno Setup installer and the zip, writes `Releases/CHECKSUMS.txt` and
   `Releases/update.json`, and with `-Publish` tags and uploads the GitHub release, which then
   posts itself to Telegram (above).
-- **The phone APK must come from the owner's PC.** Released APKs are debug builds signed with the
-  owner's local debug key. An APK built anywhere else is signed with a different key, so every
-  installed copy refuses it as an update ("App not installed").
+- **APK signature.** Released APKs are debug builds signed with the owner's debug key, and Android
+  only installs an update signed with the same key. `release.yml` restores that key from the
+  `ANDROID_DEBUG_KEYSTORE` secret, and stops without it unless `allow_new_apk_key` is ticked.
 - Check the newest tag on GitHub before choosing a version number. Releases have been cut from
   `feature/quick-share-and-recognition`, ahead of `main`, so the version in `main` can lag.

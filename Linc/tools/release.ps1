@@ -49,7 +49,8 @@ $ProdDir    = Join-Path (Split-Path $RepoRoot -Parent) 'Linc prod'
 $Date       = Get-Date -Format 'yyyy-MM-dd'
 $Tag        = "v$Version"
 $Repo       = 'deloweProjects/Linc'
-$MSBuild    = 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe'
+# LINC_MSBUILD overrides the owner's VS 18 Community path (CI points it at the runner's VS).
+$MSBuild    = if ($env:LINC_MSBUILD) { $env:LINC_MSBUILD } else { 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe' }
 $Iscc       = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
                 "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 $Utf8NoBom  = New-Object System.Text.UTF8Encoding $false
@@ -74,9 +75,11 @@ function Size([string] $path) { (Get-Item -LiteralPath $path).Length }
 Step "Checking the tools"
 if (-not (Test-Path $MSBuild)) { Fail "VS MSBuild not found at $MSBuild (dotnet build can't build WinUI)" }
 if (-not $Iscc) { Fail "Inno Setup 6 is not installed (ISCC.exe). Install it from https://jrsoftware.org/isdl.php" }
-$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
-$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
-if (-not (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) { Fail "Android Studio's JBR not found at $env:JAVA_HOME" }
+# Android Studio's JDK and SDK on the owner's PC; a JAVA_HOME/ANDROID_HOME already set (CI) wins.
+$studioJbr = 'C:\Program Files\Android\Android Studio\jbr'
+if (Test-Path (Join-Path $studioJbr 'bin\java.exe')) { $env:JAVA_HOME = $studioJbr }
+if (-not $env:ANDROID_HOME) { $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
+if (-not $env:JAVA_HOME -or -not (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) { Fail "no JDK: install Android Studio, or set JAVA_HOME" }
 if ($Publish -and -not (Get-Command gh -ErrorAction SilentlyContinue)) { Fail "the GitHub CLI (gh) is needed for -Publish" }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
@@ -100,7 +103,9 @@ Step "Building and testing the phone app"
 Push-Location $Android
 try {
     $tasks = if ($SkipTests) { @('assembleDebug') } else { @('testDebugUnitTest', 'assembleDebug') }
-    Run '.\gradlew.bat' (@('--offline') + $tasks) 'The Android build'
+    # --offline on the owner's PC (its Gradle cache is warm); a fresh CI runner has to download.
+    $offline = if ($env:CI) { @() } else { @('--offline') }
+    Run '.\gradlew.bat' ($offline + $tasks) 'The Android build'
 } finally { Pop-Location }
 $apk = Join-Path $Android 'app\build\outputs\apk\debug\app-debug.apk'
 if (-not (Test-Path $apk)) { Fail "no APK at $apk" }
@@ -296,6 +301,7 @@ foreach ($name in $ApkName, 'CHECKSUMS.txt', $SetupName, $ZipName) {
     Write-Host "  $($r.StatusCode)  $url"
 }
 
+if ($branch -eq 'main') { Step "Released $Tag (published from main, so update.json is live already)."; return }
 Step "Merging to main (this makes update.json live)"
 $pr = gh pr list --repo $Repo --head $branch --base main --state open --json number --jq '.[0].number'
 if (-not $pr) {
