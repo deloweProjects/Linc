@@ -9,6 +9,19 @@ first.
 
 ## [Unreleased]
 
+### Added — 2026-10-18 — Phone's sound everywhere, PC tools on the phone, a new Device page (D-097)
+
+- **Play everywhere from the phone**: what apps on the phone play, on its speaker, its Bluetooth and
+  the PC's speakers at once, in step — or just the phone's speaker and Bluetooth, no PC needed.
+- **PC Remote** sound now follows the picture; no more scratching when another app makes a sound;
+  the PC no longer plays quietly; the phone shows "Playing from your PC" in its media controls.
+- **Tools → PC**: light/dark, accent colour, transparency, wallpaper from your photos, how the PC is
+  doing, running apps (End), open a link. **Tools → Terminal**: PowerShell, Command Prompt or WSL.
+  **Tools → Files**: the PC's files — download, upload, new folder, rename, delete.
+- **Media** sheet and a **Play everywhere** page, simpler, with Advanced for alignment.
+- **Desktop Device page** redesigned, with the phone's media, sound mode, find, Do Not Disturb and
+  screenshot; **Show explanations** now hides help on more pages. Protocol v27.
+
 ### Added — 2026-10-18 — Play everywhere (D-096)
 
 - **Play everywhere** (Tools → Media): the PC's sound on its own speakers, its Bluetooth devices

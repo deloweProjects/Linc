@@ -1624,3 +1624,32 @@ Bluetooth devices and the phone (and the phone's Bluetooth) all at once, with a 
   desktop's audio files compile and the playout runs in the sim). WASAPI rendering, Bluetooth on
   Windows, two simultaneous phone outputs (`setPreferredDevice`, which some phones ignore — the
   phone says so) and the microphone timing need the owner's PC and phone.
+
+## D-097: Play everywhere from the phone, lip-sync, stable sound, and the phone's PC tools
+
+**2026-10-18.** The owner's feedback on D-096 (it works) and the next round of asks.
+
+- **PC Remote lip-sync.** In PC Remote the group delay put the sound behind the picture. The PC now
+  sends its video timestamps' zero on the PC clock; the phone measures each frame's delay and, while
+  the picture shows, aims its own outputs at it. PC speakers keep the group delay.
+- **The scratch.** Android's track timestamps jump when another app's sound starts or an app opens;
+  each was believed and "corrected" with a jump. `TrackClock` averages small differences and accepts
+  a big one only after 8 reports agree. Jumps that are real fade in over 5 ms; the track holds 200 ms;
+  render threads run at audio priority; Linc is a media player to Android (media session "Playing
+  from your PC", audio focus).
+- **Quiet PC.** The cable's Windows volume scales everything captured from it. It is pinned to 100%
+  while on and restored after; a PC speaker's slider is that device's own Windows volume.
+- **The phone as the source.** Android can't delay other apps' playback, so the phone's own output
+  — usually Bluetooth, the slowest — is the reference: everything else plays Linc's copy at capture
+  + its latency. Linc's copies are never capturable (no feedback). Works with no PC (the phone's
+  speaker and Bluetooth together). Align uses the microphone to time the copy against Android's own
+  output (a two-peak chirp finder).
+- **PC tools on the phone.** Look (theme, accent, transparency, wallpaper), status, running apps,
+  open a link, files (browse, download, upload, new folder, rename, Recycle-Bin delete), and a
+  terminal in a real ConPTY with a VT screen on the phone. All as the signed-in user, unelevated,
+  logged: the paired phone already drives the mouse and keyboard, so this grants nothing new in kind.
+- **Desktop.** The Device page is rebuilt in Material 3 Expressive terms (hero + stat tiles, phone
+  controls including media, sound mode, find, Do Not Disturb and screenshot, then screen, install,
+  connection; two columns when wide). More pages honour Settings → Show explanations.
+- **Verified here:** Android build + 233 unit tests; desktop Services/ViewModels/QuickShare compile
+  against the real code; audiosyncsim. **Not here:** XAML (Windows CI), and everything on hardware.

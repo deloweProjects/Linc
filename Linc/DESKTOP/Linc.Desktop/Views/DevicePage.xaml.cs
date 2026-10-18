@@ -14,6 +14,8 @@ public sealed partial class DevicePage : Page
     public DesktopModeViewModel DesktopMode { get; }
     public DesktopModeSettingsViewModel DesktopModeSettings { get; }
     public DisplayControlViewModel DisplayControl { get; }
+    /// <summary>The phone's controls (media, sound, find, Do Not Disturb, screenshot) live in Home's view model; this page shows them too.</summary>
+    public HomeViewModel Home { get; }
 
     public DevicePage()
     {
@@ -23,6 +25,7 @@ public sealed partial class DevicePage : Page
         DesktopMode = App.Services.GetRequiredService<DesktopModeViewModel>();
         DesktopModeSettings = App.Services.GetRequiredService<DesktopModeSettingsViewModel>();
         DisplayControl = App.Services.GetRequiredService<DisplayControlViewModel>();
+        Home = App.Services.GetRequiredService<HomeViewModel>();
         InitializeComponent();
     }
 

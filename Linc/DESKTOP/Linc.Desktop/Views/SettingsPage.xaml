@@ -86,7 +86,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock
+                        <TextBlock views:Explain.IsHelp="True"
                             Text="Save notifications on this PC so you can see them after they are dismissed elsewhere."
                             Style="{StaticResource BodyText}" />
                         <ToggleSwitch
@@ -281,7 +281,7 @@
                 Visibility="{x:Bind ViewModel.HasKnownDevices, Mode=OneWay}">
                 <StackPanel Spacing="12">
                     <TextBlock Text="Devices" Style="{StaticResource TitleText}" />
-                    <TextBlock
+                    <TextBlock views:Explain.IsHelp="True"
                         Style="{StaticResource BodyText}"
                         Text="Every phone paired with this PC. Open switches to it (and re-opens a closed tab); Remove unpairs it and deletes its saved copy — the same as Remove completely on its tab." />
                     <!-- M15c A2: the limit, stated where a phone gets added rather than after. -->

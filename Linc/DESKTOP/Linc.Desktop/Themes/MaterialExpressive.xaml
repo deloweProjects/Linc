@@ -171,4 +171,65 @@
         <Setter Property="FontSize" Value="11" />
         <Setter Property="Foreground" Value="{ThemeResource OnSurfaceVariantBrush}" />
     </Style>
+
+    <!--
+        D-097: the pieces the Device page is now built from, so it reads like the phone's
+        Material 3 Expressive screens rather than a form: a hero card in the primary container,
+        stat tiles, section labels, round icon buttons and quiet text buttons.
+    -->
+    <Style x:Key="HeroCard" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource PrimaryContainerBrush}" />
+        <Setter Property="CornerRadius" Value="{StaticResource ShapeExtraLarge}" />
+        <Setter Property="Padding" Value="28,24" />
+    </Style>
+
+    <Style x:Key="StatTile" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource SurfaceContainerHighBrush}" />
+        <Setter Property="CornerRadius" Value="20" />
+        <Setter Property="Padding" Value="16,12" />
+    </Style>
+
+    <Style x:Key="SectionLabel" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CharacterSpacing" Value="40" />
+        <Setter Property="Foreground" Value="{ThemeResource OnSurfaceVariantBrush}" />
+    </Style>
+
+    <Style x:Key="StatValue" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource OnSurfaceBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="IconTonalButton" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource SecondaryContainerBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource OnSecondaryContainerBrush}" />
+        <Setter Property="CornerRadius" Value="24" />
+        <Setter Property="Width" Value="48" />
+        <Setter Property="Height" Value="48" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <Style x:Key="QuietButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{ThemeResource OnSurfaceBrush}" />
+        <Setter Property="CornerRadius" Value="{StaticResource ShapeFull}" />
+        <Setter Property="Padding" Value="20,12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="BorderBrush" Value="{ThemeResource OutlineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="ActionTile" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource SurfaceContainerHighBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource OnSurfaceBrush}" />
+        <Setter Property="CornerRadius" Value="20" />
+        <Setter Property="Padding" Value="16,14" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
 </ResourceDictionary>

@@ -634,6 +634,36 @@ the channel's back direction carries clock probes. Phone → desktop: 16 bytes, 
 | `audio.everywhere.report` | phone → desktop | `{outputs: [{id, name, bluetooth, needUs, status, offByUs}], clockReady, clock?: {uncertaintyUs, driftPpm}, calibration?: {seq, results: [{id, ok, errorUs, snr}], error?}}` | Every 2 s while the clocked stream plays. Phone output ids are `phone:speaker`, `phone:bt:<name>`, `phone:wired`, `phone:usb:<name>`; a new one is enabled by default. `needUs` includes the output's hidden latency. |
 | `audio.everywhere.test` | desktop → phone | `{seq, mode: "calibrate"\|"clicks", sounds: [{id, atUs, kind: "chirp"\|"click"}], listenFromUs, listenToUs}` | Program sound is muted on every speaker until the last sound. Each speaker plays its own sounds so they are heard at `atUs` (PC clock). `calibrate`: each device, one at a time, 3 rounds, 800 ms apart, a 60 ms 1.5→6 kHz chirp; the phone records `listenFromUs`–`listenToUs`, finds each chirp by cross-correlation within −200/+600 ms of when it was due, and reports per device the median error (ok only when two rounds agree within 4 ms). The desktop adds `errorUs` to that device's measured hidden latency (refusing beyond ±600 ms). `clicks`: every device at once, twice a second, for the user to judge by ear. |
 
+## v27 — Phone as Play everywhere's source, lip-sync, PC tools (2026-10-18; D-097)
+
+**Lip-sync.** `pc.mirror.stats` gains `epochUs`: the PC-clock time (µs) of video timestamp 0.
+With Play everywhere's clocked sound running, the phone measures each shown frame's delay
+(`toPc(now) − (epochUs + pts)`) and, while PC Remote shows the picture, plays its own outputs at
+that delay instead of the group delay.
+
+**The phone as the source.** `audio.everywhere.set {source: "phone", on}` — the phone records
+what its apps play (Android playback capture) and asks the PC to listen: the PC dials **channel
+8** (pc-phone-audio). Phone → desktop: packets framed like pc-video (12-byte header). Sound
+packets carry 16-bit little-endian stereo 48 kHz PCM, and their timestamp is the **PC-clock
+moment the block must be heard** (the phone's own output's moment), so the PC plays each block at
+exactly that time with no group delay of its own. Config-flagged packets are clock probes
+(16 bytes: `"LCLK"`, 0, phone µs); the PC answers each on the back direction with a
+config-flagged 24-byte packet (`t0`, arrived, leaving), as on channel 6. `{source: "pc", on: false}`
+ends it. `audio.everywhere.state` gains `source: "pc" | "phone"`.
+
+**PC tools.** All phone → desktop requests, answered with their own message types:
+
+| Request | Answer | Notes |
+|---|---|---|
+| `pc.look.get {}` / `pc.look.set {appsDark?, systemDark?, accent? "#RRGGBB", autoAccent?, transparency?}` | `pc.look.state {appsDark, systemDark, transparency, accent, autoAccent, wallpaper?, error?}` | HKCU Personalize/DWM/Explorer\Accent, then `WM_SETTINGCHANGE "ImmersiveColorSet"`. |
+| `pc.wallpaper.set {jpeg (base64, ≤ ~700 KB), fit: fill\|fit\|stretch\|center\|tile\|span}` | `pc.look.state` | Saved under the store root, a new name each time. |
+| `pc.info.get {}` | `pc.info {name, user, os, uptimeMin, cpuPct, memTotalMb, memUsedMb, disks[], battery?}` | |
+| `pc.apps.get {}` / `pc.apps.end {pid}` | `pc.apps {apps: [{pid, name, title, memMb}]}` | End: close the window, then end it after 3 s. |
+| `pc.open {url}` or `{path}` | — | Shell-opened, as a double-click. |
+| `pc.files.list {path}` (`""` = the starting places) | `pc.files.listing {path, parent, entries: [{name, path, dir, size, modified, drive?, place?}], truncated?, error?}` | Hidden/system entries skipped; 2000 max. |
+| `pc.files.op {op, id, …}`: `mkdir {path, name}`, `rename {path, name}`, `delete {path}` (Recycle Bin), `open {path}`, `download {path}`, `upload {dir, name, size}` | `pc.files.done {op, id, ok, path?, error?}` | Transfers: the PC dials **channel 10**, writes a JSON frame `{id, op}` (+ `name`, `size` for a download), then the bytes flow PC → phone (download) or phone → PC (upload, `size` bytes or until close). |
+| `pc.term.get {}` / `pc.term.open {shell: powershell\|cmd\|wsl, cols, rows}` | `pc.term.state {shells, running?, error?}` | The PC dials **channel 9** and runs the shell in a ConPTY. Both ways: `[type u8][length u32 BE][payload]`; 1 = UTF-8 text (VT output / keystrokes), 2 = resize (cols, rows as u16 BE), 3 = exit (i32 code, PC → phone). |
+
 ## Protocol draft — later milestones (not implemented)
 
 Everything below is **draft until its milestone ships**. These message types are ignored by current peers per the envelope's unknown-type rule.

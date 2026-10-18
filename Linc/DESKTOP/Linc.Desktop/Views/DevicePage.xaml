@@ -1,8 +1,17 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The phone's page (D-097 redesign). Connected, it reads top to bottom by how often each thing
+    is used: who is connected and how it's doing (hero + stat tiles), the phone's controls
+    (media, sound, find, Do Not Disturb, screenshot, display), its screen on this PC (mirror,
+    Desktop Mode), then the rarer things (installing an app, how the link is made). Two columns on
+    a wide window, one on a narrow one. Explanatory lines are marked views:Explain.IsHelp, so
+    Settings → Show explanations hides them; values, warnings and errors always show.
+-->
 <Page
     x:Class="Linc.Desktop.Views.DevicePage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Linc.Desktop.Views"
     xmlns:vm="using:Linc.Desktop.ViewModels">
 
     <ScrollViewer
@@ -10,923 +19,555 @@
         VerticalScrollBarVisibility="Auto"
         HorizontalScrollMode="Disabled"
         HorizontalScrollBarVisibility="Disabled">
-        <Grid Padding="32" RowSpacing="16">
+        <!-- Adaptive triggers only run on the page's root element, so they live here, not on the grid. -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup>
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1180" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="RightColumn.(Grid.Column)" Value="0" />
+                        <Setter Target="RightColumn.(Grid.Row)" Value="1" />
+                        <Setter Target="SecondColumn.Width" Value="0" />
+                        <Setter Target="Columns.ColumnSpacing" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <Grid x:Name="Root" Padding="32" RowSpacing="20" MaxWidth="1280">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-        <!-- USB device detected, needs confirmation. Top-level and NOT inside the disconnected
-             panel (M15c A1): a second phone plugged in while one is live is precisely when the
-             user must be offered the choice, and that is the case the old placement hid. -->
-        <Border
-            Style="{StaticResource ExpressiveCard}"
-            MaxWidth="520"
-            HorizontalAlignment="Center"
-            Visibility="{x:Bind ViewModel.ShowUsbDeviceDetected, Mode=OneWay}">
-            <StackPanel Spacing="12">
-                <TextBlock Text="Phone detected over USB" Style="{StaticResource TitleText}" />
-                <TextBlock Text="{x:Bind ViewModel.UsbDeviceText, Mode=OneWay}" Style="{StaticResource BodyText}" />
-                <TextBlock
-                    Style="{StaticResource BodyText}"
-                    TextWrapping="Wrap"
-                    Text="{x:Bind ViewModel.UsbDeviceMessage, Mode=OneWay}" />
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Button
-                        Style="{StaticResource FilledButton}"
-                        Content="{x:Bind ViewModel.UsbPrimaryActionText, Mode=OneWay}"
-                        Command="{x:Bind ViewModel.ConnectUsbCommand}" />
-                    <Button
-                        Style="{StaticResource TonalButton}"
-                        Content="Cancel"
-                        Command="{x:Bind ViewModel.DismissUsbDeviceCommand}" />
+            <!-- USB device detected, needs confirmation. Top-level and NOT inside the disconnected
+                 panel (M15c A1): a second phone plugged in while one is live is precisely when the
+                 user must be offered the choice, and that is the case the old placement hid. -->
+            <Border
+                Style="{StaticResource HeroCard}"
+                MaxWidth="560"
+                HorizontalAlignment="Center"
+                Visibility="{x:Bind ViewModel.ShowUsbDeviceDetected, Mode=OneWay}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Phone detected over USB" Style="{StaticResource TitleText}" />
+                    <TextBlock Text="{x:Bind ViewModel.UsbDeviceText, Mode=OneWay}" Style="{StaticResource BodyText}" />
+                    <TextBlock Style="{StaticResource BodyText}" Text="{x:Bind ViewModel.UsbDeviceMessage, Mode=OneWay}" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Style="{StaticResource FilledButton}" Content="{x:Bind ViewModel.UsbPrimaryActionText, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.ConnectUsbCommand}" />
+                        <Button Style="{StaticResource QuietButton}" Content="Cancel" Command="{x:Bind ViewModel.DismissUsbDeviceCommand}" />
+                    </StackPanel>
                 </StackPanel>
+            </Border>
+
+            <!-- ================= Not connected ================= -->
+            <StackPanel
+                Grid.Row="1"
+                Spacing="16"
+                MaxWidth="560"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Visibility="{x:Bind ViewModel.ShowDisconnectedArea, Mode=OneWay}">
+
+                <!-- Searching for the paired phone -->
+                <Border Style="{StaticResource HeroCard}" Visibility="{x:Bind ViewModel.ShowSearching, Mode=OneWay}">
+                    <StackPanel Spacing="14">
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <ProgressRing IsActive="True" Width="28" Height="28" />
+                            <TextBlock Text="{x:Bind ViewModel.SearchingText, Mode=OneWay}" Style="{StaticResource TitleText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource BodyText}"
+                                   Text="Linc connects by itself when the phone is on the same Wi-Fi with Wireless debugging on, or plugged in over USB." />
+                        <Button Style="{StaticResource QuietButton}" Content="Pair a different phone" Command="{x:Bind ViewModel.StartPairingCommand}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- First run: nothing paired yet -->
+                <Border Style="{StaticResource HeroCard}" Visibility="{x:Bind ViewModel.ShowGetStarted, Mode=OneWay}">
+                    <StackPanel Spacing="16">
+                        <FontIcon Glyph="&#xE8EA;" FontSize="40" HorizontalAlignment="Left" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                        <TextBlock Text="Link your phone" Style="{StaticResource HeadlineText}" />
+                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource BodyText}"
+                                   Text="Pair once. After that Linc finds and connects to your phone by itself, on the same Wi-Fi or over USB." />
+                        <Button Style="{StaticResource FilledButton}" Content="Pair phone" Command="{x:Bind ViewModel.StartPairingCommand}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Paused after a manual disconnect -->
+                <Border Style="{StaticResource ExpressiveCard}" Visibility="{x:Bind ViewModel.ShowPaused, Mode=OneWay}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Disconnected" Style="{StaticResource TitleText}" />
+                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource BodyText}" Text="Automatic connection is paused until you resume it." />
+                        <Button Style="{StaticResource FilledButton}" Content="Resume" Command="{x:Bind ViewModel.ResumeCommand}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Pairing flow -->
+                <Border Style="{StaticResource ExpressiveCard}" Visibility="{x:Bind ViewModel.ShowPairing, Mode=OneWay}">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Pair your phone" Style="{StaticResource HeadlineText}" />
+                        <!-- M15c A2: say the one-phone limit before the collision, not after it. -->
+                        <TextBlock Style="{StaticResource BodyText}" Visibility="{x:Bind ViewModel.ShowOneAtATimeNote, Mode=OneWay}" Text="{x:Bind ViewModel.OneAtATimeText, Mode=OneWay}" />
+                        <TextBlock Style="{StaticResource BodyText}"
+                                   Text="On the phone: Settings → Developer options → Wireless debugging → “Pair device with QR code”, then scan this:" />
+                        <Border Background="White" CornerRadius="{StaticResource ShapeLarge}" Padding="16" HorizontalAlignment="Left">
+                            <Image Source="{x:Bind ViewModel.QrImage, Mode=OneWay}" Width="200" Height="200" />
+                        </Border>
+                        <TextBlock Style="{StaticResource BodyText}"
+                                   Text="Or choose “Pair device with pairing code” on the phone and type the 6-digit code here:" />
+                        <TextBlock Style="{StaticResource BodyText}" Text="{x:Bind ViewModel.PairingPhoneText, Mode=OneWay}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBox Style="{StaticResource ExpressiveTextBox}" Width="160" PlaceholderText="6-digit code" Text="{x:Bind ViewModel.PairingCode, Mode=TwoWay}" />
+                            <Button Style="{StaticResource FilledButton}" Content="Pair" Command="{x:Bind ViewModel.PairWithCodeCommand}" IsEnabled="{x:Bind ViewModel.CanPairWithCode, Mode=OneWay}" />
+                        </StackPanel>
+                        <Button Style="{StaticResource QuietButton}" Content="Cancel" Command="{x:Bind ViewModel.CancelPairingCommand}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Connection method (per device) -->
+                <Border Style="{StaticResource ExpressiveCard}" Visibility="{x:Bind ViewModel.ShowConnectionMethod, Mode=OneWay}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Connection method" Style="{StaticResource TitleText}" />
+                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.ConnectionMethods}"
+                                  SelectedItem="{x:Bind ViewModel.SelectedConnectionMethod, Mode=TwoWay}" DisplayMemberPath="Label" />
+                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}"
+                                   Text="Automatic picks the best link and switches as things change: USB, then Wireless debugging, then a direct Wi-Fi connection." />
+                    </StackPanel>
+                </Border>
+
+                <!-- Manual fallback -->
+                <Expander Header="Connect by address" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="12" Padding="0,12,0,0">
+                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource BodyText}" Text="The IP address and port from the phone's Wireless debugging screen." />
+                        <TextBox Style="{StaticResource ExpressiveTextBox}" PlaceholderText="192.168.1.23:37099" Text="{x:Bind ViewModel.HostPort, Mode=TwoWay}" />
+                        <Button Style="{StaticResource TonalButton}" Content="Connect" Command="{x:Bind ViewModel.ConnectCommand}" IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                    </StackPanel>
+                </Expander>
+
+                <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" HorizontalAlignment="Center" />
             </StackPanel>
-        </Border>
 
-        <!-- Disconnected panels -->
-        <StackPanel
-            Grid.Row="1"
-            Spacing="16"
-            MaxWidth="520"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Top"
-            Visibility="{x:Bind ViewModel.ShowDisconnectedArea, Mode=OneWay}">
+            <!-- ================= Connected ================= -->
+            <StackPanel Grid.Row="1" Spacing="20" Visibility="{x:Bind ViewModel.ShowConnectedArea, Mode=OneWay}">
 
-            <!-- Searching for the paired phone -->
-            <Border
-                Style="{StaticResource ExpressiveCard}"
-                Visibility="{x:Bind ViewModel.ShowSearching, Mode=OneWay}">
-                <StackPanel Spacing="12">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <ProgressRing IsActive="True" Width="24" Height="24" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.SearchingText, Mode=OneWay}"
-                            Style="{StaticResource TitleText}"
-                            VerticalAlignment="Center" />
+                <!-- Hero: who, how, and the big actions -->
+                <Border Style="{StaticResource HeroCard}">
+                    <StackPanel Spacing="20">
+                        <Grid ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="64" Height="64" CornerRadius="32" Background="{ThemeResource PrimaryBrush}" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE8EA;" FontSize="28" Foreground="{ThemeResource OnPrimaryBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="{x:Bind ViewModel.DeviceModel, Mode=OneWay}" Style="{StaticResource HeadlineText}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Style="{StaticResource BodyText}" Foreground="{ThemeResource OnPrimaryContainerBrush}">
+                                    <Run Text="{x:Bind ViewModel.TransportText, Mode=OneWay}" />
+                                    <Run Text=" · connected for " />
+                                    <Run Text="{x:Bind ViewModel.ConnectedDurationText, Mode=OneWay}" />
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Button Style="{StaticResource FilledButton}" Command="{x:Bind Mirror.ToggleCommand}" IsEnabled="{x:Bind Mirror.CanMirror, Mode=OneWay}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE7F4;" FontSize="16" />
+                                        <TextBlock Text="{x:Bind Mirror.ButtonText, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource QuietButton}" Content="Disconnect" Command="{x:Bind ViewModel.DisconnectCommand}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Stat tiles -->
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource StatTile}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="BATTERY" Style="{StaticResource SectionLabel}" />
+                                    <TextBlock Text="{x:Bind ViewModel.BatteryText, Mode=OneWay}" Style="{StaticResource StatValue}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource StatTile}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="STORAGE" Style="{StaticResource SectionLabel}" />
+                                    <TextBlock Text="{x:Bind ViewModel.StorageText, Mode=OneWay}" Style="{StaticResource StatValue}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource StatTile}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="LATENCY" Style="{StaticResource SectionLabel}" />
+                                    <TextBlock Text="{x:Bind ViewModel.LatencyText, Mode=OneWay}" Style="{StaticResource StatValue}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="3" Style="{StaticResource StatTile}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="LINK" Style="{StaticResource SectionLabel}" />
+                                    <TextBlock Text="{x:Bind ViewModel.TransportChoiceText, Mode=OneWay}" Style="{StaticResource StatValue}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{x:Bind ViewModel.LastErrorMessage, Mode=OneWay}" Style="{StaticResource BodyText}" Foreground="{ThemeResource ErrorBrush}"
+                                   Visibility="{x:Bind ViewModel.HasLastError, Mode=OneWay}" />
                     </StackPanel>
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="Linc connects automatically when the phone is on the same Wi-Fi network with Wireless debugging on, or over USB." />
-                    <Button
-                        Style="{StaticResource TonalButton}"
-                        Content="Pair a different phone"
-                        Command="{x:Bind ViewModel.StartPairingCommand}" />
-                </StackPanel>
-            </Border>
+                </Border>
 
-            <!-- First run: nothing paired yet -->
-            <Border
-                Style="{StaticResource ExpressiveCard}"
-                Visibility="{x:Bind ViewModel.ShowGetStarted, Mode=OneWay}">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Link your phone" Style="{StaticResource HeadlineText}" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="Pair once, and from then on Linc will find and connect to your phone by itself whenever you're on the same Wi-Fi or plugged in over USB." />
-                    <Button
-                        Style="{StaticResource FilledButton}"
-                        Content="Pair phone"
-                        Command="{x:Bind ViewModel.StartPairingCommand}" />
-                </StackPanel>
-            </Border>
-
-            <!-- Paused after a manual disconnect -->
-            <Border
-                Style="{StaticResource ExpressiveCard}"
-                Visibility="{x:Bind ViewModel.ShowPaused, Mode=OneWay}">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="Disconnected" Style="{StaticResource TitleText}" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="Automatic connection is paused. Resume to let Linc find your phone again." />
-                    <Button
-                        Style="{StaticResource FilledButton}"
-                        Content="Resume"
-                        Command="{x:Bind ViewModel.ResumeCommand}" />
-                </StackPanel>
-            </Border>
-
-            <!-- Pairing flow -->
-            <Border
-                Style="{StaticResource ExpressiveCard}"
-                Visibility="{x:Bind ViewModel.ShowPairing, Mode=OneWay}">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Pair your phone" Style="{StaticResource HeadlineText}" />
-                    <!-- M15c A2: say the one-phone limit before the collision, not after it. -->
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        TextWrapping="Wrap"
-                        Visibility="{x:Bind ViewModel.ShowOneAtATimeNote, Mode=OneWay}"
-                        Text="{x:Bind ViewModel.OneAtATimeText, Mode=OneWay}" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="On the phone: Settings → Developer options → Wireless debugging → “Pair device with QR code”, then scan this:" />
-                    <Border
-                        Background="White"
-                        CornerRadius="{StaticResource ShapeLarge}"
-                        Padding="16"
-                        HorizontalAlignment="Left">
-                        <Image
-                            Source="{x:Bind ViewModel.QrImage, Mode=OneWay}"
-                            Width="200"
-                            Height="200" />
-                    </Border>
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="Prefer typing? Choose “Pair device with pairing code” on the phone instead, and enter the 6-digit code here:" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="{x:Bind ViewModel.PairingPhoneText, Mode=OneWay}" />
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <TextBox
-                            Style="{StaticResource ExpressiveTextBox}"
-                            Width="160"
-                            PlaceholderText="6-digit code"
-                            Text="{x:Bind ViewModel.PairingCode, Mode=TwoWay}" />
-                        <Button
-                            Style="{StaticResource FilledButton}"
-                            Content="Pair"
-                            Command="{x:Bind ViewModel.PairWithCodeCommand}"
-                            IsEnabled="{x:Bind ViewModel.CanPairWithCode, Mode=OneWay}" />
-                    </StackPanel>
-                    <Button
-                        Style="{StaticResource TonalButton}"
-                        Content="Cancel"
-                        Command="{x:Bind ViewModel.CancelPairingCommand}" />
-                </StackPanel>
-            </Border>
-
-            <!-- Connection method (per device) -->
-            <Border
-                Style="{StaticResource ExpressiveCard}"
-                Visibility="{x:Bind ViewModel.ShowConnectionMethod, Mode=OneWay}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Connection method" Style="{StaticResource TitleText}" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="Automatic picks the best link available and switches as things change (USB is preferred, then Wireless debugging, then a direct Wi-Fi connection)." />
-                    <ComboBox
-                        HorizontalAlignment="Stretch"
-                        ItemsSource="{x:Bind ViewModel.ConnectionMethods}"
-                        SelectedItem="{x:Bind ViewModel.SelectedConnectionMethod, Mode=TwoWay}"
-                        DisplayMemberPath="Label" />
-                </StackPanel>
-            </Border>
-
-            <!-- Manual fallback -->
-            <Expander Header="Advanced: connect by address" HorizontalAlignment="Stretch">
-                <StackPanel Spacing="12" Padding="0,12,0,0">
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="Type the IP address &amp; port from the phone's Wireless debugging screen." />
-                    <TextBox
-                        Style="{StaticResource ExpressiveTextBox}"
-                        PlaceholderText="192.168.1.23:37099"
-                        Text="{x:Bind ViewModel.HostPort, Mode=TwoWay}" />
-                    <Button
-                        Style="{StaticResource TonalButton}"
-                        Content="Connect"
-                        Command="{x:Bind ViewModel.ConnectCommand}"
-                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
-                </StackPanel>
-            </Expander>
-
-            <ProgressRing
-                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}"
-                HorizontalAlignment="Center" />
-        </StackPanel>
-
-        <!-- Connected: device summary + embedded Mirror panel -->
-        <StackPanel
-            Grid.Row="1"
-            Spacing="16"
-            Visibility="{x:Bind ViewModel.ShowConnectedArea, Mode=OneWay}">
-
-            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
-                <Grid RowSpacing="16">
+                <!-- Two columns: controls on the left, screen and the rest on the right -->
+                <Grid x:Name="Columns" ColumnSpacing="20" RowSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition x:Name="SecondColumn" Width="*" />
+                    </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <Grid ColumnSpacing="32">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2">
-                            <TextBlock
-                                Text="{x:Bind ViewModel.DeviceModel, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.DeviceSerial, Mode=OneWay}"
-                                Style="{StaticResource BodyText}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="2">
-                            <TextBlock Text="Battery" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.BatteryText, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Spacing="2">
-                            <TextBlock Text="Storage" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.StorageText, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="3" Spacing="2">
-                            <TextBlock Text="Protocol" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.ProtocolVersion, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                        </StackPanel>
-                        <Button
-                            Grid.Column="4"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource TonalButton}"
-                            Content="Disconnect"
-                            Command="{x:Bind ViewModel.DisconnectCommand}" />
-                    </Grid>
 
-                    <!-- Connection health -->
-                    <Grid Grid.Row="1" ColumnSpacing="32">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2">
-                            <TextBlock Text="Connected for" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.ConnectedDurationText, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="2">
-                            <TextBlock Text="Reconnects" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.ReconnectCount, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Spacing="2">
-                            <TextBlock Text="Link" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.TransportText, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.TransportChoiceText, Mode=OneWay}"
-                                Style="{StaticResource BodyText}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="3" Spacing="2">
-                            <TextBlock Text="Latency" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.LatencyText, Mode=OneWay}"
-                                Style="{StaticResource TitleText}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="4" Spacing="2" Visibility="{x:Bind ViewModel.HasLastError, Mode=OneWay}">
-                            <TextBlock Text="Last issue" Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.LastErrorMessage, Mode=OneWay}"
-                                Style="{StaticResource BodyText}"
-                                Foreground="{ThemeResource ErrorBrush}"
-                                TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Grid>
-                </Grid>
-            </Border>
-
-            <!-- Connection method (per device) -->
-            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="280" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock
-                        Text="Connection method"
-                        Style="{StaticResource TitleText}"
-                        VerticalAlignment="Center" />
-                    <ComboBox
-                        Grid.Column="1"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Center"
-                        ItemsSource="{x:Bind ViewModel.ConnectionMethods}"
-                        SelectedItem="{x:Bind ViewModel.SelectedConnectionMethod, Mode=TwoWay}"
-                        DisplayMemberPath="Label" />
-                    <TextBlock
-                        Grid.Column="2"
-                        VerticalAlignment="Center"
-                        Style="{StaticResource BodyText}"
-                        TextWrapping="Wrap"
-                        Text="Automatic switches to the best available link (USB &gt; Wireless &gt; Direct Wi-Fi)." />
-                </Grid>
-            </Border>
-
-            <!-- Use this link now (M15a Part C): a one-off override, not the sticky preference
-                 above. Dropped automatically, with a message, if the link it picks dies. -->
-            <Border
-                Style="{StaticResource ExpressiveCard}"
-                Padding="20,16"
-                Visibility="{x:Bind ViewModel.ShowTransportOverride, Mode=OneWay}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Use this link now" Style="{StaticResource TitleText}" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        TextWrapping="Wrap"
-                        Text="Pick a link instead of waiting for Linc to decide. It stays pinned until you clear it or that link stops answering." />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button
-                            Content="Use wireless now"
-                            Command="{x:Bind ViewModel.UseWirelessNowCommand}"
-                            IsEnabled="{x:Bind ViewModel.CanUseWirelessNow, Mode=OneWay}" />
-                        <Button
-                            Content="Use USB now"
-                            Command="{x:Bind ViewModel.UseUsbNowCommand}"
-                            IsEnabled="{x:Bind ViewModel.CanUseUsbNow, Mode=OneWay}" />
-                        <Button
-                            Content="Back to automatic"
-                            Command="{x:Bind ViewModel.UseAutomaticTransportCommand}"
-                            IsEnabled="{x:Bind ViewModel.HasManualTransport, Mode=OneWay}" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Tools: device tooling gathered in one card -->
-            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Tools" Style="{StaticResource TitleText}" />
-
-                    <!-- Tools › Screen mirroring -->
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Screen mirroring" Style="{StaticResource TitleText}" />
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <ComboBox
-                        Grid.Column="0"
-                        Width="240"
-                        VerticalAlignment="Center"
-                        ItemsSource="{x:Bind Mirror.Presets}"
-                        SelectedItem="{x:Bind Mirror.SelectedPreset, Mode=TwoWay}"
-                        DisplayMemberPath="Label" />
-                    <Button
-                        Grid.Column="1"
-                        Style="{StaticResource FilledButton}"
-                        Content="{x:Bind Mirror.ButtonText, Mode=OneWay}"
-                        Command="{x:Bind Mirror.ToggleCommand}"
-                        IsEnabled="{x:Bind Mirror.CanMirror, Mode=OneWay}" />
-                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock
-                            Text="{x:Bind Mirror.StatusText, Mode=OneWay}"
-                            Style="{StaticResource BodyText}" />
-                        <TextBlock
-                            Text="{x:Bind Mirror.ErrorMessage, Mode=OneWay}"
-                            Foreground="{ThemeResource ErrorBrush}"
-                            TextWrapping="Wrap"
-                            Visibility="{x:Bind Mirror.HasError, Mode=OneWay}" />
-                    </StackPanel>
-                </Grid>
-
-                        <!-- Mirror settings (collapsed by default; applies to the NEXT start) -->
-                        <Expander
-                            Header="Mirror settings"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Stretch"
-                            IsExpanded="False">
-                            <StackPanel Spacing="12" Padding="0,12,0,0">
-                                <TextBlock
-                                    Style="{StaticResource BodyText}"
-                                    TextWrapping="Wrap"
-                                    Text="These apply the next time you start mirroring, not to a session already running." />
-
-                                <!-- Max size + bit rate -->
-                                <Grid ColumnSpacing="16" RowSpacing="8">
+                    <!-- Left: the phone's controls -->
+                    <StackPanel Spacing="20">
+                        <!-- Media -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="NOW PLAYING ON THE PHONE" Style="{StaticResource SectionLabel}" />
+                                <Grid ColumnSpacing="16">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="160" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock
-                                        Text="Max size"
-                                        Style="{StaticResource BodyText}"
-                                        VerticalAlignment="Center" />
-                                    <NumberBox
-                                        Grid.Column="1"
-                                        Minimum="0"
-                                        Maximum="4096"
-                                        SpinButtonPlacementMode="Compact"
-                                        Value="{x:Bind MirrorSettings.MaxSize, Mode=TwoWay}" />
-                                    <TextBlock
-                                        Grid.Column="2"
-                                        Text="Video bit rate"
-                                        Style="{StaticResource BodyText}"
-                                        VerticalAlignment="Center" />
-                                    <TextBox
-                                        Grid.Column="3"
-                                        Style="{StaticResource ExpressiveTextBox}"
-                                        PlaceholderText="8M"
-                                        Text="{x:Bind MirrorSettings.VideoBitRate, Mode=TwoWay}" />
+                                    <Grid Width="72" Height="72">
+                                        <Border CornerRadius="20" Background="{ThemeResource TertiaryContainerBrush}">
+                                            <FontIcon Glyph="&#xE8D6;" FontSize="26" Foreground="{ThemeResource OnTertiaryContainerBrush}" Visibility="{x:Bind Home.HasNoMediaArt, Mode=OneWay}" />
+                                        </Border>
+                                        <Border CornerRadius="20" Visibility="{x:Bind Home.HasMediaArt, Mode=OneWay}">
+                                            <Image Source="{x:Bind Home.MediaArt, Mode=OneWay}" Stretch="UniformToFill" />
+                                        </Border>
+                                    </Grid>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{x:Bind Home.MediaTitle, Mode=OneWay}" Style="{StaticResource TitleText}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{x:Bind Home.MediaSubtitle, Mode=OneWay}" Style="{StaticResource CaptionText}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                    </StackPanel>
                                 </Grid>
-
-                                <!-- Max FPS + Crop -->
-                                <Grid ColumnSpacing="16" RowSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="200" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock
-                                        Text="Max FPS"
-                                        Style="{StaticResource BodyText}"
-                                        VerticalAlignment="Center" />
-                                    <NumberBox
-                                        Grid.Column="1"
-                                        Minimum="0"
-                                        Maximum="120"
-                                        SpinButtonPlacementMode="Compact"
-                                        Value="{x:Bind MirrorSettings.MaxFps, Mode=TwoWay}" />
-                                    <TextBlock
-                                        Grid.Column="2"
-                                        Text="Crop"
-                                        Style="{StaticResource BodyText}"
-                                        VerticalAlignment="Center" />
-                                    <TextBox
-                                        Grid.Column="3"
-                                        Style="{StaticResource ExpressiveTextBox}"
-                                        PlaceholderText="1280x720:0:0"
-                                        Text="{x:Bind MirrorSettings.Crop, Mode=TwoWay}" />
-                                </Grid>
-                                <TextBlock
-                                    Style="{StaticResource BodyText}"
-                                    TextWrapping="Wrap"
-                                    Text="Set Max size, Max FPS or Crop to 0 (or leave Crop blank) to use the default." />
-
-                                <!-- Booleans -->
-                                <Grid ColumnSpacing="16" RowSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <ToggleSwitch
-                                        Header="Stay awake"
-                                        IsOn="{x:Bind MirrorSettings.StayAwake, Mode=TwoWay}" />
-                                    <ToggleSwitch
-                                        Grid.Column="1"
-                                        Header="Turn screen off"
-                                        IsOn="{x:Bind MirrorSettings.TurnScreenOff, Mode=TwoWay}" />
-                                    <ToggleSwitch
-                                        Grid.Column="2"
-                                        Header="Show touches"
-                                        IsOn="{x:Bind MirrorSettings.ShowTouches, Mode=TwoWay}" />
-                                </Grid>
-
-                                <!-- Audio -->
-                                <ToggleSwitch
-                                    Header="Audio"
-                                    IsOn="{x:Bind MirrorSettings.AudioEnabled, Mode=TwoWay}" />
-                                <TextBlock
-                                    Style="{StaticResource BodyText}"
-                                    TextWrapping="Wrap"
-                                    Text="Audio plays through the PC while mirroring, and the phone stays silent. Turn this off to keep audio on the phone instead." />
-                                <Grid
-                                    ColumnSpacing="16"
-                                    RowSpacing="8"
-                                    Visibility="{x:Bind MirrorSettings.AudioEnabled, Mode=OneWay}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="160" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="160" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock
-                                        Text="Audio source"
-                                        Style="{StaticResource BodyText}"
-                                        VerticalAlignment="Center" />
-                                    <ComboBox
-                                        Grid.Column="1"
-                                        HorizontalAlignment="Stretch"
-                                        ItemsSource="{x:Bind MirrorSettings.AudioSources}"
-                                        SelectedItem="{x:Bind MirrorSettings.AudioSource, Mode=TwoWay}" />
-                                    <TextBlock
-                                        Grid.Column="2"
-                                        Text="Audio bit rate"
-                                        Style="{StaticResource BodyText}"
-                                        VerticalAlignment="Center" />
-                                    <NumberBox
-                                        Grid.Column="3"
-                                        Minimum="0"
-                                        Maximum="512000"
-                                        SpinButtonPlacementMode="Compact"
-                                        Value="{x:Bind MirrorSettings.AudioBitRate, Mode=TwoWay}" />
-                                </Grid>
-                                <TextBlock
-                                    Text="{x:Bind MirrorSettings.AudioConflictWarning, Mode=OneWay}"
-                                    Foreground="{ThemeResource ErrorBrush}"
-                                    TextWrapping="Wrap"
-                                    Style="{StaticResource BodyText}"
-                                    Visibility="{x:Bind MirrorSettings.HasAudioConflictWarning, Mode=OneWay}" />
-
-                                <!-- Validation / status messages -->
-                                <TextBlock
-                                    Text="{x:Bind MirrorSettings.ValidationMessage, Mode=OneWay}"
-                                    Foreground="{ThemeResource ErrorBrush}"
-                                    TextWrapping="Wrap"
-                                    Style="{StaticResource BodyText}"
-                                    Visibility="{x:Bind MirrorSettings.HasValidationMessage, Mode=OneWay}" />
-                                <TextBlock
-                                    Text="{x:Bind MirrorSettings.StatusMessage, Mode=OneWay}"
-                                    Style="{StaticResource BodyText}"
-                                    TextWrapping="Wrap"
-                                    Visibility="{x:Bind MirrorSettings.HasStatusMessage, Mode=OneWay}" />
-
-                                <!-- Save + Reset -->
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Button
-                                        Style="{StaticResource FilledButton}"
-                                        Content="Save"
-                                        Command="{x:Bind MirrorSettings.SaveCommand}"
-                                        IsEnabled="{x:Bind MirrorSettings.IsDirty, Mode=OneWay}" />
-                                    <Button
-                                        Style="{StaticResource TonalButton}"
-                                        Content="Reset to defaults"
-                                        Command="{x:Bind MirrorSettings.ResetCommand}" />
+                                <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center">
+                                    <Button Style="{StaticResource IconTonalButton}" Command="{x:Bind Home.PreviousTrackCommand}" IsEnabled="{x:Bind Home.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Previous">
+                                        <FontIcon Glyph="&#xE892;" FontSize="16" />
+                                    </Button>
+                                    <Button Width="64" Height="64" Padding="0" CornerRadius="32" BorderThickness="0" Background="{ThemeResource PrimaryBrush}"
+                                            Command="{x:Bind Home.PlayPauseCommand}" IsEnabled="{x:Bind Home.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Play / pause">
+                                        <FontIcon Glyph="{x:Bind Home.PlayPauseGlyph, Mode=OneWay}" FontSize="22" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource IconTonalButton}" Command="{x:Bind Home.NextTrackCommand}" IsEnabled="{x:Bind Home.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Next">
+                                        <FontIcon Glyph="&#xE893;" FontSize="16" />
+                                    </Button>
                                 </StackPanel>
                             </StackPanel>
-                        </Expander>
-                    </StackPanel>
+                        </Border>
 
-                    <Border Height="1" Background="{ThemeResource OutlineVariantBrush}" Opacity="0.5" />
-
-                    <!-- Tools › Desktop Mode -->
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Desktop Mode" Style="{StaticResource TitleText}" />
-                <Grid RowSpacing="12">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4" MaxWidth="280">
-                            <Button
-                                Style="{StaticResource FilledButton}"
-                                Content="{x:Bind DesktopMode.ButtonText, Mode=OneWay}"
-                                Command="{x:Bind DesktopMode.ToggleCommand}"
-                                IsEnabled="{x:Bind DesktopMode.CanStart, Mode=OneWay}" />
-                            <TextBlock
-                                Style="{StaticResource BodyText}"
-                                TextWrapping="Wrap"
-                                Text="Desktop Mode opens a second screen for your phone — a separate display you can run apps on. Apps run fullscreen on it because this phone doesn't support Android's freeform windows." />
-                            <TextBlock
-                                Style="{StaticResource BodyText}"
-                                TextWrapping="Wrap"
-                                Text="Your mouse is captured by the phone while Desktop Mode is running. Press Alt or Super to get your cursor back." />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock
-                                Text="{x:Bind DesktopMode.StatusText, Mode=OneWay}"
-                                Style="{StaticResource BodyText}" />
-                            <TextBlock
-                                Text="{x:Bind DesktopMode.ErrorMessage, Mode=OneWay}"
-                                Foreground="{ThemeResource ErrorBrush}"
-                                TextWrapping="Wrap"
-                                Visibility="{x:Bind DesktopMode.HasError, Mode=OneWay}" />
-                        </StackPanel>
-                    </Grid>
-                    <StackPanel
-                        Grid.Row="1"
-                        Orientation="Horizontal"
-                        Spacing="12"
-                        Visibility="{x:Bind DesktopMode.IsSetupPending, Mode=OneWay}">
-                        <TextBlock
-                            Text="{x:Bind DesktopMode.SetupMessage, Mode=OneWay}"
-                            Style="{StaticResource BodyText}"
-                            VerticalAlignment="Center" />
-                        <Button
-                            Style="{StaticResource TonalButton}"
-                            Content="Reboot now"
-                            Command="{x:Bind DesktopMode.RebootCommand}" />
-                    </StackPanel>
-
-                    <!-- Desktop Mode settings (collapsed by default; applies to the NEXT launch) -->
-                    <Expander
-                        Grid.Row="2"
-                        Header="Desktop Mode settings"
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Stretch"
-                        IsExpanded="False">
-                        <StackPanel Spacing="12" Padding="0,12,0,0">
-                            <TextBlock
-                                Style="{StaticResource BodyText}"
-                                TextWrapping="Wrap"
-                                Text="These apply the next time Desktop Mode starts, not to a session already running." />
-
-                            <!-- Resolution + DPI -->
-                            <Grid ColumnSpacing="16" RowSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="140" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="140" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="120" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock
-                                    Text="Width"
-                                    Style="{StaticResource BodyText}"
-                                    VerticalAlignment="Center" />
-                                <NumberBox
-                                    Grid.Column="1"
-                                    Minimum="0"
-                                    Maximum="3840"
-                                    SpinButtonPlacementMode="Compact"
-                                    Value="{x:Bind DesktopModeSettings.Width, Mode=TwoWay}" />
-                                <TextBlock
-                                    Grid.Column="2"
-                                    Text="Height"
-                                    Style="{StaticResource BodyText}"
-                                    VerticalAlignment="Center" />
-                                <NumberBox
-                                    Grid.Column="3"
-                                    Minimum="0"
-                                    Maximum="3840"
-                                    SpinButtonPlacementMode="Compact"
-                                    Value="{x:Bind DesktopModeSettings.Height, Mode=TwoWay}" />
-                                <TextBlock
-                                    Grid.Column="4"
-                                    Text="DPI"
-                                    Style="{StaticResource BodyText}"
-                                    VerticalAlignment="Center" />
-                                <NumberBox
-                                    Grid.Column="5"
-                                    Minimum="0"
-                                    Maximum="320"
-                                    SpinButtonPlacementMode="Compact"
-                                    Value="{x:Bind DesktopModeSettings.Dpi, Mode=TwoWay}" />
-                            </Grid>
-                            <TextBlock
-                                Style="{StaticResource BodyText}"
-                                TextWrapping="Wrap"
-                                Text="Set width, height and DPI to 0 each to let Linc compute a recommended value from your phone." />
-
-                            <!-- Aspect ratio mode -->
-                            <Grid ColumnSpacing="16" RowSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="180" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock
-                                    Text="Aspect ratio"
-                                    Style="{StaticResource BodyText}"
-                                    VerticalAlignment="Center" />
-                                <ComboBox
-                                    Grid.Column="1"
-                                    HorizontalAlignment="Stretch"
-                                    ItemsSource="{x:Bind DesktopModeSettings.AspectModes}"
-                                    SelectedItem="{x:Bind DesktopModeSettings.AspectMode, Mode=TwoWay}" />
-                            </Grid>
-
-                            <!-- Booleans -->
-                            <Grid ColumnSpacing="16" RowSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ToggleSwitch
-                                    Header="Capture mouse"
-                                    IsOn="{x:Bind DesktopModeSettings.CaptureMouse, Mode=TwoWay}" />
-                                <ToggleSwitch
-                                    Grid.Column="1"
-                                    Header="Forward audio"
-                                    IsOn="{x:Bind DesktopModeSettings.ForwardAudio, Mode=TwoWay}" />
-                            </Grid>
-                            <TextBlock
-                                Style="{StaticResource BodyText}"
-                                TextWrapping="Wrap"
-                                Text="Audio is off by default in Desktop Mode — decoding it costs performance on the second screen. Turn it on if you need sound there." />
-                            <TextBlock
-                                Text="{x:Bind DesktopModeSettings.AudioConflictWarning, Mode=OneWay}"
-                                Foreground="{ThemeResource ErrorBrush}"
-                                TextWrapping="Wrap"
-                                Style="{StaticResource BodyText}"
-                                Visibility="{x:Bind DesktopModeSettings.HasAudioConflictWarning, Mode=OneWay}" />
-
-                            <!-- Max FPS + bit rate -->
-                            <Grid ColumnSpacing="16" RowSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="140" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="160" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock
-                                    Text="Max FPS"
-                                    Style="{StaticResource BodyText}"
-                                    VerticalAlignment="Center" />
-                                <NumberBox
-                                    Grid.Column="1"
-                                    Minimum="1"
-                                    Maximum="120"
-                                    SpinButtonPlacementMode="Compact"
-                                    Value="{x:Bind DesktopModeSettings.MaxFps, Mode=TwoWay}" />
-                                <TextBlock
-                                    Grid.Column="2"
-                                    Text="Video bit rate"
-                                    Style="{StaticResource BodyText}"
-                                    VerticalAlignment="Center" />
-                                <TextBox
-                                    Grid.Column="3"
-                                    Style="{StaticResource ExpressiveTextBox}"
-                                    PlaceholderText="8M"
-                                    Text="{x:Bind DesktopModeSettings.VideoBitRate, Mode=TwoWay}" />
-                            </Grid>
-
-                            <!-- Validation / status messages -->
-                            <TextBlock
-                                Text="{x:Bind DesktopModeSettings.ValidationMessage, Mode=OneWay}"
-                                Foreground="{ThemeResource ErrorBrush}"
-                                TextWrapping="Wrap"
-                                Style="{StaticResource BodyText}"
-                                Visibility="{x:Bind DesktopModeSettings.HasValidationMessage, Mode=OneWay}" />
-                            <TextBlock
-                                Text="{x:Bind DesktopModeSettings.StatusMessage, Mode=OneWay}"
-                                Style="{StaticResource BodyText}"
-                                TextWrapping="Wrap"
-                                Visibility="{x:Bind DesktopModeSettings.HasStatusMessage, Mode=OneWay}" />
-
-                            <!-- Save + Reset to recommended -->
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <Button
-                                    Style="{StaticResource FilledButton}"
-                                    Content="Save"
-                                    Command="{x:Bind DesktopModeSettings.SaveCommand}"
-                                    IsEnabled="{x:Bind DesktopModeSettings.IsDirty, Mode=OneWay}" />
-                                <Button
-                                    Style="{StaticResource TonalButton}"
-                                    Content="Reset to recommended"
-                                    Command="{x:Bind DesktopModeSettings.ResetToRecommendedCommand}" />
+                        <!-- Quick controls -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="PHONE CONTROLS" Style="{StaticResource SectionLabel}" />
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Style="{StaticResource ActionTile}" Command="{x:Bind Home.RingPhoneCommand}" IsEnabled="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}"
+                                            ToolTipService.ToolTip="Ring the phone at full volume (press again to stop)">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE7ED;" FontSize="20" HorizontalAlignment="Left" />
+                                            <TextBlock Text="Find phone" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Column="1" Style="{StaticResource ActionTile}" Command="{x:Bind Home.ToggleDndCommand}" IsEnabled="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}"
+                                            ToolTipService.ToolTip="Do Not Disturb on the phone">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE708;" FontSize="20" HorizontalAlignment="Left" />
+                                            <TextBlock Text="Do not disturb" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Column="2" Style="{StaticResource ActionTile}" Command="{x:Bind Home.PullScreenshotCommand}" IsEnabled="{x:Bind Home.ScreenshotEnabled, Mode=OneWay}"
+                                            ToolTipService.ToolTip="Save a screenshot of the phone to Pictures\Linc">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE722;" FontSize="20" HorizontalAlignment="Left" />
+                                            <TextBlock Text="Screenshot" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Text="Sound" Style="{StaticResource BodyText}" />
+                                <Grid ColumnSpacing="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton HorizontalAlignment="Stretch" CornerRadius="20,6,6,20" BorderThickness="0" Padding="0,10"
+                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind Home.IsSoundNormal, Mode=OneWay}"
+                                                  Command="{x:Bind Home.SetSoundCommand}" CommandParameter="normal" Content="Ring" />
+                                    <ToggleButton Grid.Column="1" HorizontalAlignment="Stretch" CornerRadius="6" BorderThickness="0" Padding="0,10"
+                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind Home.IsSoundVibrate, Mode=OneWay}"
+                                                  Command="{x:Bind Home.SetSoundCommand}" CommandParameter="vibrate" Content="Vibrate" />
+                                    <ToggleButton Grid.Column="2" HorizontalAlignment="Stretch" CornerRadius="6,20,20,6" BorderThickness="0" Padding="0,10"
+                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind Home.IsSoundSilent, Mode=OneWay}"
+                                                  Command="{x:Bind Home.SetSoundCommand}" CommandParameter="silent" Content="Silent" />
+                                </Grid>
+                                <TextBlock Text="{x:Bind Home.QuickActionMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Visibility="{x:Bind Home.HasQuickActionMessage, Mode=OneWay}" />
                             </StackPanel>
-                        </StackPanel>
-                    </Expander>
+                        </Border>
+
+                        <!-- Display (M5c-2 / D-055): rotation + brightness -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="PHONE DISPLAY" Style="{StaticResource SectionLabel}" />
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}"
+                                           Text="Changes apply through the phone's system settings, which needs Linc's “Modify system settings” permission on the phone." />
+                                <Grid ColumnSpacing="16" RowSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Rotation" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                                        <ComboBox MinWidth="180" VerticalAlignment="Center" ItemsSource="{x:Bind DisplayControl.RotationOptions}"
+                                                  SelectedItem="{x:Bind DisplayControl.RotationMode, Mode=OneWay}" IsEnabled="{x:Bind DisplayControl.CanChangeRotation, Mode=OneWay}"
+                                                  PlaceholderText="Unknown" SelectionChanged="RotationCombo_SelectionChanged" />
+                                        <TextBlock Style="{StaticResource CaptionText}" VerticalAlignment="Center" Text="{x:Bind DisplayControl.RotationStatusText, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Row="1" Text="Adaptive brightness" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                                        <ToggleSwitch VerticalAlignment="Center" OnContent="On" OffContent="Off" IsOn="{x:Bind DisplayControl.BrightnessAutoToggleOn, Mode=OneWay}"
+                                                      IsEnabled="{x:Bind DisplayControl.CanChangeBrightness, Mode=OneWay}" Toggled="BrightnessAutoToggle_Toggled" />
+                                        <TextBlock Style="{StaticResource CaptionText}" VerticalAlignment="Center" Text="{x:Bind DisplayControl.BrightnessAutoStatusText, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Row="2" Text="Brightness" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    <Grid Grid.Row="2" Grid.Column="1" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="BrightnessSlider" Minimum="0" Maximum="100" StepFrequency="1" SmallChange="1"
+                                                Value="{x:Bind DisplayControl.BrightnessLevelSlider, Mode=OneWay}" IsEnabled="{x:Bind DisplayControl.IsBrightnessSliderEnabled, Mode=OneWay}"
+                                                ValueChanged="BrightnessSlider_ValueChanged" HorizontalAlignment="Stretch" />
+                                        <TextBlock Grid.Column="1" Style="{StaticResource CaptionText}" VerticalAlignment="Center" MinWidth="64"
+                                                   Text="{x:Bind DisplayControl.BrightnessLevelStatusText, Mode=OneWay}" />
+                                    </Grid>
+                                </Grid>
+                                <TextBlock Style="{StaticResource CaptionText}" Text="{x:Bind DisplayControl.StatusText, Mode=OneWay}" />
+                                <TextBlock Style="{StaticResource CaptionText}" Foreground="{ThemeResource ErrorBrush}" Text="{x:Bind DisplayControl.ErrorMessage, Mode=OneWay}"
+                                           Visibility="{x:Bind DisplayControl.HasError, Mode=OneWay}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Right: the phone's screen here, then the rest -->
+                    <StackPanel x:Name="RightColumn" Grid.Column="1" Spacing="20">
+                        <!-- Screen mirroring -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="PHONE SCREEN ON THIS PC" Style="{StaticResource SectionLabel}" />
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox HorizontalAlignment="Stretch" VerticalAlignment="Center" ItemsSource="{x:Bind Mirror.Presets}"
+                                              SelectedItem="{x:Bind Mirror.SelectedPreset, Mode=TwoWay}" DisplayMemberPath="Label" Header="Quality" />
+                                    <Button Grid.Column="1" VerticalAlignment="Bottom" Style="{StaticResource FilledButton}" Content="{x:Bind Mirror.ButtonText, Mode=OneWay}"
+                                            Command="{x:Bind Mirror.ToggleCommand}" IsEnabled="{x:Bind Mirror.CanMirror, Mode=OneWay}" />
+                                </Grid>
+                                <TextBlock Text="{x:Bind Mirror.StatusText, Mode=OneWay}" Style="{StaticResource CaptionText}" />
+                                <TextBlock Text="{x:Bind Mirror.ErrorMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Foreground="{ThemeResource ErrorBrush}" Visibility="{x:Bind Mirror.HasError, Mode=OneWay}" />
+
+                                <Expander Header="Mirror settings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
+                                    <StackPanel Spacing="14" Padding="0,12,0,0">
+                                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="These apply the next time mirroring starts." />
+                                        <Grid ColumnSpacing="12" RowSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <NumberBox Header="Max size" Minimum="0" Maximum="4096" SpinButtonPlacementMode="Compact" Value="{x:Bind MirrorSettings.MaxSize, Mode=TwoWay}" />
+                                            <TextBox Grid.Column="1" Header="Video bit rate" Style="{StaticResource ExpressiveTextBox}" PlaceholderText="8M" Text="{x:Bind MirrorSettings.VideoBitRate, Mode=TwoWay}" />
+                                            <NumberBox Grid.Row="1" Header="Max FPS" Minimum="0" Maximum="120" SpinButtonPlacementMode="Compact" Value="{x:Bind MirrorSettings.MaxFps, Mode=TwoWay}" />
+                                            <TextBox Grid.Row="1" Grid.Column="1" Header="Crop" Style="{StaticResource ExpressiveTextBox}" PlaceholderText="1280x720:0:0" Text="{x:Bind MirrorSettings.Crop, Mode=TwoWay}" />
+                                        </Grid>
+                                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="0, or a blank crop, uses the default." />
+                                        <StackPanel Spacing="0">
+                                            <ToggleSwitch Header="Stay awake" IsOn="{x:Bind MirrorSettings.StayAwake, Mode=TwoWay}" />
+                                            <ToggleSwitch Header="Turn the phone's screen off" IsOn="{x:Bind MirrorSettings.TurnScreenOff, Mode=TwoWay}" />
+                                            <ToggleSwitch Header="Show touches" IsOn="{x:Bind MirrorSettings.ShowTouches, Mode=TwoWay}" />
+                                            <ToggleSwitch Header="Sound on this PC" IsOn="{x:Bind MirrorSettings.AudioEnabled, Mode=TwoWay}" />
+                                        </StackPanel>
+                                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}"
+                                                   Text="With sound on, the phone's audio plays here while mirroring and the phone stays silent." />
+                                        <Grid ColumnSpacing="12" Visibility="{x:Bind MirrorSettings.AudioEnabled, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox Header="Audio source" HorizontalAlignment="Stretch" ItemsSource="{x:Bind MirrorSettings.AudioSources}" SelectedItem="{x:Bind MirrorSettings.AudioSource, Mode=TwoWay}" />
+                                            <NumberBox Grid.Column="1" Header="Audio bit rate" Minimum="0" Maximum="512000" SpinButtonPlacementMode="Compact" Value="{x:Bind MirrorSettings.AudioBitRate, Mode=TwoWay}" />
+                                        </Grid>
+                                        <TextBlock Text="{x:Bind MirrorSettings.AudioConflictWarning, Mode=OneWay}" Foreground="{ThemeResource ErrorBrush}" Style="{StaticResource CaptionText}"
+                                                   Visibility="{x:Bind MirrorSettings.HasAudioConflictWarning, Mode=OneWay}" />
+                                        <TextBlock Text="{x:Bind MirrorSettings.ValidationMessage, Mode=OneWay}" Foreground="{ThemeResource ErrorBrush}" Style="{StaticResource CaptionText}"
+                                                   Visibility="{x:Bind MirrorSettings.HasValidationMessage, Mode=OneWay}" />
+                                        <TextBlock Text="{x:Bind MirrorSettings.StatusMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Visibility="{x:Bind MirrorSettings.HasStatusMessage, Mode=OneWay}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                            <Button Style="{StaticResource FilledButton}" Content="Save" Command="{x:Bind MirrorSettings.SaveCommand}" IsEnabled="{x:Bind MirrorSettings.IsDirty, Mode=OneWay}" />
+                                            <Button Style="{StaticResource QuietButton}" Content="Reset to defaults" Command="{x:Bind MirrorSettings.ResetCommand}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Desktop Mode -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="DESKTOP MODE" Style="{StaticResource SectionLabel}" />
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Style="{StaticResource TonalButton}" Content="{x:Bind DesktopMode.ButtonText, Mode=OneWay}" Command="{x:Bind DesktopMode.ToggleCommand}"
+                                            IsEnabled="{x:Bind DesktopMode.CanStart, Mode=OneWay}" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{x:Bind DesktopMode.StatusText, Mode=OneWay}" Style="{StaticResource CaptionText}" />
+                                        <TextBlock Text="{x:Bind DesktopMode.ErrorMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Foreground="{ThemeResource ErrorBrush}"
+                                                   Visibility="{x:Bind DesktopMode.HasError, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}"
+                                           Text="A second screen for the phone, to run apps on. The mouse belongs to it while it runs; press Alt or Super to get it back." />
+                                <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind DesktopMode.IsSetupPending, Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind DesktopMode.SetupMessage, Mode=OneWay}" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    <Button Style="{StaticResource TonalButton}" Content="Reboot now" Command="{x:Bind DesktopMode.RebootCommand}" />
+                                </StackPanel>
+
+                                <Expander Header="Desktop Mode settings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
+                                    <StackPanel Spacing="14" Padding="0,12,0,0">
+                                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="These apply the next time Desktop Mode starts. 0 for width, height and DPI lets Linc choose." />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <NumberBox Header="Width" Minimum="0" Maximum="3840" SpinButtonPlacementMode="Compact" Value="{x:Bind DesktopModeSettings.Width, Mode=TwoWay}" />
+                                            <NumberBox Grid.Column="1" Header="Height" Minimum="0" Maximum="3840" SpinButtonPlacementMode="Compact" Value="{x:Bind DesktopModeSettings.Height, Mode=TwoWay}" />
+                                            <NumberBox Grid.Column="2" Header="DPI" Minimum="0" Maximum="320" SpinButtonPlacementMode="Compact" Value="{x:Bind DesktopModeSettings.Dpi, Mode=TwoWay}" />
+                                        </Grid>
+                                        <ComboBox Header="Aspect ratio" MinWidth="200" ItemsSource="{x:Bind DesktopModeSettings.AspectModes}" SelectedItem="{x:Bind DesktopModeSettings.AspectMode, Mode=TwoWay}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <NumberBox Header="Max FPS" Minimum="1" Maximum="120" SpinButtonPlacementMode="Compact" Value="{x:Bind DesktopModeSettings.MaxFps, Mode=TwoWay}" />
+                                            <TextBox Grid.Column="1" Header="Video bit rate" Style="{StaticResource ExpressiveTextBox}" PlaceholderText="8M" Text="{x:Bind DesktopModeSettings.VideoBitRate, Mode=TwoWay}" />
+                                        </Grid>
+                                        <StackPanel>
+                                            <ToggleSwitch Header="Capture mouse" IsOn="{x:Bind DesktopModeSettings.CaptureMouse, Mode=TwoWay}" />
+                                            <ToggleSwitch Header="Sound" IsOn="{x:Bind DesktopModeSettings.ForwardAudio, Mode=TwoWay}" />
+                                        </StackPanel>
+                                        <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="Sound is off by default: decoding it costs performance on the second screen." />
+                                        <TextBlock Text="{x:Bind DesktopModeSettings.AudioConflictWarning, Mode=OneWay}" Foreground="{ThemeResource ErrorBrush}" Style="{StaticResource CaptionText}"
+                                                   Visibility="{x:Bind DesktopModeSettings.HasAudioConflictWarning, Mode=OneWay}" />
+                                        <TextBlock Text="{x:Bind DesktopModeSettings.ValidationMessage, Mode=OneWay}" Foreground="{ThemeResource ErrorBrush}" Style="{StaticResource CaptionText}"
+                                                   Visibility="{x:Bind DesktopModeSettings.HasValidationMessage, Mode=OneWay}" />
+                                        <TextBlock Text="{x:Bind DesktopModeSettings.StatusMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Visibility="{x:Bind DesktopModeSettings.HasStatusMessage, Mode=OneWay}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                            <Button Style="{StaticResource FilledButton}" Content="Save" Command="{x:Bind DesktopModeSettings.SaveCommand}" IsEnabled="{x:Bind DesktopModeSettings.IsDirty, Mode=OneWay}" />
+                                            <Button Style="{StaticResource QuietButton}" Content="Reset to recommended" Command="{x:Bind DesktopModeSettings.ResetToRecommendedCommand}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Install app (M10 Part A) -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="INSTALL AN APP" Style="{StaticResource SectionLabel}" />
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Style="{StaticResource TonalButton}" Content="Choose an APK…" Command="{x:Bind ViewModel.InstallApkCommand}" IsEnabled="{x:Bind ViewModel.CanInstallApk, Mode=OneWay}" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{x:Bind ViewModel.ApkInstallStatusText, Mode=OneWay}" Style="{StaticResource CaptionText}" />
+                                        <TextBlock Text="{x:Bind ViewModel.ApkInstallErrorMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Foreground="{ThemeResource ErrorBrush}"
+                                                   Visibility="{x:Bind ViewModel.HasApkInstallError, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="Check the phone: it may ask you to allow the install." />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- The link: method, override, health -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="CONNECTION" Style="{StaticResource SectionLabel}" />
+                                <ComboBox Header="Connection method" HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.ConnectionMethods}"
+                                          SelectedItem="{x:Bind ViewModel.SelectedConnectionMethod, Mode=TwoWay}" DisplayMemberPath="Label" />
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="Automatic switches to the best link available: USB, then Wireless, then direct Wi-Fi." />
+                                <!-- Use this link now (M15a Part C): a one-off override, not the sticky preference above. -->
+                                <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.ShowTransportOverride, Mode=OneWay}">
+                                    <TextBlock Text="Use this link now" Style="{StaticResource BodyText}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Style="{StaticResource QuietButton}" Content="Wireless" Command="{x:Bind ViewModel.UseWirelessNowCommand}" IsEnabled="{x:Bind ViewModel.CanUseWirelessNow, Mode=OneWay}" />
+                                        <Button Style="{StaticResource QuietButton}" Content="USB" Command="{x:Bind ViewModel.UseUsbNowCommand}" IsEnabled="{x:Bind ViewModel.CanUseUsbNow, Mode=OneWay}" />
+                                        <Button Style="{StaticResource QuietButton}" Content="Automatic" Command="{x:Bind ViewModel.UseAutomaticTransportCommand}" IsEnabled="{x:Bind ViewModel.HasManualTransport, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="A link picked here stays until you go back to automatic or it stops answering." />
+                                </StackPanel>
+                                <Grid ColumnSpacing="12" RowSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Reconnects" Style="{StaticResource CaptionText}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.ReconnectCount, Mode=OneWay}" Style="{StaticResource BodyText}" />
+                                    <TextBlock Grid.Row="1" Text="Protocol" Style="{StaticResource CaptionText}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.ProtocolVersion, Mode=OneWay}" Style="{StaticResource BodyText}" />
+                                    <TextBlock Grid.Row="2" Text="Serial" Style="{StaticResource CaptionText}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.DeviceSerial, Mode=OneWay}" Style="{StaticResource BodyText}" IsTextSelectionEnabled="True" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </Grid>
-                    </StackPanel>
-
-                    <Border Height="1" Background="{ThemeResource OutlineVariantBrush}" Opacity="0.5" />
-
-                    <!-- Tools › Display (M5c-2 / D-055): rotation picker + brightness auto + 0–100 slider -->
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="Display" Style="{StaticResource TitleText}" />
-                        <TextBlock
-                            Style="{StaticResource BodyText}"
-                            TextWrapping="Wrap"
-                            Text="Force the phone's screen orientation and brightness from here. Changes apply on the phone through its system settings; the phone needs the 'Modify system settings' permission (an appop — granted in Settings, not a dialog)." />
-                        <Grid ColumnSpacing="16" RowSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="200" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock
-                                Text="Rotation"
-                                Style="{StaticResource BodyText}"
-                                VerticalAlignment="Center" />
-                            <ComboBox
-                                Grid.Column="1"
-                                HorizontalAlignment="Stretch"
-                                VerticalAlignment="Center"
-                                ItemsSource="{x:Bind DisplayControl.RotationOptions}"
-                                SelectedItem="{x:Bind DisplayControl.RotationMode, Mode=OneWay}"
-                                IsEnabled="{x:Bind DisplayControl.CanChangeRotation, Mode=OneWay}"
-                                PlaceholderText="Unknown"
-                                SelectionChanged="RotationCombo_SelectionChanged" />
-                            <TextBlock
-                                Grid.Column="2"
-                                Style="{StaticResource BodyText}"
-                                VerticalAlignment="Center"
-                                Text="{x:Bind DisplayControl.RotationStatusText, Mode=OneWay}" />
-
-                            <TextBlock
-                                Grid.Row="1"
-                                Text="Adaptive brightness"
-                                Style="{StaticResource BodyText}"
-                                VerticalAlignment="Center" />
-                            <ToggleSwitch
-                                Grid.Row="1"
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                OnContent="On"
-                                OffContent="Off"
-                                IsOn="{x:Bind DisplayControl.BrightnessAutoToggleOn, Mode=OneWay}"
-                                IsEnabled="{x:Bind DisplayControl.CanChangeBrightness, Mode=OneWay}"
-                                Toggled="BrightnessAutoToggle_Toggled" />
-                            <TextBlock
-                                Grid.Row="1"
-                                Grid.Column="2"
-                                Style="{StaticResource BodyText}"
-                                VerticalAlignment="Center"
-                                Text="{x:Bind DisplayControl.BrightnessAutoStatusText, Mode=OneWay}" />
-                        </Grid>
-
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock
-                                Text="Brightness"
-                                Style="{StaticResource BodyText}"
-                                VerticalAlignment="Center" />
-                            <Slider
-                                x:Name="BrightnessSlider"
-                                Grid.Column="1"
-                                Minimum="0"
-                                Maximum="100"
-                                StepFrequency="1"
-                                SmallChange="1"
-                                Value="{x:Bind DisplayControl.BrightnessLevelSlider, Mode=OneWay}"
-                                IsEnabled="{x:Bind DisplayControl.IsBrightnessSliderEnabled, Mode=OneWay}"
-                                ValueChanged="BrightnessSlider_ValueChanged"
-                                HorizontalAlignment="Stretch" />
-                            <TextBlock
-                                Grid.Column="2"
-                                Style="{StaticResource BodyText}"
-                                VerticalAlignment="Center"
-                                MinWidth="80"
-                                Text="{x:Bind DisplayControl.BrightnessLevelStatusText, Mode=OneWay}" />
-                        </Grid>
-
-                        <TextBlock
-                            Style="{StaticResource BodyText}"
-                            TextWrapping="Wrap"
-                            Text="{x:Bind DisplayControl.StatusText, Mode=OneWay}" />
-                        <TextBlock
-                            Style="{StaticResource BodyText}"
-                            TextWrapping="Wrap"
-                            Foreground="{ThemeResource ErrorBrush}"
-                            Text="{x:Bind DisplayControl.ErrorMessage, Mode=OneWay}"
-                            Visibility="{x:Bind DisplayControl.HasError, Mode=OneWay}" />
-                    </StackPanel>
-
-                    <Border Height="1" Background="{ThemeResource OutlineVariantBrush}" Opacity="0.5" />
-
-                    <!-- Tools › Install app (M10 Part A): push an arbitrary local .apk to the phone -->
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Install app" Style="{StaticResource TitleText}" />
-                        <TextBlock
-                            Style="{StaticResource BodyText}"
-                            TextWrapping="Wrap"
-                            Text="Check your phone — it may ask you to allow the install." />
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Button
-                                Style="{StaticResource FilledButton}"
-                                Content="Install app…"
-                                Command="{x:Bind ViewModel.InstallApkCommand}"
-                                IsEnabled="{x:Bind ViewModel.CanInstallApk, Mode=OneWay}" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.ApkInstallStatusText, Mode=OneWay}"
-                                    Style="{StaticResource BodyText}" />
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.ApkInstallErrorMessage, Mode=OneWay}"
-                                    Foreground="{ThemeResource ErrorBrush}"
-                                    TextWrapping="Wrap"
-                                    Visibility="{x:Bind ViewModel.HasApkInstallError, Mode=OneWay}" />
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-        </StackPanel>
+            </StackPanel>
         </Grid>
     </ScrollViewer>
 </Page>
