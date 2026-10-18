@@ -30,8 +30,17 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
         connection.CompanionMessageReceived += OnMessage;
     }
 
+    private static readonly HashSet<string> Handled =
+    [
+        MessageType.PcLookGet, MessageType.PcLookSet, MessageType.PcWallpaperSet, MessageType.PcInfoGet, MessageType.PcAppsGet,
+        MessageType.PcAppsEnd, MessageType.PcOpen, MessageType.PcFilesList, MessageType.PcFilesOp, MessageType.PcTermGet, MessageType.PcTermOpen,
+    ];
+
     private void OnMessage(Envelope envelope)
     {
+        // Every message from the phone passes here (pointer moves at 100+ a second), so only
+        // this service's own are copied off the receive loop.
+        if (!Handled.Contains(envelope.Type)) return;
         var p = envelope.Payload.DeepClone().AsObject();
         switch (envelope.Type)
         {
