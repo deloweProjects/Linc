@@ -610,7 +610,10 @@ public sealed class QsConnection : IAsyncDisposable
             ConnectionResponse = new NcResponse
             {
                 Response = NcResponse.Types.ResponseStatus.Accept,
+                // Deprecated in Nearby Connections' proto but still read by older peers; keep it.
+#pragma warning disable CS0612
                 Status = 0,
+#pragma warning restore CS0612
                 OsInfo = new OsInfo { Type = OsInfo.Types.OsType.Windows },
             },
         },

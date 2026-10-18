@@ -16,6 +16,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
@@ -34,25 +38,49 @@ class CompanionService : Service() {
     override fun onCreate() {
         super.onCreate()
         LogStore.init(this)
+        ClipboardHistoryStore.init(this)
+        // The PC as a Direct Share target, named after it once it says its name (D-083).
+        scope.launch {
+            CompanionStateHolder.state
+                .filterIsInstance<CompanionStateHolder.ServiceState.Connected>()
+                .map { it.host }
+                .distinctUntilChanged()
+                .collect { host -> DirectShare.publish(this@CompanionService, host) }
+        }
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // The phone's mic streaming to the PC (D-075): add (or drop) the microphone type so
+        // Android keeps recording with the screen off and Linc in the background.
+        if (intent?.action == ACTION_MIC && server != null) {
+            val on = intent.getBooleanExtra(EXTRA_ON, false)
+            runCatching {
+                ServiceCompat.startForeground(
+                    this, NOTIFICATION_ID, buildNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                        (if (on) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0),
+                )
+            }.onFailure { LogStore.log(LogLevel.WARN, "Phone microphone: Android wouldn't let it run in the background (${it.message})") }
+            return START_STICKY
+        }
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
             buildNotification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
-        // Phone → PC clipboard in the background, when the PC granted READ_LOGS (D-075).
+        // Phone → PC clipboard in the background, when the PC granted READ_LOGS (D-092).
         ClipboardWatcher.start(this)
         if (server == null) {
+            val gate = PcGate(this).also { PcGate.instance = it }
             val mediaBridge = MediaBridge(this).also { it.start() }
             media = mediaBridge
             server = SocketServer(
                 scope,
                 statusPayload = { negotiatedVersion -> DeviceStatusReporter.payload(this, negotiatedVersion) },
                 onSetClipboard = { text -> ClipboardBridge.applyFromDesktop(this, text) },
+                onClipboardGet = { ClipboardBridge.onPcAsked(this) },
                 onDesktopConnected = { LincNotificationListener.instance?.pushActiveNotifications() },
                 onDismissNotification = { key -> LincNotificationListener.instance?.dismiss(key) },
                 bulkFetch = { kind, id ->
@@ -78,10 +106,8 @@ class CompanionService : Service() {
                 // v15 display control (D-055): a DisplayControl owns the Settings.System writes.
                 onSetRotation = { mode -> DisplayControl(this).setRotation(mode) },
                 onSetBrightness = { auto, level -> DisplayControl(this).setBrightness(auto, level) },
-                onTlsExchange = { certB64, tlsPort, reversePort ->
-                    TransportStore.saveExchange(this, certB64, tlsPort, reversePort)
-                    TlsIdentity.certificateBase64()
-                },
+                // The PC's certificate is stored by the gate (D-088), which knows which PC sent it.
+                onTlsExchange = { _, _, _ -> TlsIdentity.certificateBase64() },
                 onChannelOpen = { channel, token ->
                     presence?.openChannel(channel, token) ?: false
                 },
@@ -116,8 +142,9 @@ class CompanionService : Service() {
                     AdbArming.arm(this)
                     AdbAnnouncer.announceNow(this, reason)
                 },
+                gate = gate,
             ).also { it.start() }
-            presence = PresenceClient(this, scope, server!!).also { it.start() }
+            presence = PresenceClient(this, scope, server!!, gate).also { it.start() }
             // A BLE hint costs nothing when it fails: no radio, no grant or no certificate all
             // just mean the PC never hears it (M04, D-034).
             blePresence = BlePresenceAdvertiser(this, scope).also { it.start() }
@@ -138,7 +165,9 @@ class CompanionService : Service() {
         presence = null
         blePresence?.stop()
         blePresence = null
+        PcGate.instance?.dropAll()
         server?.stop()
+        PcGate.instance = null
         server = null
         media?.stop()
         media = null
@@ -233,7 +262,11 @@ class CompanionService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private companion object {
+    companion object {
+        /** Intent action: the phone's mic started or stopped streaming to the PC (extra [EXTRA_ON]). */
+        const val ACTION_MIC = "app.linc.android.action.MIC"
+        const val EXTRA_ON = "on"
+
         const val CHANNEL_ID = "linc.companion"
         const val NOTIFICATION_ID = 1
     }

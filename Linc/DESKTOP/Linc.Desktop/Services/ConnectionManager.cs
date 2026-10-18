@@ -6,11 +6,18 @@ using Linc.Desktop.Protocol;
 
 namespace Linc.Desktop.Services;
 
-public enum LinkTransport { AdbUsb, AdbWireless, DirectTls }
-
 public sealed record ConnectedDevice(
     string Model, string Serial, string SerialNo, CompanionHello Companion,
-    LinkTransport Transport = LinkTransport.AdbWireless);
+    LinkTransport Transport = LinkTransport.AdbWireless)
+{
+    /// <summary>
+    /// The phone's own identity for everything stored per phone (D-078): its hardware serial, the
+    /// same key the device registry uses — not <see cref="Serial"/>, which is whatever adb calls
+    /// this connection (USB serial, IPv4/IPv6 host:port, mDNS name) and changes with the route.
+    /// Keyed by route, one phone became four cached "phones", re-downloading every app icon each time.
+    /// </summary>
+    public string CacheKey => string.IsNullOrEmpty(SerialNo) ? Serial : SerialNo;
+}
 
 public interface IConnectionManager
 {
@@ -186,7 +193,8 @@ public sealed class ConnectionManager(
 
     public async Task<ConnectedDevice> ConnectAsync(string hostPort, CancellationToken ct)
     {
-        Disconnect();
+        // No Disconnect() first (D-081): the live link, if any, keeps working until the new one
+        // has finished its handshake — Install swaps them. A failed attempt changes nothing.
         await adbServerHost.EnsureRunningAsync(ct);
 
         var (host, port) = ParseHostPort(hostPort);
@@ -219,7 +227,6 @@ public sealed class ConnectionManager(
 
     public async Task<ConnectedDevice> ConnectToUsbDeviceAsync(DeviceData device, CancellationToken ct)
     {
-        Disconnect();
         await adbServerHost.EnsureRunningAsync(ct);
         EnsureOnline(device);
         return await FinishConnectAsync(device, device.Serial, ct);
@@ -228,9 +235,7 @@ public sealed class ConnectionManager(
     public async Task<ConnectedDevice> AdoptTlsConnectionAsync(
         System.IO.Stream stream, System.Net.IPEndPoint? peer, CancellationToken ct)
     {
-        Disconnect();
-        PeerAddress = peer?.Address.ToString();
-        var companion = new CompanionClient();
+        var companion = new CompanionClient { PcId = tls.PcId };
         try
         {
             var appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
@@ -245,14 +250,6 @@ public sealed class ConnectionManager(
                 return await arrival;
             };
             companion.MessageReceived += envelope => CompanionMessageReceived?.Invoke(envelope);
-            _companion = companion;
-            RawDevice = null; // no ADB on this link: mirror/files/screenshot unavailable (M17)
-            Current = new ConnectedDevice(
-                Model: registry.PairedModel ?? "Android phone",
-                Serial: registry.PairedSerial ?? "direct",
-                SerialNo: registry.PairedSerial ?? "",
-                Companion: hello,
-                Transport: LinkTransport.DirectTls);
             if (hello.V >= 6)
             {
                 foreach (var topic in new[] { Topic.Status, Topic.Notifications, Topic.Clipboard, Topic.Media })
@@ -260,8 +257,15 @@ public sealed class ConnectionManager(
                     await companion.SubscribeAsync(topic, ct);
                 }
             }
+            // No ADB on this link: mirror/files/screenshot unavailable (M17).
+            var current = Install(companion, new ConnectedDevice(
+                Model: registry.PairedModel ?? "Android phone",
+                Serial: registry.PairedSerial ?? "direct",
+                SerialNo: registry.PairedSerial ?? "",
+                Companion: hello,
+                Transport: LinkTransport.DirectTls), rawDevice: null, peer?.Address.ToString());
             log.Log(LogLevel.Info, "Connected to the phone directly — no ADB involved");
-            return Current;
+            return current;
         }
         catch
         {
@@ -311,7 +315,7 @@ public sealed class ConnectionManager(
                 "Turn Wireless debugging off and on again on the phone, then retry.", ex);
         }
 
-        var companion = new CompanionClient();
+        var companion = new CompanionClient { PcId = tls.PcId };
         try
         {
             var appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
@@ -320,7 +324,7 @@ public sealed class ConnectionManager(
             {
                 hello = await companion.ConnectAsync(localPort, appVersion, ct);
             }
-            catch (LincException)
+            catch (LincException ex) when (ex is not PhoneBusyException)
             {
                 // The companion isn't answering — after an install, a reboot, a crash, or a
                 // force-stop. We hold an ADB link, so start it ourselves rather than asking the
@@ -333,10 +337,8 @@ public sealed class ConnectionManager(
                 log.Log(LogLevel.Info, "The companion app wasn't running; Linc started it on the phone.");
             }
             companion.MessageReceived += envelope => CompanionMessageReceived?.Invoke(envelope);
-            _companion = companion;
-            RawDevice = device;
-            var transport = serial.Contains(':') ? LinkTransport.AdbWireless : LinkTransport.AdbUsb;
-            Current = new ConnectedDevice(model, serial, serialNo, hello, transport);
+            var selfTest = false;
+            var transport = AdbSerial.IsNetwork(serial) ? LinkTransport.AdbWireless : LinkTransport.AdbUsb;
             if (hello.V >= 9)
             {
                 // TLS pairing (D-022): trust-on-first-use over the authenticated ADB link.
@@ -393,9 +395,14 @@ public sealed class ConnectionManager(
             {
                 // M12 proof: exercise the bulk channel once, concurrently with the control
                 // connection, so the pipeline is verifiable on hardware (Logs page). Best-effort.
+                selfTest = true;
+            }
+            var current = Install(companion, new ConnectedDevice(model, serial, serialNo, hello, transport), device, peer: null);
+            if (selfTest)
+            {
                 _ = RunBulkSelfTestAsync();
             }
-            return Current;
+            return current;
         }
         catch
         {
@@ -619,6 +626,25 @@ public sealed class ConnectionManager(
         var companion = _companion
             ?? throw new LincException("Not connected to a phone right now.");
         return companion.SetSoundModeAsync(mode, ct);
+    }
+
+    /// <summary>
+    /// Make the freshly handshaken <paramref name="companion"/> the live link and only then close
+    /// the old one (D-081): a handoff from Wi-Fi to USB, or the reverse, never leaves a moment
+    /// with nothing connected. The phone keeps both control connections and talks to the newest.
+    /// </summary>
+    private ConnectedDevice Install(CompanionClient companion, ConnectedDevice current, DeviceData? rawDevice, string? peer)
+    {
+        var old = _companion;
+        _companion = companion;
+        Current = current;
+        RawDevice = rawDevice;
+        PeerAddress = peer;
+        if (old is not null && !ReferenceEquals(old, companion))
+        {
+            old.Dispose();
+        }
+        return current;
     }
 
     public void Disconnect()

@@ -8,7 +8,7 @@ import app.linc.android.service.ClipboardBridge
 
 /**
  * An invisible window that exists only to hold focus for the instant it takes to read the
- * clipboard, which Android 10+ allows only to the focused app (D-075). Started by
+ * clipboard, which Android 10+ allows only to the focused app (D-092). Started by
  * [app.linc.android.service.ClipboardWatcher]; closes itself either way.
  */
 class ClipboardSyncActivity : Activity() {

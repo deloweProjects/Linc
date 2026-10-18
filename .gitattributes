@@ -4,6 +4,8 @@
 gradlew text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
 *.sh text eol=lf
 
 # Binaries
@@ -11,3 +13,11 @@ gradlew text eol=lf
 *.png binary
 *.jpg binary
 *.ico binary
+*.dll binary
+*.exe binary
+*.apk binary
+*.zip binary
+*.db binary
+*.pfx binary
+*.webp binary
+scrcpy-server binary

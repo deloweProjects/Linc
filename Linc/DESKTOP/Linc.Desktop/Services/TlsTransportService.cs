@@ -17,6 +17,13 @@ public interface ITlsTransportService : IDisposable
     /// <summary>This PC's certificate, base64 DER — sent in `tls.exchange`.</summary>
     string CertificateBase64 { get; }
 
+    /// <summary>
+    /// This PC's stable id for the phone (D-088): the first 16 hex digits of the SHA-256 of its
+    /// certificate. Sent in `hello` and the mDNS advert so a phone that knows several PCs can tell
+    /// them apart; the phone computes the same value from the certificate it pinned.
+    /// </summary>
+    string PcId { get; }
+
     int TlsPort { get; }
     int ReversePort { get; }
 
@@ -36,6 +43,9 @@ public interface ITlsTransportService : IDisposable
     /// <summary>Start/stop listening + advertising, per the Background connection setting.</summary>
     void Start();
     void Stop();
+
+    /// <summary>Republish the <c>_linc._tcp</c> advert now — after the PC wakes (D-081).</summary>
+    void RefreshAdvert();
 
     /// <summary>
     /// Registers a waiter for a phone dial-back carrying `{channel, sessionToken}`,
@@ -57,7 +67,14 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     public int ReversePort => 46011;
 
     private readonly Lazy<X509Certificate2> _identity = new(() => LoadOrCreateIdentity(Path.Combine(registry.RootPath, "tls-identity.pfx")));
-    private readonly ConcurrentDictionary<(int Channel, string Token), TaskCompletionSource<Stream>> _channelWaiters = new();
+    /// <summary>
+    /// Dial-backs being waited for, first come first served per (channel, session). A single slot
+    /// per key used to be overwritten when the PC opened the same channel several times at once
+    /// (app icons over the bulk channel): one dial-back matched, the rest arrived to an empty slot,
+    /// were taken for new control connections and dropped, and their fetches hung for 8 s each.
+    /// </summary>
+    private readonly ConcurrentDictionary<(int Channel, string Token), ConcurrentQueue<TaskCompletionSource<Stream>>> _channelWaiters = new();
+    private int _waiting;
 
     private TcpListener? _listener;
     private ServiceDiscovery? _advertiser;
@@ -69,7 +86,10 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
 
     public string CertificateBase64 => Convert.ToBase64String(_identity.Value.Export(X509ContentType.Cert));
 
+    public string PcId => Convert.ToHexString(SHA256.HashData(_identity.Value.Export(X509ContentType.Cert)))[..16].ToLowerInvariant();
+
     public event Action<Stream, IPEndPoint?>? ControlArrived;
+
 
     public void Start()
     {
@@ -114,6 +134,22 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
 
     public void Dispose() => Stop();
 
+    public void RefreshAdvert()
+    {
+        if (_listener is null)
+        {
+            return; // background connection is off
+        }
+        try
+        {
+            Advertise();
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Couldn't refresh the direct-connection advert: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Publishes (or republishes) the <c>_linc._tcp</c> advert for the CURRENT set of interfaces
     /// (M13f §4). Re-enumerated on every link change; reuses <see cref="HotspotInterfaces.Enumerate"/>
@@ -135,6 +171,8 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         {
             profile.AddProperty("addrs", string.Join(",", lan.Select(a => a.ToString())));
         }
+        // Which PC this is, for a phone that knows several (D-088).
+        profile.AddProperty("id", PcId);
         _advertiser.Advertise(profile);
         var shown = lan.Count > 0 ? string.Join(", ", lan) : "no LAN address found";
         log.Log(LogLevel.Info, $"Direct connection ready on {shown} — waiting for the phone to find this PC");
@@ -171,15 +209,22 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     public Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct)
     {
         var waiter = new TaskCompletionSource<Stream>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _channelWaiters[(channel, sessionToken)] = waiter;
-        ct.Register(() =>
-        {
-            if (_channelWaiters.TryRemove((channel, sessionToken), out var pending))
-            {
-                pending.TrySetCanceled(ct);
-            }
-        });
+        _channelWaiters.GetOrAdd((channel, sessionToken), _ => new()).Enqueue(waiter);
+        Interlocked.Increment(ref _waiting);
+        // A cancelled waiter stays queued but completed; TakeWaiter skips it.
+        ct.Register(() => { if (waiter.TrySetCanceled(ct)) Interlocked.Decrement(ref _waiting); });
         return waiter.Task;
+    }
+
+    /// <summary>The oldest still-waiting request for this dial-back, if any.</summary>
+    private TaskCompletionSource<Stream>? TakeWaiter(int channel, string token)
+    {
+        if (!_channelWaiters.TryGetValue((channel, token), out var queue)) return null;
+        while (queue.TryDequeue(out var waiter))
+        {
+            if (!waiter.Task.IsCompleted) return waiter;
+        }
+        return null;
     }
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
@@ -238,18 +283,21 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             // Channel dial-backs announce themselves with a header frame immediately;
             // control connections stay silent (the desktop speaks first). Only try the
             // read when a dial-back is actually expected.
-            if (!_channelWaiters.IsEmpty)
+            if (Volatile.Read(ref _waiting) > 0)
             {
                 var header = await TryReadHeaderAsync(ssl);
                 if (header is not null)
                 {
                     var channel = (int?)header["channel"] ?? -1;
                     var token = (string?)header["sessionToken"] ?? "";
-                    if (_channelWaiters.TryRemove((channel, token), out var waiter))
+                    if (TakeWaiter(channel, token) is { } waiter)
                     {
                         if (channel is VideoChannel or AudioChannel) LimitSendBuffer(client);
-                        waiter.TrySetResult(ssl);
-                        return; // ownership handed to the waiter
+                        if (waiter.TrySetResult(ssl))
+                        {
+                            Interlocked.Decrement(ref _waiting);
+                            return; // ownership handed to the waiter
+                        }
                     }
                     ssl.Dispose(); // unknown/stale dial-back
                     return;

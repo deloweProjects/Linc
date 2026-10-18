@@ -193,7 +193,7 @@ Console.WriteLine("--- Explorer hand-off arguments");
     // The real pipe, both ends: what a second Linc (started by Explorer) hands the running one.
     using var stop = new CancellationTokenSource();
     var got = new TaskCompletionSource<IReadOnlyList<string>>();
-    QsShellIntegration.Listen(paths => got.TrySetResult(paths), _ => { }, stop.Token);
+    QsShellIntegration.Listen((paths, _) => got.TrySetResult(paths), _ => { }, stop.Token);
     await Task.Delay(300); // let the server create the pipe
     var forwarded = QsShellIntegration.TryForward([@"C:\x\one.jpg", @"D:\two words.pdf"]);
     var arrived = await Task.WhenAny(got.Task, Task.Delay(5000)) == got.Task ? got.Task.Result : null;

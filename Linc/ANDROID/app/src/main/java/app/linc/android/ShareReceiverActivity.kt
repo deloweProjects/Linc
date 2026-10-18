@@ -11,9 +11,12 @@ import app.linc.android.protocol.MessageType
 import app.linc.android.service.CompanionOutbox
 import app.linc.android.service.LogLevel
 import app.linc.android.service.LogStore
-import app.linc.android.service.ShareProgress
 import app.linc.android.service.ShareSender
 import app.linc.android.service.ShareSizeLimits
+import app.linc.android.service.ShareStore
+import app.linc.android.service.ShareProgress
+import app.linc.android.service.TransferState
+import kotlinx.coroutines.flow.first
 import app.linc.android.service.resolveShareUris
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,8 +55,20 @@ class ShareReceiverActivity : ComponentActivity() {
     }
 
     private fun sendText(text: String) {
+        // Not connected: Quick Share instead of a dead end (D-083 — one model on both apps).
+        if (!CompanionOutbox.canSend(SHARE_ITEM_VERSION)) {
+            if (app.linc.android.service.QuickShareLauncher.sendText(this, text)) {
+                Toast.makeText(this, R.string.share_via_quick_share, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         val kind = if (URL_REGEX.matches(text)) "url" else "text"
-        val connected = CompanionOutbox.canSend(SHARE_ITEM_VERSION)
+        // The PC puts shared text on its clipboard, so it belongs in the clipboard history too —
+        // and sharing to Linc is how text copied in other apps reaches the PC (D-083).
+        app.linc.android.service.ClipboardHistoryStore.init(this)
+        app.linc.android.service.ClipboardHistoryStore.record(text, fromPhone = true, sent = true)
         CompanionOutbox.trySend(
             Envelope(
                 type = MessageType.SHARE_ITEM,
@@ -64,12 +79,17 @@ class ShareReceiverActivity : ComponentActivity() {
             ),
             requiredVersion = SHARE_ITEM_VERSION,
         )
-        ShareProgress(this, 1).done(failed = if (connected) 0 else 1)
+        Toast.makeText(this, R.string.share_sent, Toast.LENGTH_SHORT).show()
     }
 
     private fun handleFiles(uris: List<Uri>) {
         if (!CompanionOutbox.canSend(SHARE_ITEM_VERSION)) {
-            Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
+            // Not connected: Quick Share instead of a dead end (D-083).
+            if (app.linc.android.service.QuickShareLauncher.send(this, uris)) {
+                Toast.makeText(this, R.string.share_via_quick_share, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
+            }
             return
         }
 
@@ -81,8 +101,8 @@ class ShareReceiverActivity : ComponentActivity() {
         }
 
         LogStore.log(LogLevel.INFO, "Sharing ${uris.size} item(s) with the PC")
-        // The notification, not a toast, carries the feedback: it stays while the copy runs
-        // and turns into "Sent" when it is done, then dismisses itself.
+        // The notification, not a toast, carries the feedback (D-092): it stays while the copy
+        // runs, turns into "Sent" when every item is across, then dismisses itself.
         val progress = ShareProgress(this, uris.size)
         progress.sending(0, ShareSender.nameFor(this, uris[0]))
 
@@ -93,12 +113,16 @@ class ShareReceiverActivity : ComponentActivity() {
         val appContext = applicationContext
         backgroundScope.launch {
             // Sequential, in selection order (B2.3) — not a new batch message.
-            var failed = 0
-            uris.forEachIndexed { index, uri ->
-                progress.sending(index, ShareSender.nameFor(appContext, uri))
-                if (!ShareSender.sendFile(appContext, uri)) failed++
+            val ids = uris.map { ShareStore.send(appContext, it) }
+            // Follow ShareStore's own transfer states into the notification.
+            ShareStore.transfers.first { list ->
+                val mine = list.filter { it.id in ids }
+                val done = mine.count { it.state != TransferState.Copying }
+                mine.firstOrNull { it.state == TransferState.Copying }?.let { progress.sending(done, it.name) }
+                mine.size == ids.size && done == ids.size
+            }.let { list ->
+                progress.done(failed = list.count { it.id in ids && it.state == TransferState.Failed })
             }
-            progress.done(failed)
         }
     }
 

@@ -47,6 +47,7 @@ public interface IPcMirrorService : IDisposable
 public sealed class PcMirrorService(
     IConnectionManager connection,
     IPcInputService input,
+    IDeviceRegistry registry,
     ILogService log) : IPcMirrorService
 {
     private const int VideoChannel = 5;
@@ -136,7 +137,32 @@ public sealed class PcMirrorService(
                 _ = Task.Run(() => VoiceAccess.SendStateAsync());
                 break;
 
-            // v22 (D-076): the phone as this PC's speaker.
+            // v23 (D-075): the phone as this PC's microphone — the Microphone tool, and PC Remote's
+            // automatic mode (the phone's mic whenever a PC app listens).
+            case MessageType.PcMicSet:
+                bool micOn = (bool?)envelope.Payload["on"] ?? false;
+                bool micInstall = (bool?)envelope.Payload["installCable"] ?? false;
+                _ = Task.Run(() => VoiceAccess.SetToolAsync(micOn, micInstall));
+                break;
+
+            case MessageType.PcMicAuto:
+                bool auto = (bool?)envelope.Payload["on"] ?? false;
+                bool autoInstall = (bool?)envelope.Payload["installCable"] ?? false;
+                _ = Task.Run(() => VoiceAccess.SetAutoAsync(auto, autoInstall));
+                break;
+
+            // v22 (D-074): Windows tablet mode from the bubble.
+            case MessageType.PcTabletModeSet:
+                bool tablet = (bool?)envelope.Payload["on"] ?? false;
+                string? mirrored = _activeDisplay?.Name;
+                _ = Task.Run(() => TabletMode.SetAsync(tablet, mirrored));
+                break;
+
+            case MessageType.PcTabletModeGet:
+                _ = Task.Run(() => TabletMode.SendStateAsync());
+                break;
+
+            // v25 (D-093): the phone as this PC's speaker.
             case MessageType.PcSpeakerSet:
                 bool speakerOn = (bool?)envelope.Payload["on"] ?? false;
                 _ = Task.Run(() => SetSpeakerAsync(speakerOn));
@@ -146,6 +172,9 @@ public sealed class PcMirrorService(
 
     private PcVoiceAccess? _voiceAccess;
     private PcVoiceAccess VoiceAccess => _voiceAccess ??= new PcVoiceAccess(connection, log);
+
+    private PcTabletMode? _tabletMode;
+    private PcTabletMode TabletMode => _tabletMode ??= new PcTabletMode(connection, log);
 
     // ---- PC audio (v20, channel 6) ------------------------------------------
 
@@ -289,16 +318,22 @@ public sealed class PcMirrorService(
     }
 
     /// <summary>
-    /// Apply a phone input event to whichever display is being mirrored. Ignored when nothing
-    /// is streaming — an input with no active view has no coordinate space to land in.
+    /// Apply a phone input event. While mirroring, absolute points land on the mirrored display;
+    /// with no mirror running (the phone's Remote trackpad, keyboard, presentation keys) they land
+    /// on the primary display. Relative moves, clicks, scrolls and keys need no target at all —
+    /// before 1.0.0.11 every one of them was dropped unless a mirror session was up.
     /// </summary>
     private void RouteInput(JsonObject payload)
     {
-        var display = _activeDisplay;
-        if (display is null) return;
-
-        var target = new DisplayRect(display.Left, display.Top, display.Width, display.Height);
+        IReadOnlyList<PcDisplay> displays;
+        try { displays = Displays; }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Couldn't list this PC's displays for phone input: {ex.Message}");
+            displays = [];
+        }
         var bounds = VirtualDesktopBounds();
+        var target = PcInputService.TargetFor(_activeDisplay, displays, bounds);
         try { input.Apply(payload, target, bounds); }
         catch (Exception ex) { log.Log(LogLevel.Warn, $"Couldn't apply phone input: {ex.Message}"); }
     }
@@ -447,8 +482,11 @@ public sealed class PcMirrorService(
             // ProcessInput/GetEvent from the MTA pump/feed threads marshals back onto the UI
             // thread, burying the message pump at 30 fps and hanging the whole app (AppHangB1).
             // Keeping the encoder in the MTA lets those calls run directly on the worker threads.
+            // Bounded (D-091): trying every encoder, then the software one, takes a few seconds at
+            // most; a graphics driver that hangs during setup must not hold the start for ever.
             var source = await Task.Run(
-                () => new PcMirrorSource(displayIndex, useFps, useBitrate, log), ct);
+                () => new PcMirrorSource(displayIndex, useFps, useBitrate, log, registry.ForceSoftwareEncoding), ct)
+                .WaitAsync(TimeSpan.FromSeconds(30), ct);
 
             Stream channel;
             try
@@ -471,7 +509,7 @@ public sealed class PcMirrorService(
                 // enough on Wi-Fi. The capture and the hardware encoder are already built at
                 // this point, so they must be released here or every failed attempt leaks a
                 // GPU encoder session and the next attempt is slower than the last.
-                await Task.Run(source.Dispose);
+                await DisposeWithin(source, "a failed start");
                 throw;
             }
 
@@ -551,7 +589,9 @@ public sealed class PcMirrorService(
         _sender?.Dispose();
         _sender = null;
 
-        await Task.Run(source.Dispose); // dispose the encoder off the UI thread (its MTA home)
+        // Dispose the encoder off the UI thread (its MTA home), but never wait on it for ever:
+        // a graphics driver that will not let go must not block the next Mirror PC (D-091).
+        await DisposeWithin(source, "stopping");
 
         if (_channel is not null)
         {
@@ -564,6 +604,18 @@ public sealed class PcMirrorService(
         log.Log(LogLevel.Info, "Stopped mirroring this PC to the phone");
     }
 
+    /// <summary>
+    /// Dispose a mirror source on the thread pool, giving up after five seconds. A source left
+    /// behind may hold a hardware encoder session, which costs less than a mirror that can never
+    /// start again.
+    /// </summary>
+    private async Task DisposeWithin(PcMirrorSource source, string when)
+    {
+        var dispose = Task.Run(source.Dispose);
+        if (await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromSeconds(5))) != dispose)
+            log.Log(LogLevel.Warn, $"PC mirror: the video encoder didn't let go within 5 s after {when}; carrying on without waiting for it");
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -571,6 +623,7 @@ public sealed class PcMirrorService(
         StopAudio();
         _speaker?.Disable();      // puts the user's own speakers back
         _voiceAccess?.Dispose(); // puts the user's own default microphone back
+        PcTabletMode.RestorePending(log); // and the display scale Tablet mode raised
         try { StopAsync().GetAwaiter().GetResult(); } catch { }
         _gate.Dispose();
     }

@@ -389,7 +389,9 @@ Console.WriteLine("--- source-text check: HotspotConnect.cs disconnects before i
             // some other method would not protect this path (GUIDE.md §4.4).
             var body = source[bodyStart..];
             var idxDisconnect = body.IndexOf("RunAdbAsync(adb, ct, DisconnectVerb", StringComparison.Ordinal);
-            var idxConnect = body.IndexOf("RunAdbAsync(adb, ct, ConnectVerb", StringComparison.Ordinal);
+            // D-081: the connect runs with its own shorter limit (AdbProcess.RunAsync with
+            // ConnectTimeout), so match the verb and endpoint rather than the helper's name.
+            var idxConnect = body.IndexOf("ConnectVerb, endpoint)", StringComparison.Ordinal);
             True(idxDisconnect >= 0, "ConnectAsync's body issues an adb disconnect");
             True(idxConnect >= 0, "ConnectAsync's body issues an adb connect");
             True(idxDisconnect >= 0 && idxConnect >= 0 && idxDisconnect < idxConnect,
@@ -1191,7 +1193,7 @@ Console.WriteLine("--- M15c A1/A2: the one-phone limit is a CHOICE stated up fro
         "...blank counts as nothing live, not as a phone named with a space");
 
     var note = DeviceAdmission.OneAtATimeNotice("Pixel 7");
-    True(note == "Linc connects to one phone at a time. Adding another will disconnect Pixel 7.",
+    True(note == "Linc connects to one phone at a time. Adding another will disconnect Pixel 7 (it stays paired).",
         "the standing line says the limit AND what adding another costs (A2)");
     True(DeviceAdmission.OneAtATimeNotice(null) is null,
         "...and says nothing at all when no phone is live, rather than something untrue");
@@ -1347,7 +1349,8 @@ Console.WriteLine("--- M15c source-text checks against production (A1/A2/A3 and 
             "...and drops the link ONLY when the live transport is the USB cable (B2)");
         True(goneBody.Contains("live.Serial", StringComparison.Ordinal),
             "...and only when the serial that vanished is the one that is live (B2)");
-        True(goneBody.Contains("OnLinkDropped()", StringComparison.Ordinal),
+        // D-081: the same drop path, told it was the cable — so it can hand off to Wi-Fi first.
+        True(goneBody.Contains("OnLinkDropped(LinkSignal.CableOut)", StringComparison.Ordinal),
             "...then runs the existing drop path rather than a parallel one (B2)");
         True(goneBody.Contains("log.Log(", StringComparison.Ordinal),
             "...and logs it, so the next cable pull is measurable from the log (B4)");

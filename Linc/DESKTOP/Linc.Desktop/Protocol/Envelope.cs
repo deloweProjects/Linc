@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 22;
+    public const int Version = 25;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -34,6 +34,7 @@ public static class MessageType
     public const string Ok = "ok";
     public const string ClipboardSet = "clipboard.set";
     public const string ClipboardChanged = "clipboard.changed";
+    public const string ClipboardGet = "clipboard.get";       // either direction: "send me your clipboard" (v24)
 
     // v2
     public const string NotificationPosted = "notification.posted";
@@ -98,8 +99,13 @@ public static class MessageType
     public const string PcVoiceAccessSet = "pc.voiceaccess.set";     // phone → desktop: start/stop Voice Access (v21)
     public const string PcVoiceAccessGet = "pc.voiceaccess.get";     // phone → desktop: ask for its state (v21)
     public const string PcVoiceAccessState = "pc.voiceaccess.state"; // desktop → phone (v21)
-    public const string PcSpeakerSet = "pc.speaker.set";       // phone → desktop: {on} phone as PC speaker (v22)
-    public const string PcSpeakerState = "pc.speaker.state";   // desktop → phone: {on, cable, error?} (v22)
+    public const string PcTabletModeSet = "pc.tabletmode.set";       // phone → desktop: Windows tablet mode on/off (v22)
+    public const string PcTabletModeGet = "pc.tabletmode.get";       // phone → desktop: ask for its state (v22)
+    public const string PcTabletModeState = "pc.tabletmode.state";   // desktop → phone (v22)
+    public const string PcMicSet = "pc.mic.set";                     // phone → desktop: the phone as the PC's mic, any app (v23)
+    public const string PcMicAuto = "pc.mic.auto";                   // phone → desktop: PC Remote with "Phone" chosen (v23)
+    public const string PcSpeakerSet = "pc.speaker.set";       // phone → desktop: {on} phone as PC speaker (v25)
+    public const string PcSpeakerState = "pc.speaker.state";   // desktop → phone: {on, cable, error?} (v25)
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies

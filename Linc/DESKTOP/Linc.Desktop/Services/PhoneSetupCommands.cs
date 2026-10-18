@@ -52,14 +52,14 @@ public static class PhoneSetupCommands
         return plan;
     }
 
-    /// <summary>Lets the phone notice a copy made in another app (D-075). A "development" permission: <c>pm grant</c> works.</summary>
+    /// <summary>Lets the phone notice a copy made in another app (D-092). A "development" permission: <c>pm grant</c> works.</summary>
     public const string ClipboardLogPermission = "android.permission.READ_LOGS";
 
     /// <summary>
     /// Grants added after a phone may already have been set up, re-run on every ADB connect (once
     /// per phone per session) so an existing install gets them too. Idempotent like the rest.
     /// <para>
-    /// Background clipboard (D-075): Android 10+ lets only the focused app read the clipboard.
+    /// Background clipboard (D-092): Android 10+ lets only the focused app read the clipboard.
     /// READ_LOGS lets the phone see the system's "denied clipboard access" line the moment
     /// something is copied, and the overlay grant lets it put up an invisible window for the
     /// instant it takes to read the clip. Both can only be granted over ADB.

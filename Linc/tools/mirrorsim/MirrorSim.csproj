@@ -20,6 +20,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MediaFoundation.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcScreenCapture.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcVideoEncoder.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcNv12Converter.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcInputService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSource.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMirrorSender.cs" />
@@ -28,6 +29,8 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcCursorWatcher.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcAudioStreamer.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMicAudio.cs" />
+    <!-- D-078: which adb serials are network links, not USB cables. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AdbSerial.cs" />
     <!-- D-071: the pinned VB-CABLE package and its setup selection (no download in the harness). -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\VirtualCable.cs" />
     <!-- For ILogService/LogLevel only; the harness supplies its own console implementation

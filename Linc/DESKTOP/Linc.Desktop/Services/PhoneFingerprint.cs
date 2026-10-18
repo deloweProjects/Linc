@@ -12,7 +12,7 @@ public sealed record PhoneSignals(
     string? Model = null);
 
 /// <summary>
-/// Which known phone is this? (D-077) One score over every identity signal the PC has for a
+/// Which known phone is this? (D-094) One score over every identity signal the PC has for a
 /// phone, so a phone is recognised by whatever it happens to show: its serial over USB or
 /// wireless ADB, its certificate over Direct TLS, or only its Wi-Fi address in the PC's
 /// neighbour table before either app has said a word.

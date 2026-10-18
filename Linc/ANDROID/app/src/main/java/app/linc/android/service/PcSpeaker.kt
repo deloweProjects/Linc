@@ -10,7 +10,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** Speaker mode as the PC reports it (v22 `pc.speaker.state`). */
+/** Speaker mode as the PC reports it (v25 `pc.speaker.state`). */
 data class SpeakerState(
     val on: Boolean = false,
     /** The PC has the virtual cable speaker mode routes its sound into. */
@@ -20,7 +20,7 @@ data class SpeakerState(
 )
 
 /**
- * The phone as the PC's speaker (v22, D-076). The PC moves its sound off its own speakers and
+ * The phone as the PC's speaker (v25, D-093). The PC moves its sound off its own speakers and
  * onto pc-audio channel 6, which [AudioReceiver] plays here, so it is heard once, from the
  * phone, rather than twice and out of step.
  */
@@ -29,12 +29,12 @@ object PcSpeaker {
     private val _state = MutableStateFlow(SpeakerState())
     val state: StateFlow<SpeakerState> = _state
 
-    fun ready(): Boolean = CompanionOutbox.canSend(22)
+    fun ready(): Boolean = CompanionOutbox.canSend(25)
 
     fun set(on: Boolean) {
         CompanionOutbox.trySend(
             Envelope(type = MessageType.PC_SPEAKER_SET, payload = buildJsonObject { put("on", on) }),
-            requiredVersion = 22,
+            requiredVersion = 25,
         )
     }
 
@@ -49,8 +49,8 @@ object PcSpeaker {
     /** What to tell the user about [error], in plain words. */
     fun explain(error: String?): String? = when (error) {
         null -> null
-        "no-cable" -> "The PC needs its virtual cable first. Turn on Voice Access below with " +
-            "\"Use this phone as the microphone\": Linc sets the cable up, then this works too."
+        "no-cable" -> "The PC needs its virtual cable first. In Tools → Voice, turn on " +
+            "\"Use this phone as the PC's microphone\" once: Linc sets the cable up, then this works too."
         "denied" -> "Windows didn't let Linc switch the PC's speakers. Try again, or pick " +
             "\"CABLE Input\" in the PC's Sound settings."
         else -> "The PC couldn't start sending its sound. Try again."

@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- D-077: the REAL scorer and the REAL KnownDevice record, compiled verbatim (GUIDE 4.1). -->
+    <!-- D-094: the REAL scorer and the REAL KnownDevice record, compiled verbatim (GUIDE 4.1). -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />

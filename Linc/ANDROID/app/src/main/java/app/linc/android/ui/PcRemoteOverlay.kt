@@ -44,10 +44,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TonalToggleButton
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,11 +63,14 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.linc.android.service.LinkStats
+import app.linc.android.ui.theme.SeedDarkColorScheme
+import app.linc.android.ui.theme.dynamicColorAvailable
 import kotlin.math.roundToInt
 
 /**
@@ -90,6 +94,11 @@ class RemoteUiState {
     var soundOn by mutableStateOf(true)
     var voiceAccessAvailable by mutableStateOf(false)
     var voiceAccessOn by mutableStateOf(false)
+    var tabletAvailable by mutableStateOf(false)
+    /** Which microphone the PC hears in PC Remote: this phone's, or its own (D-075). */
+    var phoneMic by mutableStateOf(true)
+    var micLive by mutableStateOf(false)
+    var tabletOn by mutableStateOf(false)
     var displays by mutableIntStateOf(1)
     var zoomed by mutableStateOf(false)
     /** Bubble position: which edge, and how far down (0..1). */
@@ -104,6 +113,8 @@ interface RemoteActions {
     fun setAutoKeyboard(on: Boolean)
     fun sound()
     fun voiceAccess()
+    fun tabletMode()
+    fun setPhoneMic(phone: Boolean)
     fun display()
     fun quality()
     fun fit()
@@ -130,7 +141,14 @@ private val Poor = Color(0xFFFF8A80)
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PcRemoteOverlay(state: RemoteUiState, actions: RemoteActions) {
-    MaterialExpressiveTheme(colorScheme = darkColorScheme()) {
+    // Always dark — it floats over the PC picture — but in the phone's own Material You colours,
+    // like the rest of the app (the plain darkColorScheme() it used ignored the wallpaper).
+    val context = LocalContext.current
+    val scheme = remember(context) {
+        if (dynamicColorAvailable) runCatching { dynamicDarkColorScheme(context) }.getOrDefault(SeedDarkColorScheme)
+        else SeedDarkColorScheme
+    }
+    MaterialExpressiveTheme(colorScheme = scheme) {
         if (!state.visible) return@MaterialExpressiveTheme
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val density = LocalDensity.current
@@ -293,12 +311,30 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                 Switch(checked = state.autoKeyboard, onCheckedChange = actions::setAutoKeyboard)
             }
 
+            // Microphone: which one the PC hears — Voice Access, calls, dictation — while in here.
+            Section(if (state.micLive) "Microphone · phone is live" else "Microphone")
+            Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+                ToggleButton(
+                    checked = state.phoneMic, onCheckedChange = { actions.setPhoneMic(true) },
+                    shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(), modifier = Modifier.weight(1f),
+                ) { IconLabel(LincSymbols.Mic, "Phone") }
+                ToggleButton(
+                    checked = !state.phoneMic, onCheckedChange = { actions.setPhoneMic(false) },
+                    shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(), modifier = Modifier.weight(1f),
+                ) { IconLabel(LincSymbols.Display, "PC") }
+            }
+
             // Everything else.
             Section("PC")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (state.soundAvailable) Toggle(state.soundOn, if (state.soundOn) LincSymbols.VolumeUp else LincSymbols.VolumeOff,
-                    if (state.soundOn) "Sound" else "Muted") { actions.sound() }
-                if (state.voiceAccessAvailable) Toggle(state.voiceAccessOn, LincSymbols.VoiceAccess, "Voice Access") { actions.voiceAccess() }
+                // Tablet mode first and every button keyed, so nothing moves under a finger when
+                // another one comes or goes.
+                key("tablet") { if (state.tabletAvailable) Toggle(state.tabletOn, LincSymbols.Tablet, "Tablet mode") { actions.tabletMode() } }
+                key("sound") {
+                    if (state.soundAvailable) Toggle(state.soundOn, if (state.soundOn) LincSymbols.VolumeUp else LincSymbols.VolumeOff,
+                        if (state.soundOn) "Sound" else "Muted") { actions.sound() }
+                }
+                key("voice") { if (state.voiceAccessAvailable) Toggle(state.voiceAccessOn, LincSymbols.VoiceAccess, "Voice Access") { actions.voiceAccess() } }
                 if (state.displays > 1) Toggle(false, LincSymbols.Display, "Display") { actions.display() }
                 Toggle(false, LincSymbols.Tune, state.picture.ifEmpty { "Quality" }) { actions.quality() }
                 if (state.zoomed) Toggle(false, LincSymbols.FitScreen, "Fit") { actions.fit() }

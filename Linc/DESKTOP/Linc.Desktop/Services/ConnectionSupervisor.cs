@@ -85,7 +85,10 @@ public interface IConnectionSupervisor : IDisposable
     Task ConnectUsbManualAsync(DeviceData device);
 
     /// <summary>Trust the next connect advert regardless of serial — call right after pairing.</summary>
-    void ExpectNextDevice();
+    void ExpectNextDevice(bool newPhoneOnly = false);
+
+    /// <summary>The add-a-phone flow was closed: stop expecting, and resume normal reconnecting.</summary>
+    void StopExpecting();
 
     void RequestDisconnect();
     void ResumeAutomatic();
@@ -99,10 +102,13 @@ public interface IConnectionSupervisor : IDisposable
 }
 
 /// <summary>
-/// The reconnection state machine (docs/ROADMAP.md M4). Discovery adverts drive
-/// connection attempts; a 15 s health probe detects dead links (including after PC
-/// sleep or phone reboot); network changes trigger an immediate probe; per-address
-/// exponential backoff prevents hammering a phone that keeps refusing.
+/// The reconnection state machine and the ONE owner of which transport is live (D-081,
+/// Vibe/agent/design/connection.md). Discovery adverts, the USB poll, the phone dialling in
+/// and the hotspot standby only report; every decision is <see cref="LinkPolicy"/>'s, and every
+/// trigger goes through <see cref="Nudge"/>. A 15 s health probe detects dead links; a better
+/// transport takes over make-before-break; a cable pulled while Wi-Fi is around gets a grace
+/// window to hand off before anything shows; per-endpoint backoff is cut short by real signals
+/// and forgets endpoints that keep failing.
 /// </summary>
 public sealed class ConnectionSupervisor(
     IConnectionManager connection,
@@ -115,12 +121,27 @@ public sealed class ConnectionSupervisor(
     ILogService log) : IConnectionSupervisor
 {
     private static readonly TimeSpan HealthInterval = TimeSpan.FromSeconds(15);
-    private static readonly int[] BackoffSeconds = [2, 5, 15, 30, 60];
+    private static readonly TimeSpan ClockTick = TimeSpan.FromSeconds(5);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly Dictionary<string, (int Failures, DateTime NextAttemptUtc)> _backoff = [];
+    private readonly EndpointBackoff _backoff = new();
     private CancellationTokenSource? _healthCts;
+    private CancellationTokenSource? _clockCts;
+
+    /// <summary>
+    /// Set while a better link that just died (the cable came out) is being replaced (D-081):
+    /// State stays Connected until this passes, so a hand-off to Wi-Fi never shows as a drop.
+    /// </summary>
+    private DateTime? _handoffUntilUtc;
+    private int _handoffGeneration;
     private bool _expectAny;
+
+    /// <summary>
+    /// The add-a-phone flow is adding a NEW phone (D-079): while set, phones this PC already knows
+    /// are not adopted — over USB, Wi-Fi discovery or a direct dial-in — so a known phone that
+    /// happens to be nearby can't win the race and be reported as the one just added.
+    /// </summary>
+    private bool _expectNewOnly;
     private bool _started;
     private int _recovering;
 
@@ -136,6 +157,9 @@ public sealed class ConnectionSupervisor(
     /// reports the serial gone — i.e. when the cable comes out — so replugging asks again.
     /// </summary>
     private readonly HashSet<string> _declinedUsb = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Serials the USB poll currently sees, so a cable going in is noticed once (D-081).</summary>
+    private readonly HashSet<string> _onCable = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// When the health probe last failed, so <see cref="OnLinkDropped"/> can report how long
@@ -177,8 +201,7 @@ public sealed class ConnectionSupervisor(
         }
         // Asking for a transport should act, not merely record a preference for the next event:
         // nudge the paths that can bring it up now. USB is covered by the 3 s poll.
-        discovery.ScanNow();
-        _ = RecoverPresentWirelessDeviceAsync();
+        Nudge(LinkSignal.UserAsked, $"You picked {Describe(transport.Value)}");
     }
 
     /// <summary>Plain language for a transport — user-facing, so never the enum name.</summary>
@@ -207,6 +230,7 @@ public sealed class ConnectionSupervisor(
         blePresence.DeviceSighted += OnBleSighting;
         NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        StartClockWatch();
         discovery.Start();
         usbWatcher.Start();
         _ = SpotKnownPhonesAsync(_spotCts.Token);
@@ -216,6 +240,7 @@ public sealed class ConnectionSupervisor(
             tlsTransport.Start(); // standing presence: advertise + listen (D-014/D-022)
         }
         SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
+        Nudge(LinkSignal.AppStart, "Linc started");
     }
 
     public void RetargetActiveDevice()
@@ -231,7 +256,12 @@ public sealed class ConnectionSupervisor(
             connection.Disconnect();
             Device = null;
             _expectAny = false;
-            _backoff.Clear(); // a different phone shouldn't inherit the old one's penalty box
+            _expectNewOnly = false;
+            lock (_backoff)
+            {
+                _backoff.Clear(); // a different phone shouldn't inherit the old one's penalty box
+            }
+            _handoffUntilUtc = null;
             LastRttMs = null;
             ConnectedAtUtc = null;
             SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
@@ -247,18 +277,27 @@ public sealed class ConnectionSupervisor(
         // Searching always does, but Searching→Searching (switching between two absent phones)
         // doesn't — and the UI still has to repaint for the new device.
         StateChanged?.Invoke();
+        Nudge(LinkSignal.UserAsked, "Switched phones");
     }
 
     public Task ConnectManualAsync(string hostPort) => ConnectAsync(hostPort, manual: true);
     public Task ConnectUsbManualAsync(DeviceData device) => ConnectUsbAsync(device, manual: true);
 
-    public void ExpectNextDevice()
+    public void ExpectNextDevice(bool newPhoneOnly = false)
     {
         _expectAny = true;
+        _expectNewOnly = newPhoneOnly;
         if (State is LinkState.NoDevice or LinkState.Paused)
         {
             SetState(LinkState.Searching);
         }
+    }
+
+    public void StopExpecting()
+    {
+        _expectAny = false;
+        _expectNewOnly = false;
+        ResumeAutomatic();
     }
 
     public void RequestDisconnect()
@@ -270,6 +309,8 @@ public sealed class ConnectionSupervisor(
             connection.Disconnect();
             Device = null;
             _expectAny = false;
+            _expectNewOnly = false;
+            _handoffUntilUtc = null;
             SetState(LinkState.Paused);
         }
         finally
@@ -278,24 +319,65 @@ public sealed class ConnectionSupervisor(
         }
     }
 
-    public void NudgeReconnect(string reason)
-    {
-        if (!_started || State is not (LinkState.Searching or LinkState.NoDevice))
-        {
-            return;
-        }
-        log.Log(LogLevel.Info, $"{reason}; looking for the phone now.");
-        discovery.ScanNow();
-        _ = RecoverPresentWirelessDeviceAsync();
-    }
+    public void NudgeReconnect(string reason) => Nudge(LinkSignal.UserAsked, reason);
 
     public void ResumeAutomatic()
     {
         if (State == LinkState.Paused)
         {
             SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
+            Nudge(LinkSignal.UserAsked, "Reconnecting automatically again");
         }
     }
+
+    /// <summary>
+    /// The one path every "the phone may be reachable now" signal takes (D-081). A strong signal
+    /// cuts every backoff wait short; a live link is probed when the network changed or the PC
+    /// woke; while hunting (or handing off), discovery is woken and whatever the adb server
+    /// already holds is adopted. Cheap and single-flighted, so callers never need to debounce.
+    /// </summary>
+    private void Nudge(LinkSignal signal, string detail)
+    {
+        if (!_started)
+        {
+            return;
+        }
+        if (LinkPolicy.IsStrong(signal))
+        {
+            lock (_backoff)
+            {
+                _backoff.CutWaits();
+            }
+        }
+        if (signal == LinkSignal.Resume)
+        {
+            // Multicast membership doesn't reliably survive standby: say "I'm here" again so the
+            // phone's mDNS browse finds this PC without waiting for its next refresh.
+            tlsTransport.RefreshAdvert();
+        }
+        if (State == LinkState.Connected && !IsHandingOff)
+        {
+            if (LinkPolicy.ShouldProbeLiveLink(signal))
+            {
+                log.Log(LogLevel.Info, $"{detail}; checking the phone is still there.");
+                _ = ProbeNowAsync();
+            }
+            return;
+        }
+        if (State is not (LinkState.Searching or LinkState.NoDevice or LinkState.Connected))
+        {
+            return; // paused or mid-connect
+        }
+        if (signal is not (LinkSignal.BleSighting or LinkSignal.ProbeFailing))
+        {
+            log.Log(LogLevel.Info, $"{detail}; looking for the phone now.");
+        }
+        discovery.ScanNow();
+        _ = RecoverPresentWirelessDeviceAsync();
+    }
+
+    private bool IsHandingOff => _handoffUntilUtc is { } until && DateTime.UtcNow < until;
+
 
     public void Dispose()
     {
@@ -311,6 +393,7 @@ public sealed class ConnectionSupervisor(
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _spotCts.Cancel();
         StopHealthLoop();
+        _clockCts?.Cancel();
         blePresence.Dispose();
         usbWatcher.Dispose();
         connection.Disconnect();
@@ -334,6 +417,11 @@ public sealed class ConnectionSupervisor(
         {
             return;
         }
+        if (_expectNewOnly && (matchesPairedPhone ||
+            DeviceAdmission.RecogniseKnown(service.InstanceName, KnownSerials(), contains: true) is not null))
+        {
+            return; // adding a new phone (D-079): a known one nearby must not win the race
+        }
         if (returning is not null)
         {
             log.Log(LogLevel.Info, $"Recognised {ModelOf(returning)} on Wi-Fi — a phone this PC already knows; reconnecting.");
@@ -352,7 +440,7 @@ public sealed class ConnectionSupervisor(
     /// right now instead of after the idle delay. Fires about once a second while in range,
     /// hence the cheap guard.
     /// </summary>
-    // ---- spotting a known phone by its Wi-Fi address (D-077) --------------------
+    // ---- spotting a known phone by its Wi-Fi address (D-094) --------------------
 
     private readonly CancellationTokenSource _spotCts = new();
     private readonly Dictionary<string, DateTime> _spottedAt = new(StringComparer.Ordinal);
@@ -368,7 +456,7 @@ public sealed class ConnectionSupervisor(
 
     /// <summary>
     /// Remember which Wi-Fi hardware address the phone just used, so it can be recognised on this
-    /// network again before it says anything (D-077). Off the gate: an ARP lookup can take a moment.
+    /// network again before it says anything (D-094). Off the gate: an ARP lookup can take a moment.
     /// </summary>
     private void LearnWifiMac(string? serial, string? host)
     {
@@ -439,7 +527,7 @@ public sealed class ConnectionSupervisor(
         {
             return;
         }
-        discovery.ScanNow();
+        Nudge(LinkSignal.BleSighting, "The phone is nearby (Bluetooth)");
     }
 
     /// <summary>
@@ -491,6 +579,10 @@ public sealed class ConnectionSupervisor(
         {
             _declinedUsb.Remove(serial); // unplugged: a replug is a fresh offer, not a nag
         }
+        lock (_onCable)
+        {
+            _onCable.Remove(serial);
+        }
         lock (_unusableReported)
         {
             _unusableReported.Remove(serial);
@@ -512,11 +604,11 @@ public sealed class ConnectionSupervisor(
         // M15c B4: logged the way M15a logs probe-based detection, so the next cable pull is
         // measurable from the log alone. Best case one poll interval (~3 s) plus the confirming
         // poll; worst case ~6 s, against the health loop's 6-21 s.
-        log.Log(LogLevel.Warn,
+        log.Log(LogLevel.Info,
             $"USB cable for {live.Model} is gone from ADB ({UsbWatcherService.MissesToDeclareGone} " +
-            "consecutive 3 s polls, so 3-6 s after the pull); dropping the link now instead of " +
-            "waiting for the health probe.");
-        OnLinkDropped();
+            "consecutive 3 s polls, so 3-6 s after the pull); handing the link to Wi-Fi if the " +
+            "phone is there, without waiting for the health probe.");
+        OnLinkDropped(LinkSignal.CableOut);
     }
 
     private void OnUsbDeviceSeen(DeviceData device)
@@ -534,7 +626,25 @@ public sealed class ConnectionSupervisor(
         {
             return;
         }
+        if (device.Serial is { } plugged)
+        {
+            bool fresh;
+            lock (_onCable)
+            {
+                fresh = _onCable.Add(plugged);
+            }
+            if (fresh)
+            {
+                // The poll reports a plugged phone every 3 s; only its arrival is a signal.
+                log.Log(LogLevel.Info, $"{device.Model ?? "A phone"} is on the USB cable.");
+                Nudge(LinkSignal.CableIn, "The cable went in");
+            }
+        }
         var knownSerial = registry.PairedSerial;
+        if (_expectNewOnly && DeviceAdmission.RecogniseKnown(device.Serial, KnownSerials()) is not null)
+        {
+            return; // adding a new phone (D-079): known phones wait
+        }
         if (knownSerial is not null && device.Serial == knownSerial)
         {
             // The paired phone over USB: connect when idle, or switch to it from a lower-priority
@@ -543,7 +653,7 @@ public sealed class ConnectionSupervisor(
             // `device` state is adb's claim, and that claim outlives the cable (the adb server
             // keeps a stale entry), so while a live link is answering, USB must NOT preempt it —
             // that is the "still connected to USB long after the cable is gone" failure.
-            if (State == LinkState.Connected && Device is { } current)
+            if (State == LinkState.Connected && !IsHandingOff && Device is { } current)
             {
                 var currentAnswered = LastRttMs is not null;
                 // M15a Part C: the user's hand-picked transport outranks the automatic pick, but
@@ -551,10 +661,10 @@ public sealed class ConnectionSupervisor(
                 // the caption below says so rather than going quiet.
                 var choice = TransportRank.ChooseWithOverride(
                 [
-                    new TransportCandidate(LinkTransport.AdbUsb.ToString(), TransportPriority(LinkTransport.AdbUsb),
+                    new TransportCandidate(LinkTransport.AdbUsb.ToString(), LinkPolicy.Rank(LinkTransport.AdbUsb),
                         Answered: currentAnswered && current.Transport == LinkTransport.AdbUsb),
-                    new TransportCandidate(LinkTransport.AdbWireless.ToString(), TransportPriority(LinkTransport.AdbWireless),
-                        Answered: currentAnswered && current.Transport == LinkTransport.AdbWireless),
+                    new TransportCandidate(current.Transport.ToString(), LinkPolicy.Rank(current.Transport),
+                        Answered: currentAnswered && current.Transport != LinkTransport.AdbUsb),
                 ], ManualTransport?.ToString());
                 if (choice.OverrideDropped)
                 {
@@ -578,6 +688,12 @@ public sealed class ConnectionSupervisor(
         if (DeviceAdmission.RecogniseKnown(device.Serial, KnownSerials()) is { } returning &&
             DeviceAdmission.MayAdoptKnownPhone(Activity(State)))
         {
+            // A phone whose tab the user closed stays closed (D-079): plugging it in doesn't
+            // re-adopt it behind their back. The add-a-phone flow (expecting) or picking it does.
+            if (registry.IsHidden(returning) && !_expectAny)
+            {
+                return;
+            }
             if (!IsBackedOff(device.Serial ?? ""))
             {
                 log.Log(LogLevel.Info, $"Recognised {ModelOf(returning)} over USB — a phone this PC already knows; connecting.");
@@ -683,54 +799,103 @@ public sealed class ConnectionSupervisor(
             {
                 return;
             }
-            if (knownPhone && !DeviceAdmission.MayAdoptKnownPhone(Activity(State)))
+            if (knownPhone && !DeviceAdmission.MayAdoptKnownPhone(EngageActivity()))
             {
                 return; // something connected while this waited for the gate; never switch phones on our own
             }
-            var switching = State == LinkState.Connected;
-            if (switching)
-            {
-                StopHealthLoop(); // switching: drop the current lower-priority link first
-            }
-            SetState(LinkState.Connecting);
+            var handoff = BeginAttempt();
             try
             {
-                Device = await connection.ConnectAsync(address, CancellationToken.None);
-                if (!string.IsNullOrEmpty(Device.SerialNo))
+                var device = await connection.ConnectAsync(address, CancellationToken.None);
+                if (!string.IsNullOrEmpty(device.SerialNo))
                 {
-                    registry.SavePairedDevice(Device.SerialNo, Device.Model);
+                    registry.SavePairedDevice(device.SerialNo, device.Model);
                 }
                 registry.SaveLastHostPort(address.Trim());
-                _expectAny = false;
-                _backoff.Remove(address);
-                ConnectedAtUtc = DateTimeOffset.UtcNow;
-                if (_hasConnectedOnce)
-                {
-                    ReconnectCount++;
-                }
-                _hasConnectedOnce = true;
-                TransportChosenByHand = ManualTransport == Device.Transport;
-                SetState(LinkState.Connected);
-                StartHealthLoop();
-                log.Log(LogLevel.Info, $"Connected to {Device.Model} ({address})");
-                LearnWifiMac(Device.SerialNo, HostOf(address));
+                Succeeded(address);
+                Adopt(device, handoff, address);
+                LearnWifiMac(device.SerialNo, HostOf(address));
             }
             catch (LincException ex)
             {
-                var firstFailure = RegisterFailure(address);
-                SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
-                FallBackIfSwitchFailed(switching);
+                var firstFailure = Failed(address);
+                ForgetIfStale(address);
+                EndFailedAttempt(handoff);
                 LastErrorMessage = ex.Message;
                 if (manual || firstFailure)
                 {
-                    ErrorRaised?.Invoke(ex.Message);
-                    log.Log(LogLevel.Error, $"Connect to {address} failed: {ex.Message}");
+                    if (handoff is null)
+                    {
+                        ErrorRaised?.Invoke(ex.Message);
+                    }
+                    log.Log(LogLevel.Warn, $"Connect to {address} failed: {ex.Message}");
                 }
             }
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Where an attempt starts from. Nothing live: show Connecting. A live link (a better transport
+    /// is taking over) or one being handed off: show nothing — the old link keeps working until the
+    /// new one is installed (make-before-break, D-081). Returns the transport being replaced, if any.
+    /// </summary>
+    private LinkTransport? BeginAttempt()
+    {
+        if (!LinkPolicy.AttemptIsVisible(Activity(State), IsHandingOff) && Device is { } live)
+        {
+            return live.Transport;
+        }
+        SetState(LinkState.Connecting);
+        return null;
+    }
+
+    /// <summary>A new link is live: install it as a fresh connect or a silent handoff.</summary>
+    private void Adopt(ConnectedDevice device, LinkTransport? replacing, string how)
+    {
+        var handedOff = replacing is not null;
+        var wasHandingOff = IsHandingOff;
+        Device = device;
+        _expectAny = false;
+        _expectNewOnly = false;
+        _handoffUntilUtc = null;
+        TransportChosenByHand = ManualTransport == device.Transport;
+        if (!handedOff)
+        {
+            ConnectedAtUtc = DateTimeOffset.UtcNow;
+            if (_hasConnectedOnce)
+            {
+                ReconnectCount++;
+            }
+            _hasConnectedOnce = true;
+        }
+        _firstProbeFailureUtc = null;
+        StartHealthLoop();
+        if (handedOff)
+        {
+            log.Log(LogLevel.Info, $"Moved the link to {Describe(device.Transport)} without dropping it" +
+                (wasHandingOff ? " (after the cable came out)." : "."));
+            StateChanged?.Invoke(); // still Connected; the transport (and its icon) changed
+        }
+        else
+        {
+            SetState(LinkState.Connected);
+            log.Log(LogLevel.Info, $"Connected to {device.Model} ({how})");
+        }
+    }
+
+    /// <summary>
+    /// An attempt failed. Started from nothing: back to hunting. Started beside a live link: that
+    /// link is untouched and nothing is shown — the whole point of make-before-break.
+    /// </summary>
+    private void EndFailedAttempt(LinkTransport? replacing)
+    {
+        if (replacing is null)
+        {
+            SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
         }
     }
 
@@ -754,37 +919,47 @@ public sealed class ConnectionSupervisor(
                     stream.Dispose(); // first-wins (D-022); the phone will redial if needed
                     return;
                 }
+                lock (_backoff)
+                {
+                    _backoff.CutWaits(); // the phone is here: nothing should be waiting out a backoff
+                }
                 // Any known phone can now authenticate (TlsTransportService), so say which one
                 // this is before adopting it: the adopt reads model/serial from the active record.
-                if (IdentifyTlsPhone(stream) is { } phone && phone.Serial != registry.PairedSerial)
+                var dialler = IdentifyTlsPhone(stream);
+                if (_expectNewOnly)
+                {
+                    stream.Dispose(); // only known phones dial in directly; adding a new one (D-079)
+                    return;
+                }
+                if (dialler is { } closed && closed.Serial != registry.PairedSerial &&
+                    registry.IsHidden(closed.Serial) && !_expectAny)
+                {
+                    stream.Dispose(); // its tab was closed (D-079); the phone backs off and retries later
+                    return;
+                }
+                if (dialler is { } phone && phone.Serial != registry.PairedSerial)
                 {
                     log.Log(LogLevel.Info, $"Recognised {phone.Model} dialling in directly — a phone this PC already knows.");
                     registry.SavePairedDevice(phone.Serial, phone.Model);
                 }
-                SetState(LinkState.Connecting);
+                var handoff = BeginAttempt();
                 try
                 {
-                    Device = await connection.AdoptTlsConnectionAsync(stream, peer, CancellationToken.None);
-                    ConnectedAtUtc = DateTimeOffset.UtcNow;
-                    if (_hasConnectedOnce)
-                    {
-                        ReconnectCount++;
-                    }
-                    _hasConnectedOnce = true;
-                    TransportChosenByHand = ManualTransport == Device.Transport;
-                    SetState(LinkState.Connected);
-                    StartHealthLoop();
-                    log.Log(LogLevel.Info, $"Connected to {Device.Model} (direct, no ADB)");
+                    var device = await connection.AdoptTlsConnectionAsync(stream, peer, CancellationToken.None);
+                    Adopt(device, handoff, "direct, no ADB");
                     LearnWifiMac(registry.PairedSerial, peer?.Address.ToString());
                 }
                 catch (Exception ex) when (ex is LincException or System.IO.IOException)
                 {
                     stream.Dispose();
-                    SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
+                    EndFailedAttempt(handoff);
                     LastErrorMessage = "A direct connection from the phone failed.";
                     // Unsolicited inbound failure: nothing else observes this, so log and raise it
                     // the same way the outbound connect paths do (A2.1 — was previously silent).
-                    ErrorRaised?.Invoke(LastErrorMessage);
+                    if (handoff is null)
+                    {
+                        ErrorRaised?.Invoke(LastErrorMessage);
+                    }
                     log.Log(LogLevel.Warn, $"Direct connection from the phone failed: {ex.Message}");
                 }
             }
@@ -804,46 +979,46 @@ public sealed class ConnectionSupervisor(
             {
                 return;
             }
-            if (knownPhone && !DeviceAdmission.MayAdoptKnownPhone(Activity(State)))
+            if (knownPhone && !DeviceAdmission.MayAdoptKnownPhone(EngageActivity()))
             {
                 return; // something connected while this waited for the gate; never switch phones on our own
             }
-            var switching = State == LinkState.Connected;
-            if (switching)
+            // A different phone on the cable (the user confirmed the switch) is not a handoff:
+            // the old phone's link goes first, as before.
+            var samePhone = Device is { } live &&
+                (string.Equals(live.SerialNo, device.Serial, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(live.Serial, device.Serial, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(registry.PairedSerial, device.Serial, StringComparison.OrdinalIgnoreCase));
+            if (State == LinkState.Connected && !samePhone)
             {
-                StopHealthLoop(); // switching: drop the current lower-priority link first
+                StopHealthLoop();
+                connection.Disconnect();
+                Device = null;
+                SetState(LinkState.Searching);
             }
-            SetState(LinkState.Connecting);
+            var handoff = BeginAttempt();
             try
             {
-                Device = await connection.ConnectToUsbDeviceAsync(device, CancellationToken.None);
-                if (!string.IsNullOrEmpty(Device.SerialNo))
+                var connected = await connection.ConnectToUsbDeviceAsync(device, CancellationToken.None);
+                if (!string.IsNullOrEmpty(connected.SerialNo))
                 {
-                    registry.SavePairedDevice(Device.SerialNo, Device.Model);
+                    registry.SavePairedDevice(connected.SerialNo, connected.Model);
                 }
-                _expectAny = false;
-                _backoff.Remove(device.Serial);
-                ConnectedAtUtc = DateTimeOffset.UtcNow;
-                if (_hasConnectedOnce)
-                {
-                    ReconnectCount++;
-                }
-                _hasConnectedOnce = true;
-                TransportChosenByHand = ManualTransport == Device.Transport;
-                SetState(LinkState.Connected);
-                StartHealthLoop();
-                log.Log(LogLevel.Info, $"Connected to {Device.Model} (USB)");
+                Succeeded(device.Serial);
+                Adopt(connected, handoff, "USB");
             }
             catch (LincException ex)
             {
-                var firstFailure = RegisterFailure(device.Serial);
-                SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
-                FallBackIfSwitchFailed(switching);
+                var firstFailure = Failed(device.Serial);
+                EndFailedAttempt(handoff);
                 LastErrorMessage = ex.Message;
                 if (manual || firstFailure)
                 {
-                    ErrorRaised?.Invoke(ex.Message);
-                    log.Log(LogLevel.Error, $"USB connect failed: {ex.Message}");
+                    if (handoff is null)
+                    {
+                        ErrorRaised?.Invoke(ex.Message);
+                    }
+                    log.Log(LogLevel.Warn, $"USB connect failed: {ex.Message}");
                 }
             }
         }
@@ -909,7 +1084,7 @@ public sealed class ConnectionSupervisor(
                     }
                     if (++failures >= maxConsecutiveFailures)
                     {
-                        OnLinkDropped();
+                        OnLinkDropped(LinkSignal.LinkDropped);
                         return;
                     }
                     log.Log(LogLevel.Info,
@@ -927,100 +1102,144 @@ public sealed class ConnectionSupervisor(
         }
     }
 
-    private void OnLinkDropped()
+    /// <summary>
+    /// The live link died. When it was the cable (<see cref="LinkSignal.CableOut"/>) and the phone
+    /// may still be on Wi-Fi, hand off first: State stays Connected for
+    /// <see cref="LinkPolicy.HandoffGrace"/> while wireless ADB is tried and the phone — whose
+    /// control socket just died — dials in directly. Only if nothing lands is it a drop.
+    /// </summary>
+    private void OnLinkDropped(LinkSignal why)
     {
         _ = Task.Run(async () =>
         {
             await _gate.WaitAsync();
             try
             {
-                if (State != LinkState.Connected)
+                if (State != LinkState.Connected || IsHandingOff)
                 {
                     return;
                 }
-                var dying = Device?.Transport;
                 StopHealthLoop();
-                connection.Disconnect();
-                Device = null;
-                SetState(LinkState.Searching);
-                LastErrorMessage = "Lost the connection to your phone.";
-                ErrorRaised?.Invoke("Lost the connection to your phone. Linc will reconnect automatically when it sees the phone again.");
-                // M15a Part B: the one number nobody had — how long from the first unanswered
-                // probe to the link actually being marked dead. Logged on every real drop, so the
-                // next measurement needs no instrumentation run, just the log.
-                // A drop with no failed probe behind it (the transport closed under us, or the PC
-                // lost its network) has no detection time to report; it used to log "-1 ms".
-                log.Log(LogLevel.Warn, _firstProbeFailureUtc is { } since
-                    ? $"Connection dropped; will reconnect automatically. Detection took " +
-                      $"{(int)(DateTime.UtcNow - since).TotalMilliseconds} ms from the first failed probe " +
-                      $"(health poll {HealthInterval.TotalSeconds:0} s, 3 failures to confirm, 3 s apart)."
-                    : "Connection dropped; will reconnect automatically. The link closed before any " +
-                      "health probe failed.");
-                _firstProbeFailureUtc = null;
-                // A genuine link death is the one thing an override must not survive silently.
-                if (dying is { } dead && ManualTransport == dead)
+                if (LinkPolicy.OnLiveLinkLost(why, IsWifiPossible()) == LostLink.HandOff)
                 {
-                    ClearManualTransport($"{Describe(dead)} stopped answering");
+                    var generation = ++_handoffGeneration;
+                    _handoffUntilUtc = DateTime.UtcNow + LinkPolicy.HandoffGrace;
+                    LastRttMs = null;
+                    _ = FinishHandoffAsync(generation);
                 }
-                // M15a Part B, the stage the measurement named. Detection is a bounded 6-21 s, but
-                // what came after it was unbounded: a dropped link left the supervisor in Searching
-                // with no trigger of its own, waiting for an mDNS advert that a pulled USB cable
-                // never causes. Resume, network change and preference change all already recover by
-                // nudging discovery and adopting whatever ADB already holds — a drop is at least as
-                // strong a signal as any of them, and both calls are bounded and single-flighted.
-                discovery.ScanNow();
-                _ = RecoverPresentWirelessDeviceAsync();
+                else
+                {
+                    DropLink();
+                    return;
+                }
             }
             finally
             {
                 _gate.Release();
             }
+            Nudge(LinkSignal.CableOut, "The cable came out");
         });
     }
 
-    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    /// <summary>Wi-Fi is worth waiting for when this phone has ever been reachable without a cable.</summary>
+    private bool IsWifiPossible() =>
+        registry.ConnectionPreference != ConnectionPreference.UsbOnly &&
+        (registry.PhoneCertBase64 is not null || RecoveryCandidates().Count > 0);
+
+    private async Task FinishHandoffAsync(int generation)
     {
-        // The old link may be dead even though the socket hasn't noticed yet;
-        // probe now instead of waiting out the health interval.
-        if (State == LinkState.Connected)
+        await Task.Delay(LinkPolicy.HandoffGrace);
+        await _gate.WaitAsync();
+        try
         {
-            _ = ProbeNowAsync();
+            if (generation != _handoffGeneration || _handoffUntilUtc is null || State != LinkState.Connected)
+            {
+                return; // a link landed, or something else changed the state meanwhile
+            }
+            log.Log(LogLevel.Info, $"No Wi-Fi link took over within {LinkPolicy.HandoffGrace.TotalSeconds:0} s.");
+            DropLink();
         }
-        // A network coming back while we're hunting is a strong "the phone may be reachable now"
-        // signal — adopt the phone ADB already holds instead of waiting for an mDNS advert.
-        else if (State == LinkState.Searching)
+        finally
         {
-            _ = RecoverPresentWirelessDeviceAsync();
+            _gate.Release();
         }
     }
+
+    /// <summary>The visible drop, under the gate: back to Searching and tell the user.</summary>
+    private void DropLink()
+    {
+        var dying = Device?.Transport;
+        StopHealthLoop();
+        connection.Disconnect();
+        Device = null;
+        _handoffUntilUtc = null;
+        LastRttMs = null;
+        SetState(LinkState.Searching);
+        LastErrorMessage = "Lost the connection to your phone.";
+        ErrorRaised?.Invoke("Lost the connection to your phone. Linc will reconnect automatically when it sees the phone again.");
+        // M15a Part B: the one number nobody had — how long from the first unanswered probe to
+        // the link actually being marked dead. Logged on every real drop, so the next
+        // measurement needs no instrumentation run, just the log.
+        // A drop with no failed probe behind it (the transport closed under us, or the PC lost its
+        // network) has no detection time to report; it used to log "-1 ms".
+        log.Log(LogLevel.Warn, _firstProbeFailureUtc is { } since
+            ? $"Connection dropped; will reconnect automatically. Detection took " +
+              $"{(int)(DateTime.UtcNow - since).TotalMilliseconds} ms from the first failed probe " +
+              $"(health poll {HealthInterval.TotalSeconds:0} s, 3 failures to confirm, 3 s apart)."
+            : "Connection dropped; will reconnect automatically. The link closed before any " +
+              "health probe failed.");
+        _firstProbeFailureUtc = null;
+        // A genuine link death is the one thing an override must not survive silently.
+        if (dying is { } dead && ManualTransport == dead)
+        {
+            ClearManualTransport($"{Describe(dead)} stopped answering");
+        }
+        // M15a Part B: a drop is at least as strong a signal as resume or a network change —
+        // look for the phone straight away instead of waiting for an advert.
+        _ = Task.Run(() => Nudge(LinkSignal.LinkDropped, "The link dropped"));
+    }
+
+    private void OnNetworkAddressChanged(object? sender, EventArgs e) =>
+        Nudge(LinkSignal.NetworkChanged, "The PC's network changed");
 
     private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
     {
-        if (e.Mode != PowerModes.Resume)
+        if (e.Mode == PowerModes.Resume)
         {
-            return;
+            Nudge(LinkSignal.Resume, "PC woke from sleep");
         }
-        log.Log(LogLevel.Info, "PC woke from sleep; re-checking the phone connection.");
-        _ = RecoverAfterResumeAsync();
     }
 
     /// <summary>
-    /// After a resume the control socket is usually dead, but the 15 s health probe may not have
-    /// noticed yet — and, worse, the phone frequently stops re-emitting its wireless-debugging
-    /// mDNS advert even though the ADB server still holds it as a healthy wireless device. That
-    /// combination stranded the supervisor in Searching for minutes (only BLE sightings logged),
-    /// because discovery is the sole wireless reconnect trigger. So: verify the link now, then
-    /// reconnect straight to the phone ADB already knows about rather than waiting for an advert
-    /// that isn't coming.
+    /// A 5 s tick that notices when it was held up for much longer — the PC was asleep (D-081).
+    /// PowerModeChanged never reaches a desktop app on a Modern Standby PC (it never fired once in
+    /// the owner's logs), but a stalled timer is visible on every PC.
     /// </summary>
-    private async Task RecoverAfterResumeAsync()
+    private void StartClockWatch()
     {
-        if (State == LinkState.Connected)
+        _clockCts = new CancellationTokenSource();
+        var ct = _clockCts.Token;
+        _ = Task.Run(async () =>
         {
-            await ProbeNowAsync(); // a dead link drops to Searching through the usual path
-        }
-        discovery.ScanNow(); // nudge mDNS too, in case the advert does return
-        await RecoverPresentWirelessDeviceAsync();
+            var last = DateTime.UtcNow;
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(ClockTick, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return; // the supervisor was disposed; the watch ends with it
+                }
+                var now = DateTime.UtcNow;
+                if (LinkPolicy.LooksLikeResume(now - last, ClockTick))
+                {
+                    Nudge(LinkSignal.Resume, $"PC woke from sleep (asleep about {(now - last).TotalSeconds:0} s)");
+                }
+                last = now;
+            }
+        }, ct);
     }
 
     /// <summary>
@@ -1044,11 +1263,11 @@ public sealed class ConnectionSupervisor(
             // background task), so give it a few seconds before giving up.
             for (var attempt = 0; attempt < 6; attempt++)
             {
-                if (State is LinkState.Connected or LinkState.Connecting)
+                if ((State == LinkState.Connected && !IsHandingOff) || State == LinkState.Connecting)
                 {
                     return;
                 }
-                if (State == LinkState.Searching)
+                if (State == LinkState.Searching || IsHandingOff)
                 {
                     foreach (var address in candidates)
                     {
@@ -1056,7 +1275,7 @@ public sealed class ConnectionSupervisor(
                             await connection.HasOnlineDeviceAsync(address, CancellationToken.None))
                         {
                             await ConnectAsync(address, manual: false);
-                            if (State == LinkState.Connected)
+                            if (State == LinkState.Connected && !IsHandingOff)
                             {
                                 return;
                             }
@@ -1085,28 +1304,13 @@ public sealed class ConnectionSupervisor(
         foreach (var address in new[] { hotspotLink.LinkedEndpoint, registry.LastHostPort })
         {
             if (!string.IsNullOrWhiteSpace(address) &&
-                !list.Contains(address.Trim(), StringComparer.OrdinalIgnoreCase))
+                !list.Contains(address.Trim(), StringComparer.OrdinalIgnoreCase) &&
+                !IsStale(address.Trim()))
             {
                 list.Add(address.Trim());
             }
         }
         return list;
-    }
-
-    /// <summary>
-    /// A switch to a better transport tore the old link down first and then failed, so nothing
-    /// is connected. Don't sit in Searching waiting for an event: go straight back to whatever
-    /// standby is already up. Called under the gate, so the recovery runs detached.
-    /// </summary>
-    private void FallBackIfSwitchFailed(bool switching)
-    {
-        if (!switching)
-        {
-            return;
-        }
-        log.Log(LogLevel.Warn, "Switching to a better connection failed; falling back to the one still available.");
-        discovery.ScanNow();
-        _ = RecoverPresentWirelessDeviceAsync();
     }
 
     private async Task ProbeNowAsync()
@@ -1119,8 +1323,8 @@ public sealed class ConnectionSupervisor(
         }
         catch (Exception ex) when (ex is LincException or OperationCanceledException)
         {
-            // OnLinkDropped() logs and surfaces this — not silent, just not logged here directly.
-            OnLinkDropped();
+            // OnLinkDropped logs and surfaces this — not silent, just not logged here directly.
+            OnLinkDropped(LinkSignal.LinkDropped);
         }
     }
 
@@ -1141,62 +1345,82 @@ public sealed class ConnectionSupervisor(
             DeviceAdmission.MatchesAny(raw, DeviceAdmission.PinnedCertificates([d.PhoneCertBase64])));
     }
 
-    private bool IsBackedOff(string address) =>
-        _backoff.TryGetValue(address, out var entry) && DateTime.UtcNow < entry.NextAttemptUtc;
+    private bool IsBackedOff(string address)
+    {
+        lock (_backoff)
+        {
+            return _backoff.IsWaiting(address, DateTime.UtcNow);
+        }
+    }
+
+    private int Failures(string address)
+    {
+        lock (_backoff)
+        {
+            return _backoff.Failures(address);
+        }
+    }
+
+    private bool IsStale(string address)
+    {
+        lock (_backoff)
+        {
+            return _backoff.IsStale(address);
+        }
+    }
 
     /// <returns>True if this is the first failure in the current streak.</returns>
-    private bool RegisterFailure(string address)
+    private bool Failed(string address)
     {
-        var failures = _backoff.TryGetValue(address, out var entry) ? entry.Failures + 1 : 1;
-        var delay = BackoffSeconds[Math.Min(failures, BackoffSeconds.Length) - 1];
-        _backoff[address] = (failures, DateTime.UtcNow.AddSeconds(delay));
-        return failures == 1;
+        lock (_backoff)
+        {
+            return _backoff.Failed(address, DateTime.UtcNow);
+        }
     }
 
-    /// <summary>Higher wins: USB is preferred over wireless ADB, which is preferred over Direct TLS.</summary>
-    private static int TransportPriority(LinkTransport transport) => transport switch
+    private void Succeeded(string address)
     {
-        LinkTransport.AdbUsb => 3,
-        LinkTransport.AdbWireless => 2,
-        LinkTransport.DirectTls => 1,
-        _ => 0,
-    };
-
-    /// <summary>Does the active phone's connection preference permit this transport?</summary>
-    private bool IsTransportAllowed(LinkTransport transport) => registry.ConnectionPreference switch
-    {
-        ConnectionPreference.UsbOnly => transport == LinkTransport.AdbUsb,
-        ConnectionPreference.WirelessOnly => transport == LinkTransport.AdbWireless,
-        ConnectionPreference.DirectOnly => transport == LinkTransport.DirectTls,
-        _ => true, // Auto
-    };
+        lock (_backoff)
+        {
+            _backoff.Succeeded(address);
+        }
+    }
 
     /// <summary>
-    /// Should a connect (or a switch) to <paramref name="transport"/> begin now? True when idle,
-    /// or when it strictly outranks the current link (auto-switch to a better transport). Always
-    /// false when a connect is already in flight, when paused, or when the user's per-device
-    /// preference forbids this transport.
+    /// An address that failed <see cref="EndpointBackoff.ForgetAfter"/> times in a row is almost
+    /// always an old one (a new DHCP lease, a new wireless-debugging port): stop offering it.
     /// </summary>
-    private bool ShouldEngage(LinkTransport transport)
+    private void ForgetIfStale(string address)
     {
-        if (!IsTransportAllowed(transport))
+        if (!IsStale(address))
         {
-            return false;
+            return;
         }
-        // M15a Part C: a hand-picked transport is honoured until it is cleared or dies, so nothing
-        // else may take the link off it — including a higher-ranked one. That is the whole point
-        // of "use wireless now" rather than waiting for ranking to agree.
-        if (ManualTransport is { } pinned && transport != pinned)
+        if (string.Equals(registry.LastHostPort?.Trim(), address.Trim(), StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            registry.SaveLastHostPort(null);
         }
-        return State switch
-        {
-            LinkState.Searching or LinkState.NoDevice => true,
-            LinkState.Connected => Device is { } d && TransportPriority(transport) > TransportPriority(d.Transport),
-            _ => false, // Connecting (in flight) or Paused
-        };
+        log.Log(LogLevel.Info, $"Forgot {address}: it failed {EndpointBackoff.ForgetAfter} times in a row, so it is probably an old address.");
     }
+
+    /// <summary>
+    /// What the admission rules should treat the link as: while a dead cable is being handed off,
+    /// the phone is effectively idle — anything that answers may take over.
+    /// </summary>
+    private LinkActivity EngageActivity() => IsHandingOff ? LinkActivity.Idle : Activity(State);
+
+    /// <summary>Does the active phone's connection preference permit this transport?</summary>
+    private bool IsTransportAllowed(LinkTransport transport) =>
+        LinkPolicy.IsAllowed(transport, registry.ConnectionPreference);
+
+    /// <summary>
+    /// Should a connect (or a handoff to a better transport) begin now? <see cref="LinkPolicy"/>
+    /// decides: idle, or strictly better than the live link, within the phone's preference and
+    /// never away from a hand-picked transport.
+    /// </summary>
+    private bool ShouldEngage(LinkTransport transport) =>
+        LinkPolicy.ShouldEngage(transport, EngageActivity(),
+            IsHandingOff ? null : Device?.Transport, ManualTransport, registry.ConnectionPreference);
 
     /// <summary>
     /// The user changed the connection method under Devices. Drop the current link only if the new
@@ -1221,7 +1445,10 @@ public sealed class ConnectionSupervisor(
                     StopHealthLoop();
                     connection.Disconnect();
                     Device = null;
-                    _backoff.Clear();
+                    lock (_backoff)
+                    {
+                        _backoff.Clear();
+                    }
                     LastRttMs = null;
                     SetState(LinkState.Searching);
                     log.Log(LogLevel.Info, "Connection method changed; switching to your preferred transport.");
@@ -1231,8 +1458,7 @@ public sealed class ConnectionSupervisor(
             {
                 _gate.Release();
             }
-            discovery.ScanNow();
-            await RecoverPresentWirelessDeviceAsync();
+            Nudge(LinkSignal.PreferenceChanged, "Connection method changed");
         });
     }
 

@@ -37,8 +37,23 @@ data class VoiceAccessState(
      * install it itself.
      */
     val setup: String = "",
+    /** While setting up: how much of the download has arrived, 0..100 (100 = installing). */
+    val progress: Int? = null,
+    /** v23 (D-075): the phone's mic is streaming to the PC right now. */
+    val micOn: Boolean = false,
+    /** The Microphone tool is on: the phone is the PC's mic for every app. */
+    val tool: Boolean = false,
+    /** PC Remote's automatic mode is on (the phone's mic whenever a PC app listens). */
+    val auto: Boolean = false,
+    /** In automatic mode, a PC app is listening now. */
+    val listening: Boolean = false,
     val error: String? = null,
 ) {
+    /** What to tell the user while the PC sets the microphone up. */
+    val setupText: String get() = when {
+        progress != null && progress < 100 -> "Downloading the microphone for the PC… $progress %"
+        else -> "Setting up the microphone… on the PC, approve Windows' prompt (it may be flashing in the taskbar) and click Install Driver."
+    }
     /** The PC could set up the phone-as-microphone itself if asked. */
     val canSetUp: Boolean get() = available && !cable && setup in setOf("needed", "failed")
     val settingUp: Boolean get() = setup == "installing"
@@ -90,6 +105,36 @@ object PcVoiceAccess {
         )
     }
 
+    /** The Microphone tool and PC Remote's automatic mode need a v23 PC. */
+    fun micReady(): Boolean = CompanionOutbox.canSend(23)
+
+    /** The Microphone tool: the phone as the PC's microphone for any app (v23, D-075). */
+    fun setTool(context: Context, on: Boolean, installCable: Boolean = false) {
+        appContext = context.applicationContext
+        CompanionOutbox.trySend(
+            Envelope(type = MessageType.PC_MIC_SET, payload = buildJsonObject {
+                put("on", on && hasMicPermission(context))
+                if (installCable) put("installCable", true)
+            }),
+            requiredVersion = 23,
+        )
+    }
+
+    /**
+     * PC Remote with "Phone" chosen: while it is on, any PC app that wants a microphone hears
+     * this phone (v23, D-075). Sent when the picture comes up and when PC Remote closes.
+     */
+    fun setAuto(context: Context, on: Boolean, installCable: Boolean = false) {
+        appContext = context.applicationContext
+        CompanionOutbox.trySend(
+            Envelope(type = MessageType.PC_MIC_AUTO, payload = buildJsonObject {
+                put("on", on && hasMicPermission(context))
+                if (installCable) put("installCable", true)
+            }),
+            requiredVersion = 23,
+        )
+    }
+
     fun refresh(context: Context) {
         appContext = context.applicationContext
         CompanionOutbox.trySend(
@@ -106,6 +151,11 @@ object PcVoiceAccess {
             mic = (payload["mic"] as? JsonPrimitive)?.contentOrNull ?: "pc",
             cable = bool("cable"),
             setup = (payload["setup"] as? JsonPrimitive)?.contentOrNull ?: "",
+            progress = (payload["progress"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull(),
+            micOn = bool("micOn"),
+            tool = bool("tool"),
+            auto = bool("auto"),
+            listening = bool("listening"),
             error = (payload["error"] as? JsonPrimitive)?.contentOrNull,
         )
     }
@@ -133,6 +183,7 @@ object PcVoiceAccess {
         val pcm = ByteArray(FRAME_BYTES)
         try {
             Framing.write(output, """{"codec":"pcm16","sampleRate":$RATE,"channels":1}""")
+            micForeground(context, true)
             record.startRecording()
             _micLive.value = true
             LogStore.log(LogLevel.INFO, "Voice Access: the PC is hearing this phone's microphone")
@@ -153,7 +204,18 @@ object PcVoiceAccess {
             runCatching { record.stop() }
             record.release()
             _micLive.value = false
+            micForeground(context, false)
             LogStore.log(LogLevel.INFO, "Voice Access: microphone off")
+        }
+    }
+
+    /** Ask the companion service to carry (or drop) the microphone foreground type. */
+    private fun micForeground(context: Context, on: Boolean) {
+        runCatching {
+            context.startService(
+                android.content.Intent(context, CompanionService::class.java)
+                    .setAction(CompanionService.ACTION_MIC).putExtra(CompanionService.EXTRA_ON, on),
+            )
         }
     }
 

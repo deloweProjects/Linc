@@ -92,6 +92,19 @@ public sealed class PcInputService : IPcInputService
             SendMouse(0, 0, ButtonFlag((string?)payload["button"], down: kind == "down"), absolute: false);
     }
 
+    /// <summary>
+    /// The display a <c>pc.input</c> lands on: the mirrored one while Mirror PC runs; otherwise
+    /// the primary display (the phone's Remote trackpad, keyboard and presentation keys work with
+    /// no mirror at all); with no display list, the whole virtual desktop. Pure.
+    /// </summary>
+    public static DisplayRect TargetFor(PcDisplay? mirrored, IReadOnlyList<PcDisplay> displays, DisplayRect virtualDesktop)
+    {
+        var display = mirrored ?? displays.FirstOrDefault(d => d.Primary) ?? displays.FirstOrDefault();
+        return display is null
+            ? virtualDesktop
+            : new DisplayRect(display.Left, display.Top, display.Width, display.Height);
+    }
+
     /// <summary>The SendInput flag for a button press or release. Unknown names are a left click.</summary>
     public static uint ButtonFlag(string? button, bool down) => button switch
     {

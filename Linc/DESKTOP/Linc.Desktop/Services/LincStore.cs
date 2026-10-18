@@ -52,6 +52,9 @@ public readonly record struct StoredOutboxRow(
 /// log line (§2.8) — a key can itself be a phone number. <see cref="UpdatedUtc"/> is when this
 /// row was last written, which is what the Home offline banner's "last synced at" time reads.
 /// </summary>
+/// <summary>One clipboard-history item (schema v2, D-083).</summary>
+public readonly record struct StoredClip(long Id, string Text, bool FromPhone, bool Sent, bool Pinned, DateTimeOffset AtUtc);
+
 public readonly record struct StoredSyncCacheRow(
     string Serial,
     string Kind,
@@ -94,7 +97,7 @@ public sealed class LincStore
     /// ordered migrations from 0 up to here, then stores this number in <c>schema_version</c>.
     /// A future session bumps it and adds a step below.
     /// </summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     private const string DbFileName = "linc.db";
 
@@ -147,6 +150,10 @@ public sealed class LincStore
     {
         lock (_lock)
         {
+            if (IsAvailable)
+            {
+                return; // already ensured this run — callers ask often, the answer doesn't change
+            }
             if (!TryOpen(out var connection))
             {
                 return;
@@ -864,6 +871,164 @@ public sealed class LincStore
         }
     }
 
+
+    // ---- Clipboard history (schema v2, 1.0.0.11, D-083) ---------------------------------------
+    // One row per distinct text per phone (keyed by ConnectedDevice.CacheKey): a repeat moves to
+    // the top instead of duplicating. Pinned rows are never pruned. Like every other table here,
+    // the text is never logged, and a broken store degrades to "no history", never a crash.
+
+    /// <summary>Adds (or moves to the top) <paramref name="text"/> for <paramref name="serial"/>.</summary>
+    public bool AddClip(string serial, string text, bool fromPhone, bool sent, DateTimeOffset atUtc)
+    {
+        lock (_lock)
+        {
+            if (!IsAvailable || !TryOpen(out var connection))
+            {
+                return false;
+            }
+            using (connection)
+            {
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = """
+                        INSERT INTO clipboard (serial, text, from_phone, sent, pinned, at_utc)
+                        VALUES ($serial, $text, $from_phone, $sent, 0, $at)
+                        ON CONFLICT(serial, text) DO UPDATE SET
+                            from_phone = excluded.from_phone,
+                            sent = excluded.sent,
+                            at_utc = excluded.at_utc;
+                        """;
+                    cmd.Parameters.AddWithValue("$serial", serial);
+                    cmd.Parameters.AddWithValue("$text", text);
+                    cmd.Parameters.AddWithValue("$from_phone", fromPhone ? 1 : 0);
+                    cmd.Parameters.AddWithValue("$sent", sent ? 1 : 0);
+                    cmd.Parameters.AddWithValue("$at", atUtc.UtcDateTime.ToString("o"));
+                    cmd.ExecuteNonQuery();
+                    return true;
+                }
+                catch (Exception ex) when (ex is SqliteException or IOException)
+                {
+                    _log?.Log(LogLevel.Warn, $"LincStore: could not save a clipboard item. (serial={serial}, {ex.GetType().Name}: {ex.Message})");
+                    return false;
+                }
+            }
+        }
+    }
+
+    /// <summary>The newest <paramref name="limit"/> clips for a phone, pinned ones included.</summary>
+    public IReadOnlyList<StoredClip> ListClips(string serial, int limit)
+    {
+        lock (_lock)
+        {
+            if (!IsAvailable || !TryOpen(out var connection))
+            {
+                return [];
+            }
+            using (connection)
+            {
+                try
+                {
+                    var list = new List<StoredClip>();
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = """
+                        SELECT id, text, from_phone, sent, pinned, at_utc FROM clipboard
+                        WHERE serial = $serial ORDER BY pinned DESC, at_utc DESC LIMIT $limit;
+                        """;
+                    cmd.Parameters.AddWithValue("$serial", serial);
+                    cmd.Parameters.AddWithValue("$limit", limit);
+                    using var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        list.Add(new StoredClip(
+                            reader.GetInt64(0), reader.GetString(1), reader.GetInt64(2) != 0, reader.GetInt64(3) != 0,
+                            reader.GetInt64(4) != 0,
+                            DateTimeOffset.Parse(reader.GetString(5), System.Globalization.CultureInfo.InvariantCulture)));
+                    }
+                    return list;
+                }
+                catch (Exception ex) when (ex is SqliteException or IOException or FormatException)
+                {
+                    _log?.Log(LogLevel.Warn, $"LincStore: could not read the clipboard history. (serial={serial}, {ex.GetType().Name}: {ex.Message})");
+                    return [];
+                }
+            }
+        }
+    }
+
+    public bool SetClipPinned(long id, bool pinned) => ExecuteClip("UPDATE clipboard SET pinned = $v WHERE id = $id;", id, pinned ? 1 : 0);
+
+    public bool DeleteClip(long id) => ExecuteClip("DELETE FROM clipboard WHERE id = $id;", id, 0);
+
+    /// <summary>Deletes a phone's history; pinned items stay unless <paramref name="includePinned"/>.</summary>
+    public bool ClearClips(string serial, bool includePinned = false) =>
+        ExecuteSerial(includePinned
+            ? "DELETE FROM clipboard WHERE serial = $serial;"
+            : "DELETE FROM clipboard WHERE serial = $serial AND pinned = 0;", serial, 0);
+
+    /// <summary>Keeps every pinned clip and the newest unpinned ones, up to <paramref name="keep"/> in all.</summary>
+    public bool PruneClips(string serial, int keep) => ExecuteSerial("""
+        DELETE FROM clipboard WHERE serial = $serial AND pinned = 0 AND id NOT IN (
+            SELECT id FROM clipboard WHERE serial = $serial AND pinned = 0
+            ORDER BY at_utc DESC
+            LIMIT max(0, $v - (SELECT count(*) FROM clipboard WHERE serial = $serial AND pinned = 1)));
+        """, serial, keep);
+
+    private bool ExecuteClip(string sql, long id, int value)
+    {
+        lock (_lock)
+        {
+            if (!IsAvailable || !TryOpen(out var connection))
+            {
+                return false;
+            }
+            using (connection)
+            {
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = sql;
+                    cmd.Parameters.AddWithValue("$id", id);
+                    cmd.Parameters.AddWithValue("$v", value);
+                    return cmd.ExecuteNonQuery() > 0;
+                }
+                catch (Exception ex) when (ex is SqliteException or IOException)
+                {
+                    _log?.Log(LogLevel.Warn, $"LincStore: could not change a clipboard item. ({ex.GetType().Name}: {ex.Message})");
+                    return false;
+                }
+            }
+        }
+    }
+
+    private bool ExecuteSerial(string sql, string serial, int value)
+    {
+        lock (_lock)
+        {
+            if (!IsAvailable || !TryOpen(out var connection))
+            {
+                return false;
+            }
+            using (connection)
+            {
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = sql;
+                    cmd.Parameters.AddWithValue("$serial", serial);
+                    cmd.Parameters.AddWithValue("$v", value);
+                    cmd.ExecuteNonQuery();
+                    return true;
+                }
+                catch (Exception ex) when (ex is SqliteException or IOException)
+                {
+                    _log?.Log(LogLevel.Warn, $"LincStore: could not change the clipboard history. (serial={serial}, {ex.GetType().Name}: {ex.Message})");
+                    return false;
+                }
+            }
+        }
+    }
+
     /// <summary>Applies every migration step from <paramref name="from"/> up to <see cref="CurrentSchemaVersion"/> in order.</summary>
     private static void ApplyMigrations(SqliteConnection connection, int from)
     {
@@ -873,6 +1038,10 @@ public sealed class LincStore
         if (from < 1)
         {
             ApplyV1(connection);
+        }
+        if (from < 2)
+        {
+            ApplyV2(connection);
         }
     }
 
@@ -924,6 +1093,39 @@ public sealed class LincStore
                         updated_utc TEXT,
                         PRIMARY KEY (serial, kind, key)
                     );
+                    """;
+                cmd.ExecuteNonQuery();
+            }
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>Schema step 2 (D-083): the clipboard history, one row per distinct text per phone.</summary>
+    private static void ApplyV2(SqliteConnection connection)
+    {
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = """
+                    CREATE TABLE IF NOT EXISTS clipboard (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        serial TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        from_phone INTEGER NOT NULL DEFAULT 0,
+                        sent INTEGER NOT NULL DEFAULT 0,
+                        pinned INTEGER NOT NULL DEFAULT 0,
+                        at_utc TEXT NOT NULL,
+                        UNIQUE (serial, text)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_clipboard_serial_at ON clipboard (serial, at_utc);
                     """;
                 cmd.ExecuteNonQuery();
             }

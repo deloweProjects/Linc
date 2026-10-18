@@ -12,7 +12,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Phone → PC clipboard while Linc is in the background (D-075).
+ * Phone → PC clipboard while Linc is in the background (D-092).
  *
  * Android 10+ only lets the focused app read the clipboard. But a background app that listens
  * for clipboard changes makes the system log "Denying clipboard access to <package>" each time

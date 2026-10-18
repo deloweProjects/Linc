@@ -4,7 +4,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** D-075: only the system's denial for exactly this package starts a background clipboard read. */
+/** D-092: only the system's denial for exactly this package starts a background clipboard read. */
 class ClipboardWatcherTest {
 
     private val pkg = "app.linc.android"

@@ -6,7 +6,7 @@ namespace Linc.Desktop.Services;
 
 /// <summary>
 /// The PC's IPv4 neighbour (ARP) table: which hardware address answered for which LAN address
-/// lately (D-077). Reading it sends nothing on the network, so it is a free way to notice that a
+/// lately (D-094). Reading it sends nothing on the network, so it is a free way to notice that a
 /// known phone has just joined the Wi-Fi.
 /// </summary>
 public static class NeighborTable

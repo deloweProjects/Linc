@@ -38,7 +38,9 @@ public sealed class PcScreenCapture : IDisposable
     public int Width { get; private set; }
     public int Height { get; private set; }
 
-    private readonly IDXGIOutputDuplication _duplication;
+    private readonly IDXGIOutput1 _output;
+    /// <summary>Null between losing access (UAC, lock screen, a mode change) and getting it back.</summary>
+    private IDXGIOutputDuplication? _duplication;
     private readonly ID3D11Texture2D[] _ring = new ID3D11Texture2D[RingSize];
     private int _next;
 
@@ -53,56 +55,48 @@ public sealed class PcScreenCapture : IDisposable
     {
         FeatureLevel[] levels = [FeatureLevel.Level_11_1, FeatureLevel.Level_11_0];
 
-        // The typed null matters: D3D11CreateDevice is overloaded on IDXGIAdapter vs IntPtr.
-        // BgraSupport is required for the duplication surface format; VideoSupport for the encoder.
-        D3D11.D3D11CreateDevice((IDXGIAdapter?)null, DriverType.Hardware,
-            DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport,
-            levels, out ID3D11Device? device).CheckError();
-        Device = device ?? throw new LincException("This PC's graphics device couldn't be opened for mirroring.");
+        // The device lives on the graphics adapter that drives THIS display (D-087), numbered the
+        // way Enumerate numbers them for the phone. The default adapter is not always it: on a
+        // hybrid laptop or a desktop with two cards a display can hang off the other one, and
+        // Desktop Duplication, the colour conversion and the encoder must all share one GPU.
+        var (adapter, output) = FindDisplay(displayIndex)
+            ?? throw new LincException($"This PC has no display {displayIndex} to mirror.");
+        using (adapter)
+        {
+            // BgraSupport is required for the duplication surface format; VideoSupport for the
+            // encoder. With an explicit adapter the driver type must be Unknown.
+            D3D11.D3D11CreateDevice(adapter, DriverType.Unknown,
+                DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport,
+                levels, out ID3D11Device? device).CheckError();
+            Device = device ?? throw new LincException("This PC's graphics device couldn't be opened for mirroring.");
+        }
         Context = Device.ImmediateContext;
 
-        try
-        {
-            // The MFT encodes on its own thread while we capture on ours; both touch this device.
-            using (var multithread = device.QueryInterface<ID3D11Multithread>())
-                multithread.SetMultithreadProtected(true);
+        // The MFT encodes on its own thread while we capture on ours; both touch this device.
+        using (var multithread = Device.QueryInterface<ID3D11Multithread>())
+            multithread.SetMultithreadProtected(true);
 
-            using var dxgiDevice = device.QueryInterface<IDXGIDevice>();
-            using var adapter = dxgiDevice.GetAdapter();
-            AdapterLuid = LuidToInt64(adapter.Description.Luid);
-            adapter.EnumOutputs((uint)displayIndex, out IDXGIOutput? output).CheckError();
-            if (output is null)
-                throw new LincException($"This PC has no display {displayIndex} to mirror.");
-            using (output)
-            {
-                using var output1 = output.QueryInterface<IDXGIOutput1>();
-                _duplication = output1.DuplicateOutput(Device);
-            }
-        }
-        catch
-        {
-            // Nothing else will release the device, and a leaked duplication is worse: DXGI
-            // allows one per output per process, so every later attempt to mirror this display
-            // fails with E_INVALIDARG ("the calling application is already duplicating this
-            // desktop output") until the app restarts.
-            Context.Dispose();
-            Device.Dispose();
-            throw;
-        }
+        using (output)
+            _output = output.QueryInterface<IDXGIOutput1>();
+        _duplication = _output.DuplicateOutput(Device);
     }
 
-    /// <summary>
-    /// The LUID of the adapter this capture runs on, as Media Foundation stores it
-    /// (<c>MFT_ENUM_ADAPTER_LUID</c>, low part in the low 32 bits). A hardware encoder only
-    /// works with textures from its own adapter — see <see cref="PcVideoEncoder"/>.
-    /// </summary>
-    public long AdapterLuid { get; }
-
-    /// <summary>Reads DXGI's 8-byte LUID struct as one integer, whatever the binding calls it.</summary>
-    private static long LuidToInt64<T>(T luid) where T : unmanaged =>
-        System.Runtime.CompilerServices.Unsafe.SizeOf<T>() == sizeof(long)
-            ? System.Runtime.CompilerServices.Unsafe.As<T, long>(ref luid)
-            : 0;
+    /// <summary>The adapter and output of attached display <paramref name="index"/>, in <see cref="Enumerate"/>'s order.</summary>
+    private static (IDXGIAdapter1, IDXGIOutput)? FindDisplay(int index)
+    {
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+        int seen = 0;
+        for (uint a = 0; factory.EnumAdapters1(a, out IDXGIAdapter1 adapter).Success; a++)
+        {
+            for (uint o = 0; adapter.EnumOutputs(o, out IDXGIOutput output).Success; o++)
+            {
+                if (output.Description.AttachedToDesktop && seen++ == index) return (adapter, output);
+                output.Dispose();
+            }
+            adapter.Dispose();
+        }
+        return null;
+    }
 
     /// <summary>Enumerate attached displays for the phone's display picker (<c>pc.displays</c>).</summary>
     public static IReadOnlyList<PcDisplay> Enumerate()
@@ -143,14 +137,25 @@ public sealed class PcScreenCapture : IDisposable
     public bool TryAcquire(int timeoutMs, out ID3D11Texture2D? texture)
     {
         texture = null;
-        var result = _duplication.AcquireNextFrame((uint)timeoutMs, out _, out IDXGIResource resource);
+        if (_duplication is null && !Reacquire(timeoutMs)) return false;
+        var result = _duplication!.AcquireNextFrame((uint)timeoutMs, out _, out IDXGIResource resource);
         if (result == Vortice.DXGI.ResultCode.WaitTimeout) return false;
+        if (result == Vortice.DXGI.ResultCode.AccessLost)
+        {
+            // A UAC prompt, the lock screen, a full-screen game or a display mode change took the
+            // desktop away. Not fatal: start over, and until then the feeder resends the last frame.
+            _duplication.Dispose();
+            _duplication = null;
+            return false;
+        }
         result.CheckError();
 
         try
         {
             using var frame = resource.QueryInterface<ID3D11Texture2D>();
             EnsureRing(frame.Description);
+            if (frame.Description.Width != Width || frame.Description.Height != Height)
+                throw new LincException("This display changed resolution. Start Mirror PC again on the phone.");
             texture = _ring[_next];
             _next = (_next + 1) % RingSize;
             Context.CopyResource(texture, frame);
@@ -197,10 +202,29 @@ public sealed class PcScreenCapture : IDisposable
             });
     }
 
+    /// <summary>
+    /// Duplicate the display again after access was lost. On the secure desktop (UAC, lock screen)
+    /// that keeps failing until it closes, so this waits out the caller's timeout and says no.
+    /// </summary>
+    private bool Reacquire(int timeoutMs)
+    {
+        try
+        {
+            _duplication = _output.DuplicateOutput(Device);
+            return true;
+        }
+        catch
+        {
+            Thread.Sleep(Math.Max(timeoutMs, 1));
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         foreach (var texture in _ring) texture?.Dispose();
         _duplication?.Dispose();
+        _output.Dispose();
         Context?.Dispose();
         Device?.Dispose();
     }

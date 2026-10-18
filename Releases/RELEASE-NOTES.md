@@ -15,6 +15,148 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.15 ("1.0.0-beta.15") — 2026-10-11
+
+Install both apps. Phones and settings are kept. Everything in 1.0.0.14 and earlier below, plus:
+
+- **About now links to the Linc community.** Settings → About on the PC and the phone shows the
+  developer (delowe, @delow3), the Telegram channel [t.me/LincApp](https://t.me/LincApp) for news,
+  new versions and help, and the source code on GitHub.
+- **Join the channel from setup.** The phone's last setup page has a button to join the Linc
+  Telegram channel, and Home shows a one-time card (Join / Not now) to
+  phones that are already set up.
+- **Linc is in Explorer's Send to list.** Right-click files → Send to → **Phone (Linc)** or
+  **Quick Share (Linc)**, next to the existing right-click entries. They are now on by default;
+  turn them off on the Share page.
+- **Linc is on Komi Store.** Search for Linc in [Komi Store](https://komistore.app) to install it on
+  Windows or Android straight from these releases.
+
+## 1.0.0.14 ("1.0.0-beta.14") — 2026-10-11
+
+Install both apps. Everything in 1.0.0.13 and 1.0.0.12 below, plus:
+
+- **Mirror PC no longer gets stuck.** After stopping it (more likely on a 4K screen), it could refuse
+  to start again until Linc was restarted. It now always starts again.
+- **Start Linc on the phone works after Stop.** It used to do nothing until the phone app was closed.
+
+## 1.0.0.13 ("1.0.0-beta.13") — 2026-10-11
+
+Install both apps. Phones and settings are kept. Everything in 1.0.0.12 below, plus:
+
+- **Linc no longer closes when the phone disconnects.** Since 1.0.0.11 the PC app shut itself down
+  the moment the connection dropped (Wi-Fi lost or cable pulled). It now stays open and reconnects.
+
+## 1.0.0.12 ("1.0.0-beta.12") — 2026-10-11
+
+Install both apps. Phones and settings are kept.
+
+- **Mirror PC works on Intel graphics.** When the graphics chip's video encoder won't start, Linc
+  tries it again with basic settings and then falls back to Windows' own software encoder, so
+  mirroring always starts. If the encoder stops partway, Linc switches over without dropping the
+  mirror. To use the software encoder from the start: Settings → Mirror PC → Use software encoding.
+  Mirroring also survives UAC prompts and the lock screen, and uses the right graphics chip on PCs
+  with two.
+- **The phone remembers each PC.** Phone: Connection → PCs lists every PC you've paired with. Pick
+  the one to connect to, or "Any of my PCs" (whichever finds the phone first). Linc is with one PC at
+  a time — another PC is told the phone is busy and by whom — and picking a PC switches straight to
+  it. Forget a PC you no longer use.
+- **Setup can skip installing the phone app.** Add a phone → "Linc is already on my phone — don't
+  install it".
+
+## 1.0.0.11 ("1.0.0-beta.11") — 2026-10-11
+
+Install both apps (protocol v24). **New: a proper Windows installer**, `Linc-Setup-1.0.0.11.exe` —
+no admin, upgrades itself from now on. Coming from 1.0.0.2 (the last published build), run it once
+by hand (the old built-in updater couldn't install anything); your phones and settings are kept.
+
+**A new phone app.** Rebuilt in Material 3 Expressive with four tabs — Home, Remote, Clipboard,
+Share — and Settings behind the gear. It follows your wallpaper's colours (a new indigo theme on
+phones without them), works in light and dark, at large text sizes, and with predictive back.
+
+- **Remote** (was Tools) is a full-screen trackpad: tap to click, two-finger tap for right click,
+  two fingers to scroll, tap-then-drag to drag, Left and Right buttons, and sheets for the keyboard
+  (with Ctrl/Alt/Shift/Win and dictation), media and volume, presentations, Voice Access and the
+  microphone, and power and brightness. **The trackpad now works without Mirror PC** — before, the PC
+  ignored it unless Mirror PC was running, and taps and scrolling often didn't register at all.
+
+**Clipboard, on both apps.** Send text to the other device's clipboard, **Sync now**, and a
+searchable history of what you've copied — 500 items by default (100 or 2,000 in Settings), kept
+after restarts, grouped by day, with pin, copy and delete. Passwords and codes that apps mark as
+private are never saved or sent.
+
+**Share, on both apps.** Each says whether it's sending over Linc (fast, no prompts) or — when Linc
+isn't connected — with Quick Share, and picks by itself. Transfers show progress and can be retried.
+On the PC: drag files onto the Share page, the tray icon's new **Send to phone** menu, or right-click
+files in Explorer → **Send to phone (Linc)**. The tray icon shows when the phone isn't connected.
+
+**Connections that just work.**
+- Plugging in the USB cable while on Wi-Fi switches to the cable without disconnecting; unplugging it
+  goes back to Wi-Fi without a drop.
+- The phone reconnects as soon as it rejoins Wi-Fi, its screen comes on or you open Linc, and tries
+  the PC's last address first. The PC notices waking from sleep (it didn't on most laptops).
+- No more minutes of retrying an old hotspot address after the phone has gone; addresses that keep
+  failing are forgotten. The PC's log no longer repeats the same line over and over.
+
+**Also**
+- **Show explanations** (Settings → Appearance, in each app) hides the helper text once you know it.
+- The phone app checks for updates itself now (it never did), with a progress bar and a safety check.
+- Settings → Devices on the PC asks before removing a phone, the same way closing its tab does.
+- Uninstalling puts back the PC's microphone and display scale and asks whether to delete Linc's
+  data. VB-CABLE stays installed.
+
+1.0.0.3 to 1.0.0.10 were never published; everything in them is included — see their notes below
+(adding and removing phones, Mirror PC on Intel and hybrid graphics, Voice Access and the phone as
+the PC's microphone, tablet mode, the PC Remote bubble and keyboard).
+
+---
+
+## 1.0.0.10 ("1.0.0-beta.10") — 2026-10-11
+
+(1.0.0.3 to 1.0.0.9 were local test builds and were never released.) Install both apps (protocol v23).
+
+- **Adding and removing phones flows properly.** Closing a phone's tab asks whether to disconnect
+  (it stays paired) or remove it. "Add a phone" lets you pick a phone you've used before, or add a new
+  one by USB, Wi-Fi QR code, or "already set up"; it checks the connection and tells you whether the
+  phone was new or already added.
+
+- **First setup and adding a phone are reliable**: Linc restarts its connection engine if it has
+  stopped, recognises a phone paired over Wi-Fi as wireless (not a USB cable it then thinks was
+  pulled), and no longer cuts the brand-new connection straight after setup.
+- **One phone stays one phone**: its saved apps, photos and messages no longer split into several
+  copies depending on how it connected.
+
+- **Mirror PC on Intel graphics**: encoders that won't take the screen's pixels directly get a picture
+  converted on the GPU; a failed start no longer blocks every retry.
+- **Staying connected**: Home tells you when Android may stop Linc in the background, with one tap to
+  allow it (and the phone maker's own auto-start screen on itel, Tecno, Infinix, Xiaomi, Oppo, Vivo).
+
+- **Mirror PC on PCs with two graphics chips** (e.g. Intel + NVIDIA laptops): Linc now tries every
+  hardware video encoder, the screen's own chip first, instead of giving up after the first.
+- **Over a direct Wi-Fi link**, fetching many app icons at once no longer stalls.
+
+- **Voice Access now actually hears your phone.** It keeps its own microphone setting and ignored the
+  Windows default; Linc now points it at the phone while you've chosen the phone.
+- **Choose Phone or PC microphone** in the PC Remote bubble, or on the Voice Access card.
+- **Microphone tool** (Tools): use your phone as the PC's microphone in any app — calls, dictation.
+- **Automatic in Mirror PC**: with Phone chosen, whenever an app on the PC starts listening, it hears
+  your phone. The phone's mic only runs while something is listening.
+
+- **Voice Access's microphone setup now finishes.** The download from vb-audio.com used to give up
+  after 5 minutes on that server's slow connection; it now downloads in pieces, picks up where it
+  stopped, and shows its progress on the phone. A copy you downloaded yourself into Downloads works too.
+- The app icon's L is smaller.
+
+Install both apps (protocol v22).
+
+- **Tablet mode** in the PC Remote bubble makes a PC without a touch screen finger-friendly: everything
+  on the mirrored screen gets bigger (two scale steps, e.g. 125 % → 175 %) and File Explorer gets touch
+  spacing. No Windows prompt; it is all put back when you switch it off or leave PC Remote.
+- **The app icon is the right size** (it was drawn too big and cropped) and follows themed icons.
+- **Material You everywhere**: the bubble and panel take the phone's wallpaper colours, and the app
+  follows dark mode.
+
+---
+
 ## 1.0.0.2 ("1.0.0-beta.2") — 2026-10-10
 
 Everything since beta.1 that was only in local test builds, plus this round's fixes. Install both

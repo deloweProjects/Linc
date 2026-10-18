@@ -51,6 +51,12 @@ public interface IPhoneSetupService
     string? LocateApk();
 
     /// <summary>
+    /// The setup wizard's "Linc is already on my phone" box (D-089): while the wizard is open, never
+    /// push the APK — connect to the app that is there. Off again when the wizard closes.
+    /// </summary>
+    bool SkipCompanionInstall { get; set; }
+
+    /// <summary>
     /// Installs an arbitrary local .apk (M10 Part A) — not the bundled companion. Reuses the
     /// same <see cref="AdbClient.InstallAsync"/> primitive as <see cref="EnsureReadyAsync"/>.
     /// Returns the raw success/failure so the caller can translate it into plain language
@@ -83,6 +89,8 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
 
     public event Action<DeviceData>? InstallConfirmationNeeded;
 
+    public bool SkipCompanionInstall { get; set; }
+
     private const string ListenerComponent =
         ProtocolConstants.CompanionPackage + "/" + ProtocolConstants.CompanionPackage + ".service.LincNotificationListener";
 
@@ -112,6 +120,12 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
     public async Task<bool> EnsureReadyAsync(DeviceData device, CancellationToken ct)
     {
         var installed = await IsInstalledAsync(device, ct);
+        if (!installed && SkipCompanionInstall && onboarding.IsActive)
+        {
+            log.Log(LogLevel.Warn, "The phone doesn't seem to have the Linc app, but you asked not to install it. " +
+                "Install Linc on the phone, open it, and Linc here connects to it.");
+            return false;
+        }
         var declined = device.Serial is not null && _declinedThisSession.Contains(device.Serial);
         var decision = CompanionInstallGate.Decide(installed, onboarding.IsActive, declined);
 

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-linksim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- D-081: the connection policy, compiled verbatim from the app. Pure: no sockets, no adb,
+         no phone, no settings file touched. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LinkPolicy.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceAdmission.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\TransportRank.cs" />
+    <!-- The standby's retire rule (HotspotHealth) and what it leans on. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotHealth.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotAddress.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotAnnounce.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotRole.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HotspotEndpoint.cs" />
+    <!-- ConnectionPreference lives in the registry file; devicesim compiles the same set. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />
+  </ItemGroup>
+</Project>

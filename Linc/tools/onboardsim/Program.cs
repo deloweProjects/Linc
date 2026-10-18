@@ -1,17 +1,17 @@
 using Linc.Desktop.Services;
 using static Linc.Desktop.Services.OnboardingStep;
 
-// Verifies the guided-onboarding step machine (M2b, part 2) headlessly: OnboardingFlow is linked
-// verbatim from the desktop, so this is the exact logic OnboardingViewModel drives — asserted with
-// no app launch, no UI-Automation, no cursor movement, and nothing touched on the phone.
+// Verifies the add-a-phone flow (D-079) headlessly: OnboardingFlow is linked verbatim from the
+// desktop, so this is the exact logic OnboardingViewModel drives — asserted with no app launch,
+// no UI-Automation, no cursor movement, and nothing touched on the phone.
 //
 //   dotnet run --project tools/onboardsim
 
 var failures = new List<string>();
 
-void Expect(string name, OnboardingStep actual, OnboardingStep expected)
+void Expect<T>(string name, T actual, T expected)
 {
-    var pass = actual == expected;
+    var pass = EqualityComparer<T>.Default.Equals(actual, expected);
     Console.WriteLine($"  [{(pass ? "PASS" : "FAIL")}] {name} — got {actual}, expected {expected}");
     if (!pass)
     {
@@ -19,31 +19,46 @@ void Expect(string name, OnboardingStep actual, OnboardingStep expected)
     }
 }
 
-Console.WriteLine("Happy path: Intro → Enable → Detect → Install → Done");
-var s = Intro;
-Expect("start", s = OnboardingFlow.Start(s), EnableDebugging);
-Expect("begin-detection", s = OnboardingFlow.BeginDetection(s), DetectPair);
-Expect("connecting→install", s = OnboardingFlow.Connecting(s), Install);
-Expect("connected→done", s = OnboardingFlow.Connected(s), Done);
+Console.WriteLine("New phone over USB: Choose → Prepare USB → Checking → Done");
+var s = Choose;
+Expect("choose-usb", s = OnboardingFlow.Choose(s, OnboardingRoute.Usb), PrepareUsb);
+Expect("usb-phone-found", s = OnboardingFlow.PhoneFound(s), Checking);
+Expect("usb-connected", s = OnboardingFlow.Connected(s), Done);
 
-Console.WriteLine("USB fast path: a phone appears before pairing → Connecting straight from Detect");
-s = DetectPair;
-Expect("usb-connecting", s = OnboardingFlow.Connecting(s), Install);
-Expect("usb-connected", OnboardingFlow.Connected(s), Done);
+Console.WriteLine("New phone over Wi-Fi: Choose → Prepare Wi-Fi → (paired) Checking → Done");
+s = Choose;
+Expect("choose-wifi", s = OnboardingFlow.Choose(s, OnboardingRoute.Wifi), PrepareWifi);
+Expect("wifi-paired", s = OnboardingFlow.PhoneFound(s), Checking);
+Expect("wifi-connected", OnboardingFlow.Connected(s), Done);
 
-Console.WriteLine("Back navigation is the inverse and bottoms out at Intro");
-Expect("back-from-detect", OnboardingFlow.Back(DetectPair), EnableDebugging);
-Expect("back-from-enable", OnboardingFlow.Back(EnableDebugging), Intro);
-Expect("back-from-intro-noop", OnboardingFlow.Back(Intro), Intro);
+Console.WriteLine("Skips: a known phone, or 'already set up', go straight to Checking");
+Expect("known-phone-skips-pairing", OnboardingFlow.Choose(Choose, OnboardingRoute.KnownPhone), Checking);
+Expect("already-set-up-skips-pairing", OnboardingFlow.Choose(Choose, OnboardingRoute.AlreadySetUp), Checking);
 
-Console.WriteLine("Idempotence / out-of-order events never move the wrong way");
-Expect("start-noop-off-intro", OnboardingFlow.Start(DetectPair), DetectPair);
-Expect("begin-noop-off-enable", OnboardingFlow.BeginDetection(DetectPair), DetectPair);
-// A reconnect blip (Connecting) after the wizard has finished must not drag it back to Install.
-Expect("connecting-noop-after-done", OnboardingFlow.Connecting(Done), Done);
-Expect("connecting-noop-on-intro", OnboardingFlow.Connecting(Intro), Intro);
-// Connected always wins — even a stray one mid-flow means the phone answered.
-Expect("connected-from-enable", OnboardingFlow.Connected(EnableDebugging), Done);
+Console.WriteLine("Back always returns to the choice, from any screen before Done");
+Expect("back-from-usb", OnboardingFlow.Back(PrepareUsb), Choose);
+Expect("back-from-wifi", OnboardingFlow.Back(PrepareWifi), Choose);
+Expect("back-from-checking", OnboardingFlow.Back(Checking), Choose);
+Expect("back-noop-on-choose", OnboardingFlow.Back(Choose), Choose);
+Expect("back-noop-on-done", OnboardingFlow.Back(Done), Done);
+
+Console.WriteLine("Out-of-order events never move the wrong way");
+// A link that was already up (or reconnects) while the user is still choosing must not finish the flow.
+Expect("connected-noop-on-choose", OnboardingFlow.Connected(Choose), Choose);
+// Seeing the phone only advances from a prepare screen.
+Expect("found-noop-on-choose", OnboardingFlow.PhoneFound(Choose), Choose);
+Expect("found-noop-on-checking", OnboardingFlow.PhoneFound(Checking), Checking);
+Expect("found-noop-on-done", OnboardingFlow.PhoneFound(Done), Done);
+// A route can only be chosen from Choose.
+Expect("choose-noop-off-choose", OnboardingFlow.Choose(Checking, OnboardingRoute.Usb), Checking);
+// The phone can answer before the user presses "my phone is plugged in".
+Expect("connected-from-prepare-usb", OnboardingFlow.Connected(PrepareUsb), Done);
+
+Console.WriteLine("Done says whether the phone was new or already added");
+string[] knownBefore = ["2C141FDH20089M"];
+Expect("readded-known-phone", OnboardingFlow.WasAlreadyAdded("2c141fdh20089m", knownBefore), true);
+Expect("new-phone", OnboardingFlow.WasAlreadyAdded("131722549O000808", knownBefore), false);
+Expect("no-serial-is-not-known", OnboardingFlow.WasAlreadyAdded("", knownBefore), false);
 
 Console.WriteLine();
 if (failures.Count == 0)

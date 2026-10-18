@@ -47,9 +47,37 @@ class PcVoiceAccessTest {
         PcVoiceAccess.onState(buildJsonObject { put("available", true); put("cable", true); put("setup", "ready") })
         assertFalse(PcVoiceAccess.state.value.canSetUp)
 
+        // While downloading the phone shows how far it has got, then what to do on the PC.
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("setup", "installing"); put("progress", 40) })
+        assertEquals(40, PcVoiceAccess.state.value.progress)
+        assertTrue("40 %" in PcVoiceAccess.state.value.setupText)
+        PcVoiceAccess.onState(buildJsonObject { put("available", true); put("setup", "installing"); put("progress", 100) })
+        assertTrue("Install Driver" in PcVoiceAccess.state.value.setupText)
+
         // An older PC never sends "setup": the phone must not offer what it can't do.
         PcVoiceAccess.onState(buildJsonObject { put("available", true); put("cable", false) })
         assertFalse(PcVoiceAccess.state.value.canSetUp)
+    }
+
+    @Test
+    fun `the PC says when the phone mic is live, and for whom (D-075)`() {
+        PcVoiceAccess.onState(buildJsonObject {
+            put("available", true); put("cable", true); put("micOn", true); put("tool", false); put("auto", true); put("listening", true)
+        })
+        val s = PcVoiceAccess.state.value
+        assertTrue(s.micOn && s.auto && s.listening)
+        assertFalse(s.tool)
+        PcVoiceAccess.onState(buildJsonObject { put("available", true) })   // an older PC: all off
+        assertFalse(PcVoiceAccess.state.value.micOn || PcVoiceAccess.state.value.auto)
+    }
+
+    @Test
+    fun `the microphone tool and auto mode need a v23 PC`() {
+        regs += CompanionOutbox.register(22) { sent += it }
+        assertFalse(PcVoiceAccess.micReady())
+        regs.forEach { CompanionOutbox.release(it) }; regs.clear()
+        regs += CompanionOutbox.register(23) { sent += it }
+        assertTrue(PcVoiceAccess.micReady())
     }
 
     @Test

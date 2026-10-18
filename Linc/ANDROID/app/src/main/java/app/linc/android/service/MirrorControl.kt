@@ -171,6 +171,26 @@ object MirrorControl {
         )
     }
 
+    /**
+     * A trackpad button press or release at the PC's current pointer (no move). A right or
+     * middle button needs a v20 desktop — an older one would make it a left click — so it is
+     * not sent there.
+     */
+    fun trackpadButton(button: String, down: Boolean) {
+        if (button != "left" && !v20()) return
+        CompanionOutbox.trySend(
+            Envelope(
+                type = MessageType.PC_INPUT,
+                payload = buildJsonObject {
+                    put("kind", if (down) "down" else "up")
+                    put("mode", "trackpad")
+                    if (button != "left") put("button", button)
+                },
+            ),
+            requiredVersion = 14,
+        )
+    }
+
     fun scroll(dx: Int, dy: Int) {
         CompanionOutbox.trySend(
             Envelope(

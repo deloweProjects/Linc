@@ -38,7 +38,6 @@ public interface IUsbWatcherService : IDisposable
 public sealed class UsbWatcherService : IUsbWatcherService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
-    private static readonly Regex HostPortPattern = new(@"^[\d.]+:\d+$", RegexOptions.Compiled);
 
     /// <summary>
     /// How many consecutive polls a serial must be missing before <see cref="UsbDeviceGone"/>
@@ -141,7 +140,7 @@ public sealed class UsbWatcherService : IUsbWatcherService
                 var usable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var device in devices)
                 {
-                    if (!HostPortPattern.IsMatch(device.Serial) &&
+                    if (!AdbSerial.IsNetwork(device.Serial) &&
                         device.State == DeviceState.Online &&
                         !string.IsNullOrEmpty(device.Serial))
                     {
@@ -151,9 +150,9 @@ public sealed class UsbWatcherService : IUsbWatcherService
                 ReportDepartures(usable);
                 foreach (var device in devices)
                 {
-                    if (HostPortPattern.IsMatch(device.Serial))
+                    if (AdbSerial.IsNetwork(device.Serial))
                     {
-                        continue; // a wireless connection, not a cable — DiscoveryService's job
+                        continue; // a wireless connection (IPv4, IPv6 or mDNS), not a cable — D-078
                     }
                     if (device.State == DeviceState.Online)
                     {

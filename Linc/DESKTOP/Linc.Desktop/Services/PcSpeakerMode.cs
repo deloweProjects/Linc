@@ -3,7 +3,7 @@ using System.IO;
 namespace Linc.Desktop.Services;
 
 /// <summary>
-/// "Phone as PC speaker" (v22, D-076): the PC's sound plays on the phone <i>instead of</i> on
+/// "Phone as PC speaker" (v25, D-093): the PC's sound plays on the phone <i>instead of</i> on
 /// the PC.
 ///
 /// <para><b>Why not just stream it.</b> Plain pc-audio (v20) captures what the PC is already

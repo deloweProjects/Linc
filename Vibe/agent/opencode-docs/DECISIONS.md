@@ -943,6 +943,24 @@ Tested: package pin and setup selection (`mirrorsim` "D-071 virtual cable"), pho
 the old-PC fallback (`PcVoiceAccessTest`). **Not** run here: the install itself (it changes the
 owner's drivers) — an owner check.
 
+**Fixed 2026-10-10 (1.0.0.5) — the setup never got past the download.** The owner: "the voice access
+pc setup its bad, doesnt work right". The PC log showed both attempts ending in "HttpClient.Timeout
+of 300 seconds elapsing": vb-audio.com serves one connection at a crawl (it took parallel ranges to
+fetch it here at all), the single GET had a fixed 5-minute limit, and nothing was kept, so each retry
+started from zero. Taps during the download also went through as ordinary Voice Access requests and
+started it on the PC's own mic. Now:
+- the pack (pinned at 1,318,877 bytes) comes down as 64 KB ranges over 8 connections, each range
+  retried, each finished range kept in `drivers\vb-cable-45\parts` so a later attempt resumes; it gives
+  up only after 2 minutes with *no* progress, with a message that says it kept what it got;
+- a browser download of the same file in the user's Downloads is used once its SHA-256 matches;
+- the phone shows "Downloading the microphone for the PC… N %" (state `progress`, sent in 5 % steps),
+  then the Install Driver instruction; desktop Settings shows the same;
+- while setup runs, other Voice Access requests only re-send the state.
+`mirrorsim` "D-071 virtual cable download" serves the real pack from a localhost server that is slow
+and fails every third request, stops the download at 40 %, and checks the resume fetches only the
+missing ranges and yields the pinned file byte for byte. On the owner's PC the verified pack was put
+in Linc's cache directly, so the next setup goes straight to VB-Audio's installer.
+
 ## D-072: The bubble "crash" was an ANR from a concave shadow; channels dial back by racing
 
 **2026-10-10.** Owner: Mirror PC "slow to load, laggy, and tapping the bubble crashes the app and
@@ -993,35 +1011,495 @@ with the screen off Android (and harder still, makers' battery managers) can fre
   now also kept in a ~256 KB file so it survives the app being killed. **Logs → Copy log** (PC)
   copies Linc's version, Windows and the last two days of the PC log.
 
-## D-074: A hardware encoder is per adapter; a failed mirror start must give the screen back
+## D-074: Windows tablet mode from the bubble; the APK icon and Material You fixed
 
-**2026-10-17.** Owner pasted a PC log (1.0.0.7, Windows 26300; two Intel UHD adapters, one with the
-display, and a Quick Sync H.264 MFT for each). Mirror PC never started: the first attempt failed
-`START_OF_STREAM` with `0xC00D3E85` (`MF_E_HW_MFT_FAILED_START_STREAMING`), every retry after it
-with `E_INVALIDARG`.
+**2026-10-10.** Owner: "add to bubble a tablet mode setting so it makes windows go tablet mode. also
+fix the android apk icon its not in size, also fix the dynamic theme to the apk."
 
-- **Encoder choice.** A hardware MFT only takes textures from its own adapter, named in
-  `MFT_ENUM_ADAPTER_LUID`. `PcVideoEncoder` took MFTEnumEx's first hit, which on this PC can be the
-  displayless adapter's. It now orders encoders on the capture device's adapter first
-  (`PcScreenCapture.AdapterLuid`) and falls through to the next one when one won't start, logging
-  each refusal. D-039 (hardware only) stands.
-- **Cleanup on failure.** Nothing disposed the capture when the encoder threw, and DXGI allows one
-  Desktop Duplication per output per process, so the leak *was* the `E_INVALIDARG` ("the calling
-  application is already duplicating this desktop output"). `PcMirrorSource`, `PcScreenCapture` and
-  `PcVideoEncoder` now release what they built before rethrowing.
-- **Log honesty.** A drop with no failed probe no longer reports "Detection took -1 ms"; an empty
-  WinRT Bluetooth error shows its HRESULT; "Phone connected directly" names the peer, to explain a
-  burst of a dozen of them 100 ms apart while connected (cause not yet known — next log).
-- **Harness debt paid (found by the CI session's first Linux run).** `PcVoiceAccess` and
-  `VirtualCablePackage` resolved `LocalApplicationData` themselves (cleanroomsim); they now take
-  `IDeviceRegistry.RootPath` at startup, so `--data-root` is honoured. `updatesim` check 7 had
-  `1.0.0-beta.1` hard-coded as "shipped"; it now reads `<Version>` from the csproj and only requires
-  `minimumSupported` not to exceed it. `QsConnection.SafeName` spells out Windows' invalid name
-  characters instead of trusting the host OS's list.
+**Tablet mode (protocol v22).** Windows 11 dropped the tablet-mode switch; its tablet layout follows
+the posture flag `HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl\ConvertibleSlateMode` (0 =
+slate, 1 = laptop), normally set by a 2-in-1's hinge sensor, and only takes effect on touch-capable
+convertibles. The owner's laptop reports no digitizer (`SM_DIGITIZER` 0) and already has the flag at 0.
+Offered a virtual phone-sized display or touch-friendly settings instead, the owner chose "try real
+tablet mode anyway". So the bubble's **Tablet mode** toggle writes the flag through one elevated
+`reg.exe` (a UAC prompt on the PC — on the secure desktop, so never in the mirror; the phone says so)
+and broadcasts the `ConvertibleSlateMode` setting change as the sensor driver does. On Windows 10 it
+uses the real per-user tablet mode (`ImmersiveShell\TabletMode` + `UserInteractionMode`), no prompt.
+`pc.tabletmode.state` carries `touch`, and with none the phone warns that Windows may not change.
+The state shown is what Windows has — on this laptop that starts as "on", since the flag is already 0.
+The button is always in the panel: the owner first tested against a still-running 1.0.0.2 desktop (v21)
+and saw no button at all, so with an older PC it now explains instead of hiding.
 
-Not verified on the owner's hardware yet: the encoder fallback needs a multi-adapter PC.
+**Revised the same day — Tablet mode is Linc's own touch-friendly mode.** Tested, the posture flag
+did what was feared: each switch's UAC prompt ran on the secure desktop, Desktop Duplication lost
+access (`DXGI_ERROR_ACCESS_LOST`) and the mirror restarted; the phone warned "no touch screen" every
+time; and the owner said the point was to make a *non*-touch PC finger-friendly. A Voice Access
+button that appeared a moment after each reconnect also shifted the panel, so a tap meant for Tablet
+mode hit Voice Access (the PC log shows no Linc-initiated start).
 
-## D-075: Background clipboard via the system's own denial log
+So Tablet mode no longer touches the posture flag (this PC was left at 1 — laptop — by the test;
+originally 0, which makes no difference on a PC without a digitizer). Instead, with no admin and no
+prompt, it raises the **mirrored display's scale two steps** (125 % → 175 % here, capped at the
+display's maximum) through DisplayConfig's per-source DPI get/set (types -3/-4, undocumented but
+what Settings → Display → Scale uses, applied live) and turns on **File Explorer touch spacing**
+(`UseCompactMode` 0). The originals go to `%LOCALAPPDATA%\Linc\tabletmode-restore.json` first and
+are put back when it is switched off, when the phone leaves PC Remote, on Exit, and on the next start
+after a crash. The panel's buttons are keyed and always present (Tablet mode first), so nothing
+moves under a finger; Voice Access explains itself when the PC can't do it. `pc.tabletmode.state` is
+now `{on, scale?, windows, error?}`.
+
+The icon's L was then shrunk further at the owner's request, twice ("still a lil big", "reduce the
+app icon l again"): now 15 x 28 dp on the 108 dp canvas, centred, rendered from the original art.
+
+**APK icon.** The adaptive foreground was a 432 px PNG in plain `drawable/` (read as mdpi, i.e. 432 dp)
+drawn `gravity="center"` into a 108 dp layer: ~4x too big and cropped. It is now in `drawable-nodpi`
+with `gravity="fill"` (the PNG is a full 108 dp canvas, the L inside the 66 dp safe zone), and doubles as
+the `<monochrome>` layer so Android 13+ themed icons tint it with the wallpaper.
+
+**Dynamic theme.** The app's Compose theme already used Material You, but the PC Remote bubble and
+panel were hard-coded to `darkColorScheme()`, and the window theme was always light
+(`Theme.Material.Light`), so dark mode flashed white and system dialogs came up light. The overlay now
+uses `dynamicDarkColorScheme` (falling back to Linc's dark ramp) and the window theme is
+`Theme.DeviceDefault.DayNight`.
+
+## D-075: Voice Access hears the phone; a Phone | PC mic choice; the phone as the PC's mic for any app
+
+**2026-10-10.** Owner, with VB-CABLE installed: "voice access still barely works … looks like it still
+uses pc mic … let me choose pc or phone mic, then also add mic tool in app and auto use phone mic when
+im in mirror when therz mic use required".
+
+**Why it heard the PC.** Windows Voice Access does not follow the default microphone. It keeps its own
+choice in `HKCU\Software\Microsoft\VoiceAccess\VoiceAccessMicrophoneId` (a device-interface path,
+`\\?\SWD#MMDEVAPI#{endpoint id}#{2eef81be-33fa-4800-9670-1cd474972c3f}`), which on the owner's PC named
+the laptop's "Microphone Array (AMD Audio Device)". D-070 switched only the default, so the phone's
+audio reached CABLE Output and Voice Access never listened to it. Now, with the phone chosen, Linc writes
+the cable's path there (the user's choice saved to `voiceaccess-restore-vamic.txt` first), restarts Voice
+Access if it was running (it reads the setting at start), and puts it back afterwards, on Exit and after
+a crash. `mirrorsim` "D-075 phone mic" rebuilds Voice Access's own stored value exactly from its endpoint.
+
+**Owners.** The phone's mic now has three users on the PC: Voice Access, the new **Microphone** tool
+(protocol v23 `pc.mic.set`: the phone as the PC's mic for every app), and **PC Remote's automatic mode**
+(v23 `pc.mic.auto`, sent when the picture comes up with "Phone" chosen, cleared when PC Remote closes).
+While any of them wants it, CABLE Output is the Windows default (so whatever an app opens is the phone).
+The audio itself streams while Voice Access or the tool wants it — or, in automatic mode, only while some
+other app is actually listening: Linc polls Windows' microphone consent store (the data behind the
+taskbar's mic icon) once a second, ignoring desktop apps whose exe is no longer running (a crashed app
+never writes its stop time), and pauses the stream 5 s after the last listener stops.
+
+**The choice** is one setting, "which microphone the PC hears": a connected Phone | PC button group in the
+PC Remote panel, the switch on the Voice Access card, and "In Mirror PC, use this phone's mic" on the
+Microphone card. Changing it switches a running Voice Access over at once.
+
+**Android.** Recording with the screen off or Linc in the background needs a `microphone`-typed
+foreground service on Android 14+, so the companion service now declares `connectedDevice|microphone`
+and adds the microphone type only while the phone's mic is streaming.
+
+## D-076: Mirror PC tries every hardware encoder; concurrent channel dial-backs all match
+
+**2026-10-10.** A friend's PC log (itel S685LN phone, Linc 1.0.0.2 desktop): Mirror PC never started —
+first `START_OF_STREAM failed 0xC00D3E85` (MF_E_SHUTDOWN), then `E_INVALIDARG` on every retry — and the
+wireless link dropped ~80 s after connecting, with 12 "Phone connected directly" lines in one second.
+
+**Encoder.** `PcVideoEncoder` activated only the *first* hardware H.264 MFT Windows listed and, if its
+setup threw, never shut it down. On a hybrid-graphics PC the first encoder can sit on the other GPU
+from the one whose D3D device captures the screen; handed that device it fails, and the leaked
+half-built encoder keeps the hardware session, so retries fail too. Now every hardware encoder is
+tried, those whose `MFT_ENUM_ADAPTER_LUID` matches the capture device's adapter first, then those
+that don't say, then the rest; a failed one is ended (`END_STREAMING`, `IMFShutdown`,
+`IMFActivate.ShutdownObject`) and released before the next; all failing gives one message naming
+each encoder and its error. The log names the encoder used and any skipped. Checked here
+(mirrorsim encoder scenarios, AMD) for no regression; the hybrid fallback itself is untested here.
+**Copy log** on the PC now lists the GPUs (with LUIDs and display counts) and the H.264 encoders.
+
+**Dial-backs.** `TlsTransportService.AwaitChannelAsync` kept one waiter per (channel, session) and
+overwrote it on every call. Opening the bulk channel for many app icons at once (54 new apps on the
+friend's phone) left one waiter; the other dial-backs found nothing, were read as new control
+connections (the 12 log lines), dropped by the supervisor, and their fetches waited out 8 s each. Now
+each key holds a FIFO queue of waiters and every dial-back gets the oldest one still waiting.
+Build-checked only (no harness compiles the TLS transport).
+
+The ~80 s drop itself is not explained by the PC log; the phone's Copy log (D-073: exit reasons,
+battery exemption, Doze, Wi-Fi events) is what can.
+
+## D-077: NV12 input for encoders that refuse ARGB32; the capture is released on a failed start; the phone insists on staying alive
+
+**2026-10-10.** The friend's logs on 1.0.0.7 (PC: Intel UHD Graphics, two Intel Quick Sync H.264 MFTs,
+neither reporting an adapter LUID; phone: itel S685LN, Android 15).
+
+**Mirror PC.** Both Quick Sync encoders failed identically at `START_OF_STREAM` with MF_E_SHUTDOWN,
+so D-076's ordering was not the issue: the encoder shut itself down during setup. The capture device
+already has `VideoSupport`; the remaining difference from AMD is the input format — Linc fed BGRA as
+ARGB32, which AMD's encoder takes and Intel's apparently does not. Now every encoder is offered
+ARGB32 first and then **NV12**, converted from the captured BGRA on the GPU by the D3D11 video
+processor (`PcNv12Converter`, a three-texture ring like the capture's). The failure message also
+drains the encoder's event queue and reports the status of its `MEError`, so if Intel still refuses,
+the next log says why. `mirrorsim` "D-077 NV12 input" forces the NV12 path on this PC's AMD encoder:
+decodable stream, 413 KB vs 427 KB for the direct path on the same picture. Not run on Intel here.
+
+The `E_INVALIDARG` on every retry: `PcMirrorSource` built the screen capture, then the encoder, and
+when the encoder threw it never disposed the capture — whose Desktop Duplication then blocked every
+later attempt. The capture is now disposed when the start fails.
+
+**The drops.** The phone log shows the direct link aborted 46–84 s after each connect with
+`SocketException: Software caused connection abort` (ECONNABORTED: Android destroying the app's
+sockets, as it does to an app cut off in the background) and `Battery optimisation exempt: false`.
+Home now shows a "Linc keeps losing the PC?" card until the exemption is granted, with **Allow**
+(Android's prompt) and, on phones whose maker adds its own manager (itel/Tecno/Infinix, Xiaomi,
+Oppo/Realme/OnePlus, Vivo), **Auto-start** opening that screen (falls back to app details). An
+ECONNABORTED end is followed in the log by the plain-language reason. And a direct dial the PC turns
+away at once (it was already linked over ADB) now counts as a miss, so the phone backs off to 30 s
+instead of redialling every 3 s.
+
+## D-078: First setup, adding and removing phones — four bugs from one setup log
+
+**2026-10-10.** Owner: "fix what happens when i remove device or try to add another or first set up
+… it breaks, struggles to connect". A friend's first setup (21:28–21:44) showed each of these:
+
+1. **Linc's ADB service died and was never restarted.** `AdbServerHost.EnsureRunningAsync` cached
+   `_started = true` after the first start, so once the server on 5038 was gone every pairing and
+   connect went to a dead port ("actively refused 127.0.0.1:5038", a dozen times). It now asks the
+   server whether it is running (`GetStatusAsync`) and starts it again if not; a failed pairing call
+   restarts it and retries once, since the code is still unused.
+2. **Wireless links were taken for USB cables.** `ConnectionManager` called any serial without a
+   colon USB, and `UsbWatcherService` any serial that wasn't IPv4 `host:port`, so the mDNS name wireless
+   pairing produces (`adb-…._adb-tls-connect._tcp`) and IPv6 addresses (`[2605:…]:33705`) were
+   "USB" — the link was labelled USB, and the USB watcher declared the "cable" pulled when the serial
+   changed. One classifier, `AdbSerial.IsNetwork`, is used by both (mirrorsim "D-078 adb serials",
+   with the exact serials from the log).
+3. **Linc cut its own fresh link.** The fixed-port promotion (`adb tcpip 5555`, M13c) restarts adbd,
+   and it ran right after a wireless link came up — under the companion link riding on it, which went
+   "device offline" 10 s after "Onboarding complete". It is skipped while the live link is
+   ADB-wireless.
+4. **One phone, four cached phones.** Per-phone caches (Home photos/messages/calls/media, the app
+   catalog, Sync) were keyed by the adb serial of the route — USB serial, IPv4, IPv6, mDNS — while the
+   registry and the cache *load* used the hardware serial. Each new route looked like a new phone and
+   re-downloaded every app icon (the 64-icon burst that tripped D-076's dial-back bug). They now use
+   `ConnectedDevice.CacheKey`, the hardware serial.
+
+## D-079: One flow for adding, re-adding and closing phones
+
+**2026-10-11.** Owner: "the ui is broken when i x a device, disconnect it and add a no devices and
+select old pixel the ui isnt flowing … let user choose connection type and allow skip if already
+paired then screen that checks if connected, know which is new, if its readding old device say device
+already added etc then allow continue … figure out a proper logic sequence for this".
+
+**What was broken.** Closing a tab only hid it: the closed phone stayed the *active* phone and stayed
+connected, so with the last tab closed the pages showed a phone the strip no longer had. A closed
+phone was also re-adopted on its own the next time it was plugged in or dialled in directly. The
+wizard was Intro → "turn on debugging" → detect/QR → install → done, with no way to bring back a
+known phone, skip pairing, or tell a new phone from one already added; adding a phone while another
+was connected stalled behind the confirmation card.
+
+**The sequence now.**
+- **Tab X** asks first: *Disconnect and close* (stays paired), *Remove completely* (forget), *Cancel*.
+  Closing the active tab moves to another open one; closing the last clears the active phone
+  (`IDeviceRegistry.ClearActiveDevice`) so nothing is connected and the title bar offers "Add a phone".
+- **Closed stays closed.** The supervisor doesn't auto-adopt a hidden phone over USB or a direct
+  dial-in unless the add flow is expecting a phone; forgetting the active phone only falls back to an
+  open tab.
+- **Add a phone** (`OnboardingFlow`, D-079 steps): **Choose** — "Phones you've used before" (pick to
+  reconnect, no pairing; un-hides and activates it) and "A new phone": USB cable, Wi-Fi (QR or code),
+  or "It's already set up — just connect" (skips pairing). If a phone is connected it says that
+  connecting another disconnects it. → **Prepare USB / Prepare Wi-Fi** (USB advances by itself when
+  the phone appears; Wi-Fi when pairing succeeds) → **Checking** (live status: looking / connecting —
+  setting up / …; after 25 s, route-specific hints and "Try another way") → **Done**: "Added X" or
+  "X was already added — connected again" (hardware serial against the phones known when the flow
+  opened), then Continue. Back from any screen returns to Choose.
+- **New phones win.** Adding a *new* phone first releases the connected one and arms the supervisor in
+  a new-phone-only mode (`ExpectNextDevice(newPhoneOnly: true)`): known phones aren't adopted over
+  USB, Wi-Fi discovery or direct dial-in until it connects, so a nearby known phone can't be the one
+  "added". Leaving the flow before Done calls `StopExpecting()`, back to normal reconnecting.
+
+`tools/onboardsim` covers every transition, the skips, Back, out-of-order events and the new-vs-
+already-added rule (all green). The UI itself is a hands-on owner check.
+
+## D-080: The Remote trackpad works without Mirror PC, and its gestures are a tested engine
+
+**2026-10-11.** Owner: the Tools trackpad "doesn't work". Three bugs, all confirmed in code:
+
+1. **The PC dropped the input.** `PcMirrorService.RouteInput` began `if (_activeDisplay is null)
+   return;`, so every `pc.input` from the phone without a mirror session — trackpad moves, taps,
+   scrolls, the keyboard, presentation keys — was thrown away. Now the target is
+   `PcInputService.TargetFor`: the mirrored display while mirroring, else the primary display, else
+   the virtual desktop. Relative moves, clicks, wheel and keys never needed a target. mirrorsim
+   "1.0.0.11 phone input" checks the choice (it never moves the real cursor).
+2. **Two-finger scroll could never fire.** Each pointer event's few pixels were divided by 24 and
+   rounded — always 0 notches. Scroll now accumulates in wheel units with remainders kept, sent as
+   v20 `precise` (old PCs get whole notches, the remainder kept).
+3. **Taps didn't click.** Any 1 px of jitter set `moved`, cancelling the click. Movement under the
+   system touch slop is now jitter.
+
+The gesture rules are a pure engine (`TrackpadGestures`, 14 unit tests) fed by a Compose modifier
+(`Modifier.trackpad`): fractional moves carried between events; mild acceleration (2.5 PC px per dp
+slow, rising to 8 by ~1.5 dp/ms); tap = left click; two-finger tap = right click; tap then touch
+and drag = left-button drag; two quick taps = double click. **Trade-off:** a single tap's click waits
+220 ms for a possible second touch, as Windows precision touchpads do. D-067's argument against
+tap-then-drag applies to Mirror PC's touch surface (`PointerGestures`, unchanged), where a laggy
+click is felt against the picture; on a blind trackpad the drag gesture is worth the wait. Every
+pointer change is consumed, so a scrolling parent can't steal a drag.
+
+## D-081: One connection owner, make-before-break handoffs, and every signal through one nudge
+
+**2026-10-11.** Owner: make the connection logic "just work". Full write-up, inventory, timers,
+before-numbers and the test script: `Vibe/agent/design/connection.md`.
+
+**Found** (PC logs, 25 Sep – 11 Oct): the hotspot standby redialled a dead address six times per
+drop, each `adb connect` hanging 20 s — ~2.5 minutes and 12 lines per drop, ending in an `adb.arm`
+to a phone that wasn't there; every switch was break-before-make (`ConnectionManager` called
+`Disconnect()` first), so plugging a cable in while on Wi-Fi was a visible drop; a pulled cable was
+always a drop (cable out → connected again: median 10 s, p90 115 s); the phone logged Wi-Fi joined
+and screen on but never acted on them; `PowerModeChanged` never fired once (this PC is Modern
+Standby); backoff never reset on a real signal and never forgot an address; four half-overlapping
+nudge paths; wireless ADB and Direct TLS swapping places for no gain; log floods of 80–229 identical
+lines a minute.
+
+**Decided:**
+- `ConnectionSupervisor` stays the only owner of the live transport; every rule moves into the pure
+  `LinkPolicy` (`tools/linksim`: 55 checks, 6 of them visible-behaviour scenarios). Ranking is
+  **USB > Wi-Fi > nothing**; wireless ADB and Direct TLS rank the same and never swap.
+- **Make-before-break.** `ConnectionManager` handshakes the new link beside the old and swaps them
+  (`Install`); a failed upgrade changes nothing. The phone keeps every live control connection,
+  sends to the newest (as it already did) and now stays `Connected` while any is alive.
+- **Cable out with Wi-Fi possible** = a 12 s handoff window in which State stays Connected while
+  wireless ADB is adopted or the phone — which now pokes its own dialler when its link ends —
+  dials in. Nothing lands: an honest drop.
+- **Backoff** 1, 2, 5, 10, 20, 30 s per endpoint; strong signals (cable, network, resume, BLE,
+  phone dialling in, the user) cut every wait; 5 failures in a row forget the endpoint
+  (`LastHostPort` cleared). The hotspot standby retires after 2 misses when no phone is linked
+  (6 otherwise) and its `adb connect` is limited to 6 s.
+- **One nudge path** `Nudge(LinkSignal, detail)`. Resume is also detected from a stalled 5 s clock
+  tick (works on Modern Standby), and re-publishes the `_linc._tcp` advert.
+- **Phone:** pokes on Wi-Fi joined, screen on, Linc opened and link ended (NFC already did); after a
+  poke it dials at once, then at 1 s and 2 s; dials the address that worked last (remembered,
+  forgotten after 5 misses) before mDNS; races TCP probes for control as it did for channels.
+  `ReconnectPolicy`, 5 unit tests.
+- **Logs:** `LogService` writes any one message (numbers normalised) at most 3 times a minute,
+  then notes how many it held back.
+
+**Protocol unchanged** (v23). **Verified here:** both apps build; 212 Android unit tests;
+linksim, presencesim, hotspotsim (2 pre-existing onboarding-text failures, unrelated, fixed in
+Part 5), onboardsim. **Not verified here:** any of it on the owner's phone and network — the
+before/after numbers for the §2.8 targets need the connection test script and `linksim log`.
+
+## D-082: Linc for Android is a Material 3 Expressive app with four tabs
+
+**2026-10-11.** Owner: "this is ugly — make it nice … the Tools page needs good UI work". Spec:
+`Vibe/agent/design/android-m3e.md` (written first; the code follows it).
+
+- **IA:** bottom navigation **Home · Remote · Clipboard · Share**; Settings is the gear in every top
+  bar (pushed, predictive back), Logs under Settings → Help & diagnostics. The Status tab became the
+  **Connection sheet** (from Home's hero). Tools became **Remote**; `ToolsActivity` stays as a host.
+  Mirror PC is Home's extended FAB and Remote's toolbar FAB; `MirrorActivity` is untouched.
+- **Tokens:** `MaterialExpressiveTheme` + `MotionScheme.expressive()` everywhere; dynamic colour on
+  Android 12+, otherwise a tonal-spot scheme generated offline from seed **#4F5BD5** (`SeedScheme.kt`;
+  tone = CIELAB L*, an approximation of HCT — no colour library added). Large flexible top bars,
+  28 dp heroes, 24/4 dp grouped segments, Expressive button shapes, `MaterialShapes` as clips only.
+- **Kit (`ui/kit/`):** `LincScaffold`, `SectionHeader`, `SettingsGroup/Row`, `HeroCard`, `ToolTile`,
+  `StatusChip`, `BlockedState`, `EmptyState`, `ConnectedChoice`, `Loading`, `ProgressLine` (wavy),
+  `HelperText`, snackbars via `LocalSnackbar`. Everything alpha18 lacked: nothing — `ButtonGroup`'s
+  composable was not used for onboarding's Back/Skip/Next (a plain row of Expressive buttons).
+- **Remote:** full-height trackpad (dot grid, right-edge scroll strip, first-use hints that fade after
+  three gestures), Left | Right hold buttons, `HorizontalFloatingToolbar` of sheets — Keyboard (sticky
+  modifiers, Esc/Tab/arrows, dictation), Media (volume slider), Present, Voice, Power (confirms) —
+  disabled-not-hidden per gate (`RemoteScreenSourceTest` replaces `ToolsScreenSourceTest`).
+- **Icons:** 81 more, inlined from Android Studio's bundled Material Icons (Round) — offline, no
+  dependency; the icon test checks every `LincSymbols` getter.
+- **Found and fixed:** the phone **never checked for updates** — every piece existed but nothing
+  fetched the manifest. `UpdateCheck` now does (on open, ≤ every 6 h, or Settings → Check now);
+  Home shows the card with a wavy % download and SHA-256 check. The desktop's hello now carries the
+  PC's name (optional field), shown on Home and the Connection sheet.
+
+**Not verified on a phone:** layouts were checked only by compiling and through `@Preview`s; light,
+dark, 360 dp, 200 % font and blocked/empty previews exist for every top-level screen.
+
+## D-083: Clipboard and Share pages on both apps; protocol v24
+
+**2026-10-11.** Owner asked for a LARGE clipboard history and one way to share.
+
+- **Clipboard, both apps:** a Send-text composer (puts the text on the *other* device's clipboard
+  through the existing clipboard path), **Sync now**, search, history grouped by day with pinned
+  first, Copy here / Send / Pin / Delete, Clear (confirm). **500 items** by default (100/500/2,000).
+  Phone: a JSON file in app storage (`ClipHistory`, 9 unit tests). PC: LincStore schema **v2**
+  `clipboard` table per phone (`CacheKey`), storesim section 13.
+- **Privacy:** Android 13+'s `EXTRA_IS_SENSITIVE` clips and Windows clips marked
+  `ExcludeClipboardContentFromMonitorProcessing` / `CanIncludeInClipboardHistory = 0` are never sent
+  or saved. "Keep history" off = sync only. Text only; images are out of scope.
+- **Protocol v24:** `clipboard.get` (either direction) for Sync now — the peer answers with its
+  normal clipboard push if it can read its clipboard (the phone only while Linc is open).
+- **Share:** both apps say which way they send — "Sending over Linc" or "Linc isn't connected —
+  sending with Quick Share" — and pick by themselves. Phone: Send files / photos / text-or-link
+  tiles, Received from PC (survives restarts with All files access), transfers with progress and
+  Retry, an All-files-access row instead of the silent failure. PC: send by picker, drop zone or
+  text box (links open on the phone), transfers with progress, received files, Quick Share as one
+  section of the same page; tray menu and icon state; Explorer "Send to phone (Linc)".
+- **Direct Share:** the PC is published as a long-lived share shortcut (named after the PC once it
+  sends its name) whose shares go to the same "Linc — send to PC" target, which falls back to Quick
+  Share when Linc isn't connected.
+
+## D-084: "Show explanations" — one switch per app
+
+**2026-10-11.** Settings → Appearance, default on. Off hides helper lines only; titles, values,
+warnings, errors and blocked reasons always show. Phone: `Explanations` (prefs flow) →
+`LocalShowExplanations` → `HelperText` (3 unit tests). PC: `IDeviceRegistry.ShowExplanations` +
+`Explain.IsHelp` attached property on explanatory TextBlocks (Clipboard, Share, Settings pages so
+far). Per app, no sync.
+
+## D-085: An Inno Setup installer, a self-update that works, and one release script
+
+**2026-10-11.** The desktop shipped as a 459-file, ~434 MB self-contained folder in a ~173 MB zip.
+
+- **`Linc-Setup-<ver>.exe` (Inno Setup 6, not MSIX):** per-user to `%LOCALAPPDATA%\Programs\Linc`
+  (fixed — the uninstaller removes that folder), no UAC; Start menu, optional desktop shortcut and
+  "Start with Windows" (the same Run entry Linc's setting writes; the app adopts it); licence and
+  `THIRD-PARTY-NOTICES.txt`; "Launch Linc". Stable AppId; an upgrade first asks a running 1.0.0.11+
+  Linc to exit through its own Exit (`--quit`, over the Explorer hand-off pipe), Restart Manager
+  (`CloseApplications=force`) as the fallback. Uninstall runs `--quit` then `--restore-and-exit`
+  (microphones, display scale, Explorer verbs, autostart) and asks whether to delete
+  `%LOCALAPPDATA%\Linc`; VB-CABLE stays.
+- **Self-update found broken:** 1.0.0.10's updater saved every download as `Linc-<ver>.tmp` and
+  shell-opened it — Windows can run neither a zip nor an exe named `.tmp`. Now the file keeps its
+  extension; a setup exe runs `/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS
+  /NORESTART` and Linc is started again (`[Run] … Check: WizardSilent`); a zip is shown in Explorer.
+  **Transition:** `update.json` `desktop.url` now points at the setup exe. Installs from 1.0.0.10 or
+  earlier still can't apply it themselves; the release notes and README tell them to run the setup
+  once. The portable zip stays as an asset.
+- **`Linc\tools\release.ps1`** stamps versions, builds/tests both apps and the pure harnesses, builds
+  installer + zip, writes `CHECKSUMS.txt`, `update.json` (no BOM — the phone's parser would choke on
+  one) and the notes header, fills "Linc prod" (rename-probe before deleting), and only with
+  `-Publish` pushes, creates the pre-release, uploads small assets first with retries, HEAD-checks
+  every URL and merges to main by PR.
+- No trimming/AOT and no size work beyond reporting sizes (the brief allowed only cleanroomsim-proven
+  wins; none were attempted).
+
+## D-086: Code signing — stays unsigned (owner's choice); wired so a certificate can drop in later
+
+**2026-10-11.** Options, costs and eligibility: `Vibe/agent/design/code-signing.md`. Recommended:
+Certum Open Source Code Signing (cloud SimplySign) — cheap, open to individuals outside the US, and
+signs on the owner's PC; SignPath Foundation (free) needs builds from CI first; Azure Trusted Signing
+is likely unavailable to an individual in Zimbabwe; commercial OV/EV is the expensive fallback.
+`release.ps1` signs the exe, installer and uninstaller when `LINC_SIGN_THUMBPRINT` (or
+`LINC_SIGN_PFX` + password) is set. SmartScreen reputation still builds over time.
+
+**Decided 2026-10-11 by the owner: no paid certificate.** Linc ships unsigned; users pass SmartScreen
+with More info → Run anyway (README). Free routes to revisit later: the Microsoft Store (free
+individual account, Microsoft signs MSIX — needs Store packaging) or SignPath Foundation (needs a CI
+build). Certum stays documented as the cheapest paid option.
+
+## D-087: Mirror PC never just refuses — basic settings, then Windows' software encoder, and a watchdog
+
+**2026-10-11.** The owner's second PC (Intel HD Graphics 620, Quick Sync H.264 MFT, 1.0.0.11): every
+Mirror PC start failed with `START_OF_STREAM failed 0xC00D3E85` (MF_E_SHUTDOWN) for ARGB32 and for
+D-077's NV12 alike, and the encoder queued no MEError. Two Intel PCs now fail the same way, which
+points at Quick Sync's own parameter check rejecting something in the tuned setup, not the input.
+
+**Encoder ladder (`PcVideoEncoder`).** Per hardware encoder: ARGB32 tuned, NV12 tuned, then **NV12
+with basic settings** (media types only — no MF_LOW_LATENCY, no ICodecAPI rate control/GOP/QP). If
+every hardware encoder refuses, **Windows' own software H.264 encoder** (CLSID_MSH264EncoderMFT, a
+synchronous MFT, Baseline profile, fastest speed) takes the GPU-converted NV12 through the DXGI
+buffer's own copy to system memory. This reverses D-039's "hardware only": the objection was an
+untestable path, and `mirrorsim` now forces it on any PC. Measured here (Ryzen, 1080p): 26 fps,
+decodes with ffmpeg to the correct picture, about 3x the bytes of the AMD encoder at the same target.
+The synchronous encoder is driven through the same pump/feeder threads: `Submit` encodes in place and
+posts the NeedInput/HaveOutput events the async MFT would have.
+
+**Watchdog (`PcMirrorSource`).** "It initialised" is not proof. The feeder swaps a hardware encoder
+for the software one in place — same channel, the new encoder opens with SPS/PPS + IDR — when its
+pump fails, it hasn't asked for a frame in 5 s, or a second's worth of submitted frames produced
+nothing. A swapped-out encoder is distrusted for the rest of the run. `mirrorsim` "D-087 watchdog"
+kills the AMD encoder at frame 20 and checks the stream carries on.
+
+**Settings → Mirror PC → Use software encoding** (off by default) skips the hardware encoders.
+
+**Capture.** The D3D device is now created on the adapter that owns the chosen display (numbered as
+`Enumerate` numbers them for the phone), not the default adapter — capture, NV12 conversion and
+encoding stay on one GPU on hybrid/multi-card PCs. `DXGI_ERROR_ACCESS_LOST` (UAC, lock screen, mode
+change) re-creates the duplication instead of ending capture; the last frame is resent meanwhile. A
+resolution change ends the stream with a plain message (the encoder is sized at start).
+The Copy log GPU lines include the driver version.
+
+Not done (noted for later): Windows Graphics Capture / GDI capture fallbacks, a JPEG-tile codec for
+phones or PCs with no usable H.264, even-dimension cropping for odd-sized displays, and caching the
+winning encoder across runs. Untested here on Intel — the owner's next log says which rung worked.
+
+## D-088: The phone knows several PCs; you pick one; one PC at a time
+
+**2026-10-11.** Owner: "save connection to diff pcs so i can select pc to connect to and no conflict
+with other pc". Until now the phone kept one pinned PC certificate: pairing with a second PC
+overwrote the first, and both PCs then grabbed the phone over ADB.
+
+- **Store.** `TransportStore` keeps a list of PCs (id, name, certificate, ports, last good address,
+  last seen) and the picked PC (none = "Any of my PCs"). A PC's id is the first 16 hex digits of the
+  SHA-256 of its certificate; the PC sends it as `pcId` in `hello` and `id` in its mDNS TXT. The old
+  single-PC keys migrate into the list on first read.
+- **Gate (`PcGate`).** Every control link asks after `hello`: while one PC is connected another is
+  refused with error `busy` and a plain message naming the PC that has the phone; the same PC is
+  always admitted (D-081 handoff). With a PC picked, other known PCs are refused even when the phone
+  is free; a never-paired PC is admitted (setting up on a new PC is a choice) and becomes the picked
+  PC once it has paired. Picking a PC on the phone drops any other PC's link at once.
+- **Dialling.** `PresenceClient` dials the picked PC, or every known PC on automatic, each address
+  only with the certificate of a PC that could be there; channel dial-backs go to the connected PC.
+- **UI.** Connection sheet → PCs: "Any of my PCs" or a PC (radio), last connected, Forget.
+- **Desktop.** `PhoneBusyException` for `busy`: logged as-is, and the ADB path no longer tries to
+  restart a companion that is running fine. Older PCs (no `pcId`) are matched by name.
+
+Build-checked and unit tests pass; the two-PC behaviour needs both PCs (owner's hand test).
+
+## D-089: Setup can skip installing the companion
+
+**2026-10-11.** Owner: "in setup add skip to installing linc companion app maybe i already have it".
+Add a phone → Choose has "Linc is already on my phone — don't install it". While the wizard is open
+it stops `PhoneSetupService` pushing the APK (the Checking text changes to match); if the app turns
+out not to be there, the log says to install and open it. The box resets when the wizard closes. The
+install was already skipped when the package is present; this covers a phone whose copy came from
+elsewhere and the PC with no bundled APK (the "Heads up" banner hides when it's ticked).
+
+## D-090: Linc closed itself on every disconnect — the tray icon was disposed under it
+
+**2026-10-11.** Owner: the PC app "crashed after a while of disconnect … just closed even on this
+pc". Event Log: `Linc.Desktop.exe` 1.0.0.11, exception 0xC000027B (stowed exception) in
+CoreMessagingXP/combase, at 16:35:06 and 17:07:38 — each within a second of the log's "Connection
+dropped; … looking for the phone now", once a Wi-Fi drop and once a cable pull. Nothing reached
+Linc's own crash log: an exception inside a `DispatcherQueue.TryEnqueue` callback is fail-fast in
+WinUI, not `Application.UnhandledException`.
+
+Cause: 1.0.0.11's tray icon shows connected/disconnected by setting `TaskbarIcon.Icon` to one of
+two cached `System.Drawing.Icon`s. H.NotifyIcon 2.2.0's `TaskbarIcon.OnIconChanged` **disposes the
+previous Icon** (confirmed by scanning its IL). So the first connect destroyed the cached
+disconnected icon, and the next drop set a disposed Icon → exception in the dispatcher callback →
+process killed. Fix: `MainWindow.SetTrayIcon` hands the tray a `Clone()` each time, inside a
+try/catch that logs instead of crashing. Build-checked; the owner's disconnect test is the proof.
+
+## D-091: Mirror PC stuck after a stop; Start Linc on the phone doing nothing after Stop
+
+**2026-10-11.** Owner, on 1.0.0.13 with a 4K display: "everything was working then boom" — after a
+stop at 20:47:32 the PC log only says "PC mirror: already starting, ignoring the phone's retry",
+forever; and on the phone "Start Linc won't work after I've stopped it".
+
+**Mirror.** A dump of the running app showed the stop parked in `PcVideoEncoder.Dispose` →
+`ProcessMessage(END_STREAMING)` on AMD's async encoder, with the pump and feeder threads already gone:
+on cancellation the pump leaves its loop at the next event, so an output nobody collected was
+pending, and at 3840x2160 the driver never returned. The start flag and gate stayed held, so every
+later start was ignored. Ending it with `IMFShutdown` alone was tried and hung the same way (a
+mirrorsim dump), which pinned the real cause: the pump. It now runs until the encoder is shut down,
+still collecting output while stopping (just not passing it on). That was not enough either: once
+IMFShutdown begins, GetEvent fails and the pump leaves, but AMD's Shutdown still waited for a held
+frame. So hardware encoders are now FLUSHED (discarding held frames) and then shut down — no
+END_STREAMING (kept only for the synchronous software encoder). Belt and braces: the encoder dispose
+in `PcMirrorSource` (stop and watchdog swap) is abandoned after 3 s, and `PcMirrorService` gives the
+whole source 5 s, each logging and carrying on. mirrorsim "D-091": ten start/stop cycles at
+3840x2160 on AMD, run three times — slowest stop 82 ms, nothing abandoned. The same flush-then-shutdown
+teardown is used when a hardware encoder fails during setup (the Intel path), and building the source
+is bounded at 30 s, so a driver that hangs in setup cannot hold "already starting" either. All of it
+is vendor-neutral; untested on Intel here. The other mirrorsim failures at 4K (idle-screen bit rate,
+I-beam cursor image, the rate-change pair) fail identically on the code before D-091.
+
+**Phone.** `SocketServer.stop()` closed the `LocalServerSocket`, but on Android that does not wake a
+thread blocked in `accept()`, and the abstract socket name stays bound until it does — so the next
+service's bind failed once, it reported Stopped, and Start looked dead. Now stop() calls
+`Os.shutdown(fd, SHUT_RDWR)` before close (accept returns at once), start() retries the bind for
+3 s, and stopping the service drops every live PC link (`PcGate.dropAll`).
+
+## D-092: Background clipboard via the system's own denial log
 
 **2026-10-17.** Owner: copy on one device, find it on the other, without opening Linc.
 
@@ -1049,7 +1527,7 @@ even if no new report arrives; Home gains a "Your PC" card (battery, network, vo
 brightness sliders); the onboarding pairing step shows live checks; the PC Remote bubble menu is
 now "Tools".
 
-## D-076: Phone as PC speaker moves the sound, it doesn't copy it
+## D-093: Phone as PC speaker moves the sound, it doesn't copy it
 
 **2026-10-17.** Owner: the phone as the PC's speaker, with both devices' audio "at the same time".
 
@@ -1060,9 +1538,9 @@ outputs, speaker mode leaves one. It makes VB-CABLE's playback side the default 
 Voice Access already installs, D-071); apps play into it, the speakers go quiet, and loopback
 (which always follows the default output) sends it to the phone. One output, nothing to sync. The
 user's output is restored on stop, phone loss, exit, or the next start after a crash (a note file,
-the same pattern as D-071's microphone). Protocol v22.
+the same pattern as D-071's microphone). Protocol v25 (v22–v24 were taken by tablet mode, the mic tool and the clipboard pages).
 
-## D-077: Recognising a phone by any signal, including its Wi-Fi address
+## D-094: Recognising a phone by any signal, including its Wi-Fi address
 
 **2026-10-17.** Owner: "fingerprint" phone and PC so they find each other by every means available.
 
@@ -1085,4 +1563,28 @@ Not built, and why: **PC as phone camera** and **phone as PC camera**. Windows o
 that a media-source driver or a `MFCreateVirtualCamera` COM source (Windows 11) provides, so either
 direction needs native code registered on the PC. Android cannot present a virtual camera to other
 apps without root. Both need their own task, not a line in this one.
+
+## D-095: Log honesty, store-root notes, harness fixes; the encoder fix was already in
+
+**2026-10-17/18.** From the same 1.0.0.7 field log, and the first Windows CI runs. The log's mirror
+failure (0xC00D3E85, then E_INVALIDARG) was fixed independently and more completely on the release
+branch (D-076, D-077, D-087); when the two branches met, that version was kept. What remains of this
+session's change:
+
+- **Log honesty.** A drop with no failed probe no longer reports "Detection took -1 ms"; an empty
+  WinRT Bluetooth error shows its HRESULT; "Phone connected directly" names the peer, to explain a
+  burst of a dozen of them 100 ms apart while connected (cause not yet known — next log).
+- **Harness debt paid (found by the CI session's first Linux run).** `PcVoiceAccess`, `VirtualCablePackage`
+  and, after the merge, `PcTabletMode` and Voice Access's own mic note resolved `LocalApplicationData` themselves (cleanroomsim); they now take
+  `IDeviceRegistry.RootPath` at startup, so `--data-root` is honoured. `updatesim` check 7 had
+  `1.0.0-beta.1` hard-coded as "shipped"; it now reads `<Version>` from the csproj and only requires
+  `minimumSupported` not to exceed it. `QsConnection.SafeName` spells out Windows' invalid name
+  characters instead of trusting the host OS's list.
+
+- `applaunchsim`: check 12 waited for the count but not the error (the service raises it after
+  disposing), check 13 gave Character Map only 3 s on cold CI VMs (now 15 s), and its cleanup
+  exposed a real bug: `AppLaunchService.CloseAllAsync` let a `Win32Exception` (E_HANDLE) from a
+  window that had just exited abort the loop, leaving later windows open on disconnect.
+- `Beta.pubxml` finds the VC++ redist from `$(VsInstallRoot)` and VS's default redist version,
+  not a fixed VS 18 Community path, so the publish works on any edition and with several toolsets.
 

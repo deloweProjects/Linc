@@ -45,8 +45,20 @@ public sealed class PcVoiceAccess : IDisposable
     private Thread? _reader;
     private Thread? _renderer;
     private CancellationTokenSource? _stop;
-    private string? _restoreCaptureId;
     private readonly Queue<float> _ring = new();
+
+    /// <summary>
+    /// Who wants the phone as this PC's microphone (D-075). The phone mic streams while Voice
+    /// Access or the Microphone tool wants it, or — in PC Remote with "Phone" chosen — while some
+    /// PC app is actually listening. The cable is the Windows default while anyone wants it.
+    /// </summary>
+    [Flags]
+    private enum Owner { None = 0, Voice = 1, Tool = 2, Auto = 4 }
+    private Owner _owners;
+    private bool _appListening;
+    private System.Threading.Timer? _listenWatch;
+    private int _quietTicks;
+    private readonly SemaphoreSlim _apply = new(1, 1);
 
     public PcVoiceAccess(IConnectionManager connection, ILogService log)
     {
@@ -70,16 +82,17 @@ public sealed class PcVoiceAccess : IDisposable
     /// <summary>Handle the phone's <c>pc.voiceaccess.set</c>; always answers with the resulting state.</summary>
     public async Task SetAsync(bool on, bool phoneMic, bool installCable = false)
     {
-        string mic = "pc";
-        bool cable = false;
+        // While the microphone is being set up, nothing else happens: a second tap used to start
+        // Voice Access on the PC's own mic halfway through the download.
+        if (CableSetup.IsBusy) { await SendStateAsync(); return; }
         string? error = null;
-        string? setup = null;
         try
         {
             if (!on)
             {
-                StopMic();
+                await ReleaseAsync(Owner.Voice);
                 StopVoiceAccess();
+                RestoreVoiceAccessMic(_log);
             }
             else if (!Available)
             {
@@ -87,27 +100,23 @@ public sealed class PcVoiceAccess : IDisposable
             }
             else
             {
-                var pair = FindCable();
-                if (phoneMic && pair is null && installCable)
+                bool usePhone = phoneMic && await EnsureCableAsync(installCable, e => error = e);
+                bool changed;
+                if (usePhone)
                 {
-                    // The user agreed on the phone: set the cable up now (D-071). The phone
-                    // shows "setting up the microphone…" while Windows asks on the PC.
-                    await SendStateAsync("pc", cable: false, setup: "installing");
-                    var result = await CableSetup.InstallAsync();
-                    _setupState = result.Ok ? null : "failed";
-                    if (result.Ok) pair = FindCable();
-                    else error = result.Message;
+                    await AcquireAsync(Owner.Voice);
+                    // Voice Access does NOT follow the default microphone: it keeps its own choice
+                    // (VoiceAccessMicrophoneId), which pointed at the PC's mic — so the phone's audio
+                    // reached the cable and Voice Access never heard it (2026-10-10).
+                    changed = FindCable() is { } pair && PointVoiceAccessAt(Release(pair));
                 }
-                cable = pair is not null;
-                if (phoneMic && pair is { } p)
+                else
                 {
-                    await StartMicAsync(p.Render, p.CaptureId);
-                    mic = "phone";
+                    await ReleaseAsync(Owner.Voice);
+                    changed = RestoreVoiceAccessMic(_log);
                 }
-                else if (pair is { } unused)
-                {
-                    Marshal.ReleaseComObject(unused.Render);
-                }
+                // It reads its microphone when it starts, so a change means a restart.
+                if (changed && Running) StopVoiceAccess();
                 StartVoiceAccess();
             }
         }
@@ -116,22 +125,157 @@ public sealed class PcVoiceAccess : IDisposable
             error = ex.Message;
             _log.Log(LogLevel.Warn, $"Voice Access: {ex.Message}");
         }
-        await SendStateAsync(mic, cable, error, setup);
+        await SendStateAsync(error: error);
     }
 
-    public Task SendStateAsync(string? mic = null, bool? cable = null, string? error = null, string? setup = null)
+    /// <summary>The Microphone tool (<c>pc.mic.set</c>, v23): the phone as this PC's mic for any app.</summary>
+    public async Task SetToolAsync(bool on, bool installCable)
+    {
+        if (CableSetup.IsBusy) { await SendStateAsync(); return; }
+        string? error = null;
+        try
+        {
+            if (!on) await ReleaseAsync(Owner.Tool);
+            else if (await EnsureCableAsync(installCable, e => error = e)) await AcquireAsync(Owner.Tool);
+            else error ??= "This PC needs its virtual microphone set up first.";
+        }
+        catch (Exception ex) { error = ex.Message; _log.Log(LogLevel.Warn, $"Phone microphone: {ex.Message}"); }
+        await SendStateAsync(error: error);
+    }
+
+    /// <summary>
+    /// PC Remote with "Phone" chosen (<c>pc.mic.auto</c>, v23): the cable is the default for the
+    /// session, so whatever a PC app opens is the phone; the phone mic itself only streams while
+    /// some app is listening (Windows' own microphone-in-use records, polled once a second).
+    /// </summary>
+    public async Task SetAutoAsync(bool on, bool installCable = false)
+    {
+        if (CableSetup.IsBusy) { await SendStateAsync(); return; }
+        string? error = null;
+        try
+        {
+            if (on && await EnsureCableAsync(installCable, e => error = e))
+            {
+                await AcquireAsync(Owner.Auto);
+                _listenWatch ??= new System.Threading.Timer(_ => _ = WatchListenersAsync(), null, 1000, 1000);
+            }
+            else
+            {
+                _listenWatch?.Dispose();
+                _listenWatch = null;
+                _appListening = false;
+                await ReleaseAsync(Owner.Auto);
+            }
+        }
+        catch (Exception ex) { error = ex.Message; _log.Log(LogLevel.Warn, $"Phone microphone: {ex.Message}"); }
+        await SendStateAsync(error: error);
+    }
+
+    private async Task WatchListenersAsync()
+    {
+        bool listening = PcMicAudio.MicInUseByOtherApps();
+        if (listening) _quietTicks = 0;
+        else if (_appListening && ++_quietTicks < 5) return; // a short pause isn't the end of a call
+        if (listening == _appListening) return;
+        _appListening = listening;
+        _log.Log(LogLevel.Info, listening
+            ? "Phone microphone: a PC app started listening — streaming the phone's mic"
+            : "Phone microphone: nothing is listening any more — phone mic paused");
+        await ApplyAsync();
+        await SendStateAsync();
+    }
+
+    /// <summary>Make sure a cable exists, setting it up first if the user agreed. False if there is none.</summary>
+    private async Task<bool> EnsureCableAsync(bool install, Action<string?> onError)
+    {
+        if (CablePresent()) return true;
+        if (!install) return false;
+        // The user agreed on the phone: set the cable up now (D-071). The phone shows the
+        // download's progress, then what to click, while Windows asks on the PC.
+        _progress = 0;
+        await SendStateAsync(setup: "installing", progress: 0);
+        int lastSent = 0;
+        var progress = new Progress<int>(p =>
+        {
+            _progress = p;
+            if (p - lastSent < 5 && p < 100) return;
+            lastSent = p;
+            _ = SendStateAsync(setup: "installing", progress: p);
+        });
+        var result = await CableSetup.InstallAsync(progress);
+        _setupState = result.Ok ? null : "failed";
+        if (!result.Ok) onError(result.Message);
+        return result.Ok && CablePresent();
+    }
+
+    private async Task AcquireAsync(Owner owner) { lock (_gate) _owners |= owner; await ApplyAsync(); }
+    private async Task ReleaseAsync(Owner owner) { lock (_gate) _owners &= ~owner; await ApplyAsync(); }
+
+    /// <summary>
+    /// Bring the PC in line with who wants the phone mic: the cable as the default microphone while
+    /// anyone does, and the phone's audio streaming while Voice Access, the tool, or a listening app
+    /// needs it. The user's own default goes to disk before it is switched (crash-safe).
+    /// </summary>
+    private async Task ApplyAsync()
+    {
+        await _apply.WaitAsync();
+        try
+        {
+            Owner owners;
+            lock (_gate) owners = _owners;
+            bool wantDefault = owners != Owner.None;
+            bool wantStream = (owners & (Owner.Voice | Owner.Tool)) != 0 || ((owners & Owner.Auto) != 0 && _appListening);
+
+            if (wantDefault && FindCable() is { } pair)
+            {
+                string captureId = Release(pair);
+                var current = DefaultCaptureId();
+                if (current is not null && current != captureId)
+                {
+                    if (!File.Exists(RestoreFile)) WriteRestoreFile(current);
+                    SetDefaultCapture(captureId, _log);
+                }
+            }
+            if (wantStream && !Streaming) await StartStreamAsync();
+            if (!wantStream && Streaming) StopStream();
+            if (!wantDefault) RestorePendingDefaultMic(_log);
+        }
+        finally { _apply.Release(); }
+    }
+
+    private bool Streaming { get { lock (_gate) return _channel is not null; } }
+
+    /// <summary>The cable's capture id, releasing the render device FindCable handed back.</summary>
+    private static string Release((IMMDevice Render, string CaptureId) pair)
+    {
+        Marshal.ReleaseComObject(pair.Render);
+        return pair.CaptureId;
+    }
+
+    /// <summary>The download's percentage while the cable is being set up.</summary>
+    private volatile int _progress;
+
+    public Task SendStateAsync(string? error = null, string? setup = null, int? progress = null)
     {
         bool running = Running;
-        bool hasCable = cable ?? CablePresent();
+        bool hasCable = CablePresent();
+        Owner owners;
+        lock (_gate) owners = _owners;
         var payload = new JsonObject
         {
             ["available"] = Available,
             ["on"] = running,
-            ["mic"] = mic ?? (_channel is not null ? "phone" : "pc"),
+            ["mic"] = (owners & Owner.Voice) != 0 ? "phone" : "pc",
             ["cable"] = hasCable,
             // v21 addition (D-071): whether the PC can set the cable up itself, and how it's going.
             ["setup"] = setup ?? (CableSetup.IsBusy ? "installing" : hasCable ? "ready" : _setupState ?? "needed"),
+            // v23 (D-075): the phone as the PC's microphone beyond Voice Access.
+            ["micOn"] = Streaming,
+            ["tool"] = (owners & Owner.Tool) != 0,
+            ["auto"] = (owners & Owner.Auto) != 0,
+            ["listening"] = _appListening,
         };
+        if (CableSetup.IsBusy || progress is not null) payload["progress"] = progress ?? _progress;
         if (error is not null) payload["error"] = error;
         return _connection.SendToPhoneAsync(Envelope.Create(MessageType.PcVoiceAccessState, payload), CancellationToken.None);
     }
@@ -150,6 +294,7 @@ public sealed class PcVoiceAccess : IDisposable
             try
             {
                 if (!process.CloseMainWindow() || !process.WaitForExit(2000)) process.Kill();
+                process.WaitForExit(3000);
                 _log.Log(LogLevel.Info, "Voice Access: stopped");
             }
             catch { /* already gone */ }
@@ -157,49 +302,103 @@ public sealed class PcVoiceAccess : IDisposable
         }
     }
 
-    // ---- the phone's microphone -------------------------------------------------
+    // ---- Voice Access's own microphone choice ------------------------------------
 
-    private async Task StartMicAsync(IMMDevice render, string captureId)
+    private const string VoiceAccessKey = @"Software\Microsoft\VoiceAccess";
+
+    // Under the store root like the mic note (D-057); see StoreRoot below.
+    private static string VoiceAccessRestoreFile => Path.Combine(
+        StoreRoot ?? throw new InvalidOperationException("PcVoiceAccess.StoreRoot was never set."),
+        "voiceaccess-restore-vamic.txt");
+
+    /// <summary>Point Voice Access at the cable, keeping the user's own choice on disk. True if it changed.</summary>
+    private bool PointVoiceAccessAt(string captureId)
     {
-        lock (_gate) { if (_channel is not null) return; }
-        var channel = await _connection.OpenPhoneDialledChannelAsync(Channel, CancellationToken.None);
+        using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(VoiceAccessKey);
+        var target = PcMicAudio.VoiceAccessMicId(captureId);
+        var current = key.GetValue("VoiceAccessMicrophoneId") as string;
+        if (string.Equals(current, target, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!File.Exists(VoiceAccessRestoreFile))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(VoiceAccessRestoreFile)!);
+            File.WriteAllText(VoiceAccessRestoreFile, current ?? "");
+        }
+        key.SetValue("VoiceAccessMicrophoneId", target, Microsoft.Win32.RegistryValueKind.String);
+        _log.Log(LogLevel.Info, "Voice Access: now listening to the phone (its microphone set to the virtual cable)");
+        return true;
+    }
+
+    /// <summary>Give Voice Access back the microphone the user had chosen. True if it changed.</summary>
+    public static bool RestoreVoiceAccessMic(ILogService log)
+    {
+        if (!File.Exists(VoiceAccessRestoreFile)) return false;
+        try
+        {
+            var original = File.ReadAllText(VoiceAccessRestoreFile).Trim();
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(VoiceAccessKey);
+            if (original.Length > 0) key.SetValue("VoiceAccessMicrophoneId", original, Microsoft.Win32.RegistryValueKind.String);
+            else key.DeleteValue("VoiceAccessMicrophoneId", throwOnMissingValue: false);
+            File.Delete(VoiceAccessRestoreFile);
+            log.Log(LogLevel.Info, "Voice Access: back on this PC's own microphone");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Voice Access: couldn't put its microphone back: {ex.Message}");
+            return false;
+        }
+    }
+
+    // ---- the phone's microphone stream -------------------------------------------
+
+    private async Task StartStreamAsync()
+    {
+        if (FindCable() is not { } pair) return;
+        lock (_gate) { if (_channel is not null) { Marshal.ReleaseComObject(pair.Render); return; } }
+        Stream channel;
+        try { channel = await _connection.OpenPhoneDialledChannelAsync(Channel, CancellationToken.None); }
+        catch { Marshal.ReleaseComObject(pair.Render); throw; }
         var stop = new CancellationTokenSource();
         lock (_gate)
         {
             _channel = channel;
             _stop = stop;
-            _restoreCaptureId = DefaultCaptureId();
             _ring.Clear();
         }
-        // Remember the user's own microphone on disk first, so a crash can't strand the PC on
-        // the cable as its default.
-        if (_restoreCaptureId is { } own && own != captureId) WriteRestoreFile(own);
-        SetDefaultCapture(captureId, _log);
         _reader = new Thread(() => Read(channel, stop.Token)) { IsBackground = true, Name = "linc-mic-reader" };
-        _renderer = new Thread(() => Render(render, stop.Token)) { IsBackground = true, Name = "linc-mic-render" };
+        _renderer = new Thread(() => Render(pair.Render, stop.Token)) { IsBackground = true, Name = "linc-mic-render" };
         _reader.Start();
         _renderer.Start();
-        _log.Log(LogLevel.Info, "Voice Access: using the phone as this PC's microphone");
+        _log.Log(LogLevel.Info, "Phone microphone: streaming the phone's mic into the virtual cable");
     }
 
-    public void StopMic()
+    private void StopStream()
     {
         CancellationTokenSource? stop;
         Stream? channel;
-        string? restore;
         lock (_gate)
         {
-            stop = _stop; channel = _channel; restore = _restoreCaptureId;
-            _stop = null; _channel = null; _restoreCaptureId = null;
+            stop = _stop; channel = _channel;
+            _stop = null; _channel = null;
         }
         if (stop is null) return;
         stop.Cancel();
         try { channel?.Dispose(); } catch { }
         _reader?.Join(1000);
         _renderer?.Join(1000);
-        if (restore is not null) SetDefaultCapture(restore, _log);
-        DeleteRestoreFile();
-        _log.Log(LogLevel.Info, "Voice Access: the phone's microphone is off; this PC's own is back");
+        _log.Log(LogLevel.Info, "Phone microphone: stream stopped");
+    }
+
+    /// <summary>Everything off: no stream, the user's own default mic and Voice Access mic back.</summary>
+    public void StopMic()
+    {
+        _listenWatch?.Dispose();
+        _listenWatch = null;
+        lock (_gate) _owners = Owner.None;
+        _appListening = false;
+        StopStream();
+        RestorePendingDefaultMic(_log);
+        RestoreVoiceAccessMic(_log);
     }
 
     /// <summary>Phone PCM → the ring, upsampled to the cable's mix format as it arrives.</summary>
@@ -236,8 +435,10 @@ public sealed class PcVoiceAccess : IDisposable
         catch (Exception) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            _log.Log(LogLevel.Info, $"Voice Access: the phone's microphone stream ended ({ex.Message})");
-            _ = Task.Run(() => { StopMic(); _ = SendStateAsync(); });
+            _log.Log(LogLevel.Info, $"Phone microphone: the stream ended ({ex.Message})");
+            // The phone hung up (or went away): drop the stream; the owners stay, so Mirror's
+            // auto mode re-opens it the next time an app listens.
+            _ = Task.Run(() => { StopStream(); _ = SendStateAsync(); });
         }
     }
 
@@ -365,7 +566,7 @@ public sealed class PcVoiceAccess : IDisposable
     /// </summary>
     public static void RestorePendingDefaultMic(ILogService log)
     {
-        // Speaker mode leaves the same kind of note for the default playback device (D-076).
+        // Speaker mode leaves the same kind of note for the default playback device (D-093).
         PcSpeakerMode.RestorePending(log);
 
         string? id;
@@ -374,7 +575,14 @@ public sealed class PcVoiceAccess : IDisposable
         if (string.IsNullOrEmpty(id)) return;
         SetDefaultCapture(id, log);
         DeleteRestoreFile();
-        log.Log(LogLevel.Info, "Voice Access: put this PC's own microphone back as the default");
+        log.Log(LogLevel.Info, "Phone microphone: this PC's own microphone is the default again");
+    }
+
+    /// <summary>On exit and at start: the default mic and Voice Access's mic both put back (D-075).</summary>
+    public static void RestoreAllMics(ILogService log)
+    {
+        RestorePendingDefaultMic(log);
+        RestoreVoiceAccessMic(log);
     }
 
     /// <summary>

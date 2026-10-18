@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Linc" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Follows the phone's light/dark setting (it was always light, so dark mode flashed white
+         and system dialogs came up light). Compose draws the Material You colours on top. -->
+    <style name="Theme.Linc" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
 
-    <!-- ClipboardSyncActivity (D-075): a real window, so it can take focus, but one nobody sees. -->
+    <!-- ClipboardSyncActivity (D-092): a real window, so it can take focus, but one nobody sees. -->
     <style name="Theme.Linc.Invisible" parent="android:Theme.Translucent.NoTitleBar">
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:windowNoDisplay">false</item>

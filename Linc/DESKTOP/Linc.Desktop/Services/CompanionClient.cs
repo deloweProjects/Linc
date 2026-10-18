@@ -58,6 +58,9 @@ public sealed class CompanionClient : IDisposable
     /// <summary>The v5 session token from the phone's hello reply, or null on a pre-v5 link.</summary>
     public string? SessionToken { get; private set; }
 
+    /// <summary>This PC's id for the phone (<see cref="ITlsTransportService.PcId"/>), sent in hello.</summary>
+    public string? PcId { get; set; }
+
     /// <summary>
     /// How this transport opens a typed channel connection: given (channel, sessionToken),
     /// returns a stream positioned right after the channel header. ADB dials the forwarded
@@ -100,6 +103,12 @@ public sealed class CompanionClient : IDisposable
         {
             ["app"] = "linc-desktop",
             ["appVersion"] = appVersion,
+            // 1.0.0.11: the PC's name for the phone's Home and Connection sheet. An optional field:
+            // older phones ignore unknown fields (PROTOCOL.md envelope rules).
+            ["host"] = Environment.MachineName,
+            // D-088: which PC this is, so a phone that knows several can tell them apart and keep
+            // to one at a time. Optional: older phones ignore it.
+            ["pcId"] = PcId,
             ["minV"] = ProtocolConstants.MinVersion,
             ["maxV"] = ProtocolConstants.Version,
         });
@@ -490,6 +499,9 @@ public sealed class CompanionClient : IDisposable
                 // The phone's error messages are plain language by contract
                 // (CONTRIBUTING.md); surface them directly when present.
                 var message = (string?)reply.Payload["message"];
+                // D-088: the phone is with another PC, or set to connect to another PC only.
+                if (code == "busy")
+                    throw new PhoneBusyException(message ?? "Your phone is connected to another PC right now.");
                 throw new LincException(code switch
                 {
                     "version-mismatch" =>
@@ -541,3 +553,9 @@ public sealed class CompanionClient : IDisposable
         "Linc can't reach the companion app on your phone. Open Linc on the phone and " +
         "tap “Start companion service”, then try again.";
 }
+
+/// <summary>
+/// The phone turned this PC away because it belongs to another PC right now (D-088). Not a fault:
+/// the companion is running and answering, so nothing should try to restart it.
+/// </summary>
+public sealed class PhoneBusyException(string message) : LincException(message);

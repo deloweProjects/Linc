@@ -1,4 +1,4 @@
-// fingerprintsim — D-077: which known phone is this, from whatever signals the PC has seen?
+// fingerprintsim — D-094: which known phone is this, from whatever signals the PC has seen?
 //
 // Runs the REAL PhoneFingerprint scorer (compiled from Linc.Desktop) against a fixed set of known
 // phones. Exits 0 when every check passes, 1 otherwise, like every harness in tools/.

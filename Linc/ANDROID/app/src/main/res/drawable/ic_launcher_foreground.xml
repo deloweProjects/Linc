@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Adaptive icon foreground: the new Linc mark (M14) — white L on transparency,
-  black is the adaptive background layer. Rendered from ico.png and referenced
-  here as a bitmap so the adaptive icon stays density-independent.
+  black is the adaptive background layer. The PNG is a full 108 dp adaptive canvas
+  (432 px, the L inside the 66 dp safe zone), kept in drawable-nodpi and drawn with
+  gravity="fill" so it is scaled to the layer on every density. It used to sit in plain
+  drawable/ (read as mdpi) with gravity="center", which drew it ~4x too big and cropped it.
+  It is also the monochrome layer for Android 13+ themed icons.
 -->
 <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
     android:src="@drawable/ic_launcher_foreground_mark"
-    android:gravity="center" />
+    android:gravity="fill" />
