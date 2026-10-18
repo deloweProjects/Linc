@@ -45,6 +45,7 @@ public sealed class PcAudioEverywhere(
     private string? _error;
     private string? _note;
     private string? _cableId;
+    private (float Level, bool Muted)? _cableRestore;
     private int _sourceRate = 48_000;
     private CancellationTokenSource? _monitorStop;
 
@@ -135,9 +136,11 @@ public sealed class PcAudioEverywhere(
             return;
         }
         _cableId = PcVoiceAccess.CableRenderId();
+        PinCable();
         var streamer = await startAudio(new AudioStreamOptions(_cableId, Clock: true, Tap: OnBlock));
         if (streamer is null)
         {
+            RestoreCable();
             speaker.Disable();
             _error = "audio";
             return;
@@ -169,8 +172,34 @@ public sealed class PcAudioEverywhere(
         }
         foreach (var sink in sinks) sink.Dispose();
         stopAudio();
+        RestoreCable();
         speaker.Disable();
         log.Log(LogLevel.Info, $"Play everywhere: off ({why})");
+    }
+
+    /// <summary>
+    /// The cable's own Windows volume scales everything Linc captures from it, so a cable left at
+    /// 30% made every speaker quiet however far up its own slider went. While Play everywhere is
+    /// on the cable sits at 100% (Windows' volume keys still turn it down, as a master for all the
+    /// speakers at once) and gets its old level back afterwards.
+    /// </summary>
+    private void PinCable()
+    {
+        if (_cableId is null) return;
+        var now = PcRenderSink.Wasapi.GetEndpointVolume(_cableId);
+        if (now is not { } v || (v.Level >= 0.999f && !v.Muted)) return;
+        _cableRestore = v;
+        if (PcRenderSink.Wasapi.SetEndpointVolume(_cableId, 1f, false))
+            log.Log(LogLevel.Info, $"Play everywhere: the cable was at {v.Level * 100:0}%{(v.Muted ? " (muted)" : "")}; set to 100% so nothing comes out quiet");
+        else
+            log.Log(LogLevel.Warn, $"Play everywhere: the cable is at {v.Level * 100:0}% and Windows wouldn't raise it; every speaker will be that much quieter");
+    }
+
+    private void RestoreCable()
+    {
+        if (_cableId is null || _cableRestore is not { } v) return;
+        _cableRestore = null;
+        PcRenderSink.Wasapi.SetEndpointVolume(_cableId, v.Level, v.Muted);
     }
 
     /// <summary>The phone's sound channel closed: nobody is controlling this any more.</summary>
@@ -269,8 +298,15 @@ public sealed class PcAudioEverywhere(
                 Settings.Devices[id] = s;
             }
             if (d["enabled"] is JsonValue e && e.TryGetValue(out bool enabled)) s.Enabled = enabled;
-            if (d["volume"] is JsonValue v && v.TryGetValue(out int volume)) s.Volume = Math.Clamp(volume, 0, 100);
-            if (d["muted"] is JsonValue m && m.TryGetValue(out bool muted)) s.Muted = muted;
+            int? volume = d["volume"] is JsonValue v && v.TryGetValue(out int vol) ? Math.Clamp(vol, 0, 100) : null;
+            bool? muted = d["muted"] is JsonValue m && m.TryGetValue(out bool mute) ? mute : null;
+            if (volume is { } x) s.Volume = x;
+            if (muted is { } y) s.Muted = y;
+            // A PC speaker's level is its own Windows volume, so the mixer, Windows' mixer and the
+            // speaker's keys all agree, and Windows does the work instead of Linc's sample loop.
+            if ((volume is not null || muted is not null) && _pcDevices.Any(p => p.Id == id)
+                && !PcRenderSink.Wasapi.SetEndpointVolume(id, volume / 100f, muted))
+                log.Log(LogLevel.Warn, $"Play everywhere: Windows wouldn't change {s.Name}'s volume");
             if (d["manualMs"] is JsonValue n && n.TryGetValue(out double manualMs))
             {
                 s.ManualUs = (long)Math.Clamp(manualMs * 1000, -500_000, 500_000);
@@ -291,9 +327,8 @@ public sealed class PcAudioEverywhere(
             {
                 if (!Settings.Devices.TryGetValue(id, out var s)) continue;
                 sink.HiddenUs = s.HiddenUs;
-                float v = s.Volume / 100f;
-                sink.Gain = v * v; // the ear hears level roughly as the square of the slider
-                sink.Silenced = s.Muted || testing;
+                sink.Gain = 1; // the level is the device's own Windows volume (see UpdateDevice)
+                sink.Silenced = testing;
             }
         }
     }
@@ -506,6 +541,10 @@ public sealed class PcAudioEverywhere(
 
     public async Task SendStateAsync()
     {
+        // Each PC speaker's real Windows volume, read now: someone may have used its keys.
+        List<PcOutputDevice> pcDevices;
+        lock (_lock) pcDevices = _pcDevices.ToList();
+        var levels = pcDevices.ToDictionary(d => d.Id, d => PcRenderSink.Wasapi.GetEndpointVolume(d.Id));
         JsonObject payload;
         lock (_lock)
         {
@@ -513,6 +552,11 @@ public sealed class PcAudioEverywhere(
             foreach (var d in _pcDevices)
             {
                 var s = Settings.Devices.TryGetValue(d.Id, out var found) ? found : new EverywhereDeviceSettings { Name = d.Name };
+                if (levels.TryGetValue(d.Id, out var level) && level is { } l)
+                {
+                    s.Volume = (int)Math.Round(l.Level * 100);
+                    s.Muted = l.Muted;
+                }
                 _sinks.TryGetValue(d.Id, out var sink);
                 devices.Add(Device(d.Id, d.Name, "pc", d.Bluetooth, s,
                     sink?.Status ?? (s.Enabled && On ? "starting" : "off"), sink?.OffByUs ?? 0, sink?.NeedUs ?? 0, sink?.Problem));

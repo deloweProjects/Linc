@@ -53,6 +53,11 @@ class CompanionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // The phone's mic streaming to the PC (D-075): add (or drop) the microphone type so
         // Android keeps recording with the screen off and Linc in the background.
+        // A button on the "Playing from your PC" notification (D-097).
+        if (intent?.action == PcPlaybackSession.ACTION_MEDIA) {
+            PcPlaybackSession.onCommand(intent.getStringExtra(PcPlaybackSession.EXTRA_COMMAND))
+            if (server != null) return START_STICKY
+        }
         if (intent?.action == ACTION_MIC && server != null) {
             val on = intent.getBooleanExtra(EXTRA_ON, false)
             runCatching {

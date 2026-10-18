@@ -78,7 +78,9 @@ object SyncedAudio {
         rate = sampleRate
         clock.reset()
         streaming = true
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
         LogStore.log(LogLevel.INFO, "Play everywhere: the PC's sound is arriving (${sampleRate} Hz, in step)")
+        AudioEverywhere.context()?.let { PcPlaybackSession.start(it) }
         AudioEverywhere.onStreamChanged()
 
         val prober = thread(name = "linc-everywhere-clock", isDaemon = true) { probe(output) }
@@ -122,6 +124,7 @@ object SyncedAudio {
             runCatching { codec.release() }
             synchronized(outputs) { outputs.values.toList().also { outputs.clear() } }.forEach { it.close() }
             LogStore.log(LogLevel.INFO, "Play everywhere: the PC's sound stopped")
+            AudioEverywhere.context()?.let { PcPlaybackSession.stop(it) }
             AudioEverywhere.onStreamChanged()
         }
     }
@@ -226,24 +229,34 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
         val chunk = rate / 100
         val buffer = FloatArray(chunk * 2)
         val ts = AudioTimestamp()
+        val trackClock = TrackClock(rate)
         var written = 0L
         var last = SyncedAudio.nowUs()
         var checkedRoute = false
+        var jumps = 0
+        // Audio priority, as Android's own players use: opening another app must not starve this
+        // thread for longer than the track's buffer, which is the scratch that otherwise follows.
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO) }
         try {
             track.play()
             while (running) {
                 val now = SyncedAudio.nowUs()
-                val stamped = track.getTimestamp(ts) && ts.nanoTime > 0
-                if (!stamped || !SyncedAudio.clock.ready) {
+                if (track.getTimestamp(ts) && ts.nanoTime > 0 && trackClock.update(ts.framePosition, ts.nanoTime / 1000)) {
+                    if (trackClock.ready && jumps++ > 0) {
+                        LogStore.log(LogLevel.INFO, "Play everywhere: ${spec.name}'s output really moved; re-aligning")
+                        engine.realign()
+                    }
+                }
+                if (!trackClock.ready || !SyncedAudio.clock.ready) {
                     // Until the track says where it is and the PC's clock is known, play silence.
                     buffer.fill(0f)
                 } else {
                     if (!checkedRoute) { checkedRoute = true; checkRoute() }
-                    val nextLeavesUs = ts.nanoTime / 1000 + (written - ts.framePosition) * 1_000_000 / rate
+                    val nextLeavesUs = trackClock.leaveUs(written).toLong()
                     val out = nextLeavesUs - now
                     if (out >= outUs || now - outAt > 5_000_000) { outUs = maxOf(0L, out); outAt = now }
                     val firstHeard = SyncedAudio.clock.toPc(nextLeavesUs) + spec.hiddenUs
-                    val stats = engine.render(buffer, chunk, firstHeard, AudioEverywhere.delayUs, (now - last) / 1_000_000.0)
+                    val stats = engine.render(buffer, chunk, firstHeard, AudioEverywhere.targetDelayUs(needUs), (now - last) / 1_000_000.0)
                     skippedFrames += stats.skippedFrames
                     if (stats.underrun) underruns++
                     offByUs = engine.controller.smoothedErrorUs
@@ -288,7 +301,8 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
     }
 
     private companion object {
-        const val TRACK_MS = 80
+        /** Room for the CPU to be busy elsewhere (opening an app) without the track running dry. */
+        const val TRACK_MS = 200
         const val NEED_MARGIN_US = 20_000L
     }
 }

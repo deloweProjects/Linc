@@ -301,6 +301,10 @@ public sealed class PlayoutEngine
     private bool _resetPending;
     private long _droppedBlocks;
     private long _lastDelayUs = -1;
+    /// <summary>Frames left of the fade-in after a jump: sound that starts mid-wave would click.</summary>
+    private int _fadeLeft;
+    private readonly int _fadeFrames;
+    public const int FadeMs = 5;
 
     public PlayoutEngine(int sourceRate, int deviceRate)
     {
@@ -308,6 +312,7 @@ public sealed class PlayoutEngine
         _deviceRate = deviceRate;
         _sameRate = sourceRate == deviceRate;
         _controller = new PlayoutController(deviceRate);
+        _fadeFrames = deviceRate * FadeMs / 1000;
     }
 
     public PlayoutController Controller => _controller;
@@ -390,6 +395,7 @@ public sealed class PlayoutEngine
                     // placed by a jump, however close it lands, never slewed in.
                     stats.Underrun = true;
                     _resetPending = true;
+                    _fadeLeft = _fadeFrames;
                     break;
                 }
                 var head = _head!;
@@ -407,6 +413,7 @@ public sealed class PlayoutEngine
                         int n = (int)Math.Min(frames - produced, d.Frames);
                         produced += n;
                         stats.SilenceFrames += n;
+                        _fadeLeft = _fadeFrames;
                         // More silence owed than this write holds: stay unlocked, so the next
                         // write jumps the rest exactly instead of slewing it.
                         if (n < d.Frames) _controller.Reset();
@@ -416,6 +423,7 @@ public sealed class PlayoutEngine
                     {
                         // The decision is in device frames; skip the same span of source time.
                         stats.SkippedFrames += SkipSource(d.Frames * (double)_sourceRate / _deviceRate);
+                        _fadeLeft = _fadeFrames;
                         continue;
                     }
                     ppm = d.Ppm;
@@ -425,6 +433,12 @@ public sealed class PlayoutEngine
                 int made = _sameRate
                     ? CopyWithSlip(output, produced, frames - produced, ppm)
                     : Resample(output, produced, frames - produced, ppm);
+                for (int i = produced; i < produced + made && _fadeLeft > 0; i++, _fadeLeft--)
+                {
+                    float gain = 1f - _fadeLeft / (float)_fadeFrames;
+                    output[i * 2] *= gain;
+                    output[i * 2 + 1] *= gain;
+                }
                 produced += made;
                 if (made == 0 && _head is not null && _headPos >= _head.Frames) NextBlock();
             }

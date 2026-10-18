@@ -243,6 +243,59 @@ public sealed class PcRenderSink : IDisposable
             finally { Marshal.ReleaseComObject(enumerator); }
         }
 
+        /// <summary>A device's own Windows volume (0..1, the same scale as Windows' slider) and mute.</summary>
+        public static (float Level, bool Muted)? GetEndpointVolume(string id)
+        {
+            try
+            {
+                var volume = ActivateVolume(id);
+                try
+                {
+                    if (volume.GetMasterVolumeLevelScalar(out float level) != 0) return null;
+                    volume.GetMute(out bool muted);
+                    return (level, muted);
+                }
+                finally { Marshal.ReleaseComObject(volume); }
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Set a device's own Windows volume and/or mute. False if Windows refused.</summary>
+        public static bool SetEndpointVolume(string id, float? level, bool? muted)
+        {
+            try
+            {
+                var volume = ActivateVolume(id);
+                try
+                {
+                    var context = Guid.Empty;
+                    bool ok = true;
+                    if (level is { } l) ok &= volume.SetMasterVolumeLevelScalar(Math.Clamp(l, 0f, 1f), ref context) >= 0;
+                    if (muted is { } m) ok &= volume.SetMute(m, ref context) >= 0;
+                    return ok;
+                }
+                finally { Marshal.ReleaseComObject(volume); }
+            }
+            catch { return false; }
+        }
+
+        private static IAudioEndpointVolume ActivateVolume(string id)
+        {
+            var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(Type.GetTypeFromCLSID(CLSID_MMDeviceEnumerator)!)!;
+            try
+            {
+                Check(enumerator.GetDevice(id, out IMMDevice device), "GetDevice");
+                try
+                {
+                    var iid = typeof(IAudioEndpointVolume).GUID;
+                    Check(device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out object unknown), "Activate");
+                    return (IAudioEndpointVolume)unknown;
+                }
+                finally { Marshal.ReleaseComObject(device); }
+            }
+            finally { Marshal.ReleaseComObject(enumerator); }
+        }
+
         public static T Service<T>(IAudioClient client, Guid iid) where T : class
         {
             Check(client.GetService(ref iid, out object service), "GetService");
@@ -388,6 +441,24 @@ public sealed class PcRenderSink : IDisposable
         {
             [PreserveSig] int GetBuffer(uint frames, out IntPtr data);
             [PreserveSig] int ReleaseBuffer(uint frames, uint flags);
+        }
+
+        [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IAudioEndpointVolume
+        {
+            [PreserveSig] int RegisterControlChangeNotify(IntPtr notify);
+            [PreserveSig] int UnregisterControlChangeNotify(IntPtr notify);
+            [PreserveSig] int GetChannelCount(out uint channelCount);
+            [PreserveSig] int SetMasterVolumeLevel(float levelDb, ref Guid eventContext);
+            [PreserveSig] int SetMasterVolumeLevelScalar(float level, ref Guid eventContext);
+            [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
+            [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+            [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, ref Guid eventContext);
+            [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, ref Guid eventContext);
+            [PreserveSig] int GetChannelVolumeLevel(uint channel, out float levelDb);
+            [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
+            [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid eventContext);
+            [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
         }
 
         [ComImport, Guid("CD63314F-3FBA-4a1b-812C-EF96358728E7"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

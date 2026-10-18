@@ -36,6 +36,7 @@ public sealed class PcMirrorSource : IDisposable
     private Thread? _feederThread;
     private long _submitted;
     private readonly System.Diagnostics.Stopwatch _streamClock = new();
+    private long _streamEpochUs;
     private bool _disposed;
     private int _keyFrameWanted;
     private int _bitrateWanted;   // 0 = no change pending
@@ -131,8 +132,15 @@ public sealed class PcMirrorSource : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// The PC-clock time (µs, <see cref="PcClock"/>) of video timestamp 0, so the phone can tell
+    /// how long a frame took to reach its screen and play the sound to match (v27, D-097).
+    /// </summary>
+    public long StreamEpochUs => Interlocked.Read(ref _streamEpochUs);
+
     public void Start()
     {
+        Interlocked.Exchange(ref _streamEpochUs, PcClock.NowUs());
         _streamClock.Start();
         _lastSlotTick = Environment.TickCount64;
         StartPump(_encoder);

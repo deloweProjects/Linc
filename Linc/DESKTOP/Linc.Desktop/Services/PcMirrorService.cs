@@ -341,6 +341,8 @@ public sealed class PcMirrorService(
                 ["skipPct"] = (int)(snap.SkipRatio * 100),
                 ["dropped"] = snap.Dropped,
             };
+            // v27: frame timestamps' zero on the PC clock, for lip-sync on the phone (D-097).
+            if (_source is { } source) payload["epochUs"] = source.StreamEpochUs;
             lastFrames = snap.SentFrames; lastBytes = snap.SentBytes; lastMs = now;
             try
             {

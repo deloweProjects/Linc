@@ -79,7 +79,16 @@ object MirrorSession {
         _cursor.value = PcCursor(x, y, visible, id)
     }
 
+    /** v27 (D-097): the PC-clock time of video timestamp 0, so the sound can follow the picture. */
+    @Volatile var epochUs = 0L
+        private set
+
+    /** How long the picture takes to reach this screen, measured against the PC's clock. */
+    val videoLatency = VideoLatency()
+
     fun onStats(payload: JsonObject) {
+        val epoch = (payload["epochUs"] as? JsonPrimitive)?.longOrNull ?: 0L
+        if (epoch != epochUs) { epochUs = epoch; videoLatency.reset() }
         _stats.value = LinkStats(
             targetKbps = payload.int("targetKbps") ?: 0,
             sentKbps = payload.int("sentKbps") ?: 0,

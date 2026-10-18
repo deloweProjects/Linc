@@ -83,6 +83,17 @@ object AudioEverywhere {
     @Volatile var delayUs = 60_000L
         private set
 
+    /**
+     * What this phone's outputs aim for. While PC Remote shows the PC's screen, the sound follows
+     * the picture there (D-097: lip-sync beats being in step with speakers across the room), as
+     * early as the output can manage; otherwise the group delay, in step with the rest.
+     */
+    fun targetDelayUs(needUs: Long): Long {
+        val video = MirrorSession.videoLatency.us
+        if (MirrorReceiver.state.value.streaming && video > 0) return maxOf(video, needUs)
+        return delayUs
+    }
+
     @Volatile private var appContext: Context? = null
     @Volatile private var sounds: Map<String, List<TestSound>> = emptyMap()
     @Volatile private var soundsUntilUs = 0L
@@ -91,6 +102,9 @@ object AudioEverywhere {
     private var callbackRegistered = false
 
     fun ready(): Boolean = CompanionOutbox.canSend(26)
+
+    /** The app context, once the service or the mixer has attached. */
+    fun context(): Context? = appContext
 
     /** From the companion service: outputs need a context even when the mixer was never opened. */
     fun attach(context: Context) {
@@ -208,6 +222,17 @@ object AudioEverywhere {
         }
     }
 
+    /**
+     * The slider's 0–100 as a gain, on a decibel scale the ear hears as even steps (100 = full,
+     * 50 ≈ −20 dB, 10 ≈ −36 dB): a straight or squared slider put most of the useful range in the
+     * last quarter, which is why it seemed to do little and then too much.
+     */
+    fun volumeGain(volume: Int): Float = when {
+        volume <= 0 -> 0f
+        volume >= 100 -> 1f
+        else -> Math.pow(10.0, (volume - 100) * 0.4 / 20).toFloat()
+    }
+
     fun soundsFor(id: String): List<TestSound> {
         val s = sounds
         if (s.isEmpty()) return emptyList()
@@ -248,8 +273,7 @@ object AudioEverywhere {
                 val d = state.devices.firstOrNull { it.id == o.id }
                 if (d != null && !d.enabled) continue
                 val spec = specs.getOrPut(o.id) { PhoneOutputSpec(o.id, o.name, o.device) }
-                val v = (d?.volume ?: 100) / 100f
-                spec.gain = v * v
+                spec.gain = volumeGain(d?.volume ?: 100)
                 spec.silenced = (d?.muted ?: false) || testing
                 val hidden = d?.hiddenUs ?: 0
                 if (hidden != spec.hiddenUs) {

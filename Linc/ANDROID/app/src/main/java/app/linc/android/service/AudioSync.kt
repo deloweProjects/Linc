@@ -177,6 +177,9 @@ class PlayoutEngine(private val sampleRate: Int) {
     private var slip = 0.0
     private var resetPending = false
     private var lastDelayUs = -1L
+    /** Frames left of the fade-in after a jump: sound that starts mid-wave would click. */
+    private var fadeLeft = 0
+    private val fadeFrames = sampleRate * FADE_MS / 1000
 
     @Volatile var droppedBlocks = 0L
         private set
@@ -224,6 +227,7 @@ class PlayoutEngine(private val sampleRate: Int) {
                 if (!tryHead()) {
                     stats.underrun = true
                     resetPending = true // whatever comes after a dry spell is placed by a jump
+                    fadeLeft = fadeFrames
                     break
                 }
                 val block = head!!
@@ -239,11 +243,13 @@ class PlayoutEngine(private val sampleRate: Int) {
                             val n = minOf((frames - produced).toLong(), d.frames).toInt()
                             produced += n
                             stats.silenceFrames += n
+                            fadeLeft = fadeFrames
                             if (n < d.frames) controller.reset() // more owed: jump the rest next time
                             continue
                         }
                         PlayoutAction.SKIP -> {
                             stats.skippedFrames += skip(d.frames)
+                            fadeLeft = fadeFrames
                             continue
                         }
                         PlayoutAction.TRACK -> { ppm = d.ppm; stats.ppm = ppm }
@@ -296,8 +302,10 @@ class PlayoutEngine(private val sampleRate: Int) {
         while (made < frames && headPos < block.frames) {
             slip += ppm / 1_000_000
             if (slip >= 1) { slip -= 1; headPos++; if (headPos >= block.frames) break } // drop one: faster
-            output[(at + made) * 2] = pcm[headPos * 2] / 32768f
-            output[(at + made) * 2 + 1] = pcm[headPos * 2 + 1] / 32768f
+            var gain = 1f
+            if (fadeLeft > 0) { gain = 1f - fadeLeft.toFloat() / fadeFrames; fadeLeft-- }
+            output[(at + made) * 2] = pcm[headPos * 2] / 32768f * gain
+            output[(at + made) * 2 + 1] = pcm[headPos * 2 + 1] / 32768f * gain
             made++
             if (slip <= -1) { slip += 1; continue } // repeat one: slower
             headPos++
@@ -307,6 +315,97 @@ class PlayoutEngine(private val sampleRate: Int) {
 
     companion object {
         const val GAP_US = 2_000L
+        const val FADE_MS = 5
+    }
+}
+
+/**
+ * When the frames an [android.media.AudioTrack] is given will actually leave it, from its
+ * timestamps (frame N left at time T) — but steadied. Android's timestamps jump when the mixer
+ * is disturbed (another app's notification starting on the same output, a route change, the
+ * CPU busy opening an app), and taking each one at its word made the playout "correct" a
+ * phantom 30–80 ms error with a jump: the scratch heard when something else made a sound.
+ *
+ * So small differences are averaged in slowly (they are real drift, or jitter); a big one is
+ * believed only after it has held for [CONFIRM] reports in a row, which a real change (a
+ * Bluetooth headset reconnecting) does and a disturbance doesn't.
+ */
+class TrackClock(private val sampleRate: Int) {
+    private var anchorFrame = 0L
+    private var anchorUs = 0.0
+    private var started = false
+    private var outliers = 0
+    private var outlierErrorUs = 0.0
+
+    val ready: Boolean get() = started
+
+    /** Feed a timestamp; true when it moved the clock by a jump (the caller re-aligns). */
+    fun update(framePosition: Long, timeUs: Long): Boolean {
+        if (!started) {
+            anchorFrame = framePosition; anchorUs = timeUs.toDouble(); started = true
+            return true
+        }
+        val error = timeUs - leaveUs(framePosition)
+        if (abs(error) <= JUMP_US) {
+            outliers = 0
+            // Re-anchor at the new frame so the line keeps following the track's real rate.
+            anchorUs = leaveUs(framePosition) + error * SMOOTHING
+            anchorFrame = framePosition
+            return false
+        }
+        if (outliers > 0 && abs(error - outlierErrorUs) > JUMP_US) outliers = 0 // not the same jump
+        outlierErrorUs = error
+        if (++outliers < CONFIRM) return false
+        outliers = 0
+        anchorFrame = framePosition
+        anchorUs = timeUs.toDouble()
+        return true
+    }
+
+    /** When frame [frame] leaves the track, µs on the timestamps' clock. */
+    fun leaveUs(frame: Long): Double = anchorUs + (frame - anchorFrame) * 1_000_000.0 / sampleRate
+
+    fun reset() { started = false; outliers = 0 }
+
+    companion object {
+        const val JUMP_US = 15_000.0
+        const val CONFIRM = 8
+        private const val SMOOTHING = 0.05
+    }
+}
+
+/**
+ * How long the mirror's picture takes from the PC's screen to this one (v27, D-097), so PC
+ * Remote's sound can be played to match the picture rather than Play everywhere's group delay.
+ * A rolling median: one late frame doesn't move it; a slower link does, within a few seconds.
+ */
+class VideoLatency {
+    private val samples = ArrayDeque<Long>()
+    private var stable = 0L
+
+    /** One frame shown: [shownPcUs] on the PC clock, [capturedPcUs] its capture time. */
+    @Synchronized
+    fun add(shownPcUs: Long, capturedPcUs: Long) {
+        val v = shownPcUs - capturedPcUs
+        if (v !in 0..MAX_US) return
+        samples.addLast(v)
+        while (samples.size > WINDOW) samples.removeFirst()
+        if (samples.size < MIN_SAMPLES) return
+        val median = samples.sorted()[samples.size / 2]
+        // Only move the target for a real change: every move re-aligns the sound.
+        if (stable == 0L || abs(median - stable) > STEP_US) stable = median
+    }
+
+    /** The picture's delay, µs; 0 until known. */
+    @get:Synchronized val us: Long get() = stable
+
+    @Synchronized fun reset() { samples.clear(); stable = 0 }
+
+    companion object {
+        const val WINDOW = 60
+        const val MIN_SAMPLES = 15
+        const val STEP_US = 20_000L
+        const val MAX_US = 2_000_000L
     }
 }
 

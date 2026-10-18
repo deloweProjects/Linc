@@ -98,7 +98,9 @@ class AudioSyncTest {
     fun `phone speaker and Bluetooth play the same sample within 1 ms`() {
         val speaker = SimTrack(driftPpm = +80.0, bufferUs = 60_000, hiddenUs = 15_000)
         val bt = SimTrack(driftPpm = -110.0, bufferUs = 60_000, hiddenUs = 160_000)
-        run(listOf(speaker, bt), 16_000_000, silence = 7_000_000L until 8_100_000L) { if (it < 12_000_000) 250_000 else 300_000 }
+        // The Bluetooth output needs 40 + 60 + 160 = 260 ms, so the group delay is above that,
+        // as the PC would set it.
+        run(listOf(speaker, bt), 16_000_000, silence = 7_000_000L until 8_100_000L) { if (it < 12_000_000) 300_000 else 350_000 }
         for (track in listOf(speaker, bt)) {
             val settled = track.errors.filter { (h, _) -> h in 2_000_000 until 7_000_000 || h in 8_500_000 until 12_000_000 || h >= 13_000_000 }
             assertTrue("enough samples", settled.size > 1000)
@@ -185,5 +187,41 @@ class AudioSyncTest {
         assertEquals(43_500L, ok.errorUs)
         val unclear = CalibrationMath.combine("bt", listOf(10_000, 60_000, 140_000), listOf(7.0, 7.0, 7.0))
         assertFalse(unclear.ok)
+    }
+
+    // ---- track timestamps -------------------------------------------------------------------
+
+    @Test
+    fun `track clock ignores a disturbance but follows a real change`() {
+        val c = TrackClock(48_000)
+        val rnd = Random(11)
+        var frame = 0L
+        fun time(f: Long, shift: Long = 0) = 1_000_000L + f * 1_000_000 / 48_000 + shift + rnd.nextLong(-500, 500)
+        c.update(frame, time(frame))
+        repeat(100) { frame += 480; assertFalse(c.update(frame, time(frame))) }
+        // Another app's sound starts: a few reports 60 ms off, then back.
+        repeat(3) { frame += 480; assertFalse(c.update(frame, time(frame, 60_000))) }
+        repeat(20) { frame += 480; assertFalse(c.update(frame, time(frame))) }
+        assertEquals(time(frame).toDouble(), c.leaveUs(frame), 1_500.0)
+        // A Bluetooth headset reconnects: 120 ms later from now on.
+        var jumped = false
+        repeat(TrackClock.CONFIRM + 2) { frame += 480; jumped = jumped or c.update(frame, time(frame, 120_000)) }
+        assertTrue(jumped)
+        assertEquals(time(frame, 120_000).toDouble(), c.leaveUs(frame), 1_500.0)
+    }
+
+    // ---- lip-sync ---------------------------------------------------------------------------
+
+    @Test
+    fun `video latency is a steady median that only moves for a real change`() {
+        val v = VideoLatency()
+        val rnd = Random(2)
+        repeat(40) { v.add(1_000_000 + 90_000 + rnd.nextLong(-8_000, 8_000), 1_000_000) }
+        assertEquals(90_000.0, v.us.toDouble(), 8_000.0)
+        val first = v.us
+        repeat(10) { v.add(1_000_000 + 400_000, 1_000_000) } // a burst of late frames
+        assertEquals(first, v.us)
+        repeat(60) { v.add(1_000_000 + 150_000, 1_000_000) } // the link really got slower
+        assertEquals(150_000L, v.us)
     }
 }
