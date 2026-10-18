@@ -205,7 +205,8 @@ class MirrorActivity : ComponentActivity() {
                     val (nx, ny) = toNormalized(gestures.cursorX, gestures.cursorY) ?: return
                     if (down) {
                         // Feedback now, not when the PC's next frame arrives.
-                        cursorView.pulse(button)
+                        val (vx, vy) = streamToView(gestures.cursorX, gestures.cursorY).let { it[0] to it[1] }
+                        cursorView.pulse(button, vx, vy)
                         video.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     }
                     MirrorControl.pointer(if (down) "down" else "up", nx, ny, "touch", button)

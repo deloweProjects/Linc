@@ -36,15 +36,23 @@ class CursorOverlay(context: Context) : View(context) {
     /**
      * A click ring, drawn the instant a button goes down. The PC's own reaction only shows once
      * the next video frame arrives (often 100 ms or more over Wi-Fi), so without this a tap
-     * looked like it had done nothing.
+     * looked like it had done nothing. It is drawn even while the pointer itself is hidden
+     * (Touch mode, when the PC hides its cursor), since a tap there needs it just as much.
      */
     private var pulseStartMs = 0L
     private var pulseColor = Color.WHITE
+    private var pulseX = 0f
+    private var pulseY = 0f
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
-    /** Show a click at the pointer tip: [button] picks the colour so a right-click reads differently. */
-    fun pulse(button: String) {
+    /**
+     * Show a click at view pixel [x],[y] (the pointer tip): [button] picks the colour so a
+     * right-click reads differently.
+     */
+    fun pulse(button: String, x: Float, y: Float) {
         pulseStartMs = SystemClock.uptimeMillis()
+        pulseX = x; pulseY = y
         pulseColor = when (button) {
             "right" -> 0xFFFFB300.toInt()
             "middle" -> 0xFF80CBC4.toInt()
@@ -80,8 +88,8 @@ class CursorOverlay(context: Context) : View(context) {
     }
 
     override fun onDraw(canvas: Canvas) {
-        if (!shown) return
         drawPulse(canvas)
+        if (!shown) return
         canvas.save()
         canvas.translate(viewX, viewY)
         canvas.scale(scale, scale)
@@ -100,14 +108,18 @@ class CursorOverlay(context: Context) : View(context) {
         if (pulseStartMs == 0L || age >= PULSE_MS) return
         val t = age / PULSE_MS.toFloat()
         val density = resources.displayMetrics.density
+        // A solid dot where the click landed, fading, inside a ring that spreads out from it.
+        dot.color = pulseColor
+        dot.alpha = ((1f - t) * 140).toInt()
+        canvas.drawCircle(pulseX, pulseY, 12f * density, dot)
         ring.color = pulseColor
-        ring.alpha = ((1f - t) * 230).toInt()
-        ring.strokeWidth = 3f * density
-        canvas.drawCircle(viewX, viewY, (8f + 22f * t) * density, ring)
+        ring.alpha = ((1f - t) * 240).toInt()
+        ring.strokeWidth = 3.5f * density
+        canvas.drawCircle(pulseX, pulseY, (12f + 28f * t) * density, ring)
         postInvalidateOnAnimation()
     }
 
     private companion object {
-        const val PULSE_MS = 280L
+        const val PULSE_MS = 450L
     }
 }
