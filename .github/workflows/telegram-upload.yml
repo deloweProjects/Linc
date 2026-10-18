@@ -1,0 +1,109 @@
+# Posts release files to Telegram. See telegram-uploader/README.md.
+#
+# Runs automatically when a GitHub release is published, and can be run by hand
+# from the Actions tab ("Upload release to Telegram" -> Run workflow).
+# Starts a temporary local Bot API server so files up to 2000 MB can be sent.
+name: Upload release to Telegram
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload (leave empty for the latest release)"
+        required: false
+      message:
+        description: "Extra text to post with the files (optional)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      botapi:
+        image: aiogram/telegram-bot-api:latest
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_LOCAL: "1"
+        ports:
+          - 8081:8081
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_API_URL: http://localhost:8081
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: telegram-uploader
+
+      - name: Check secrets
+        run: |
+          missing=0
+          for k in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            [ -n "${!k}" ] || { echo "::error::Repository secret $k is not set"; missing=1; }
+          done
+          [ -n "${{ secrets.TELEGRAM_API_ID }}" ] || { echo "::error::Repository secret TELEGRAM_API_ID is not set"; missing=1; }
+          [ -n "${{ secrets.TELEGRAM_API_HASH }}" ] || { echo "::error::Repository secret TELEGRAM_API_HASH is not set"; missing=1; }
+          exit $missing
+
+      - name: Pick release
+        id: rel
+        env:
+          INPUT_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          tag="$INPUT_TAG"
+          if [ -z "$tag" ]; then
+            tag=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Release: $tag"
+
+      - name: Download release files
+        run: |
+          mkdir -p dist
+          gh release download "${{ steps.rel.outputs.tag }}" -R "$GITHUB_REPOSITORY" -D dist || true
+          ls -la dist
+
+      - name: Connect bot to the local server
+        run: |
+          # The bot must leave the public server before a local one can use it.
+          curl -sS "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/logOut" || true
+          echo
+          for i in $(seq 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$TELEGRAM_API_URL/bot$TELEGRAM_BOT_TOKEN/getMe" || true)
+            [ "$code" = 200 ] && { echo "local Bot API server ready"; exit 0; }
+            sleep 2
+          done
+          echo "::error::Local Bot API server did not start (check TELEGRAM_API_ID / TELEGRAM_API_HASH)"
+          exit 1
+
+      - name: Upload to Telegram
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+          EXTRA: ${{ inputs.message }}
+        run: |
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          msg="$GITHUB_REPOSITORY $TAG"$'\n'"$url"
+          [ -n "$EXTRA" ] && msg="$msg"$'\n\n'"$EXTRA"
+          shopt -s nullglob
+          files=(dist/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            ./telegram-uploader/send.sh -m "$msg (no files attached to this release)"
+          else
+            ./telegram-uploader/send.sh -m "$msg" "${files[@]}"
+          fi
+
+      - name: Release the bot from the local server
+        if: always()
+        run: curl -sS "$TELEGRAM_API_URL/bot$TELEGRAM_BOT_TOKEN/close" || true
