@@ -16,6 +16,8 @@ public sealed partial class DevicePage : Page
     public DisplayControlViewModel DisplayControl { get; }
     /// <summary>The phone's controls (media, sound, find, Do Not Disturb, screenshot) live in Home's view model; this page shows them too.</summary>
     public HomeViewModel Home { get; }
+    /// <summary>Screen time, wallpaper, colours and the phone's sound here (v28).</summary>
+    public PhoneExtrasViewModel Extras { get; }
 
     public DevicePage()
     {
@@ -26,7 +28,19 @@ public sealed partial class DevicePage : Page
         DesktopModeSettings = App.Services.GetRequiredService<DesktopModeSettingsViewModel>();
         DisplayControl = App.Services.GetRequiredService<DisplayControlViewModel>();
         Home = App.Services.GetRequiredService<HomeViewModel>();
+        Extras = App.Services.GetRequiredService<PhoneExtrasViewModel>();
         InitializeComponent();
+        Loaded += (_, _) =>
+        {
+            if (!Extras.Supported) return;
+            Extras.RefreshScreenTimeCommand.Execute(null);
+            Extras.RefreshLookCommand.Execute(null);
+        };
+    }
+
+    private void OnSwatch(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string hex }) Extras.SetColourCommand.Execute(hex);
     }
 
     private void RotationCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

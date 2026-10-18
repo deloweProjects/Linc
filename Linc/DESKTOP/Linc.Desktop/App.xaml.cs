@@ -143,6 +143,7 @@ public partial class App : Application
             .AddSingleton<AppShellViewModel>()
             .AddSingleton<DeviceTabsViewModel>()
             .AddSingleton<DeviceViewModel>()
+            .AddSingleton<PhoneExtrasViewModel>()
             .AddSingleton<SettingsViewModel>()
             .AddSingleton<LogsViewModel>()
             .AddSingleton<DetailsViewModel>()

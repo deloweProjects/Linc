@@ -679,3 +679,26 @@ Later milestones extend these tables — each extension bumps the protocol versi
 - Handshake must complete within 5 s of TCP connect, else either side may close.
 - Desktop pings every 15 s of idle; two missed pongs → treat the link as dead and let the ConnectionManager reconnect.
 - Either side closing the socket is normal shutdown; no goodbye message in v0.
+
+## v28 — sound output, PC screen curtain, the Device page reaching into the phone
+
+Additive; gated on a negotiated version of 28 on both sides.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `pc.audio.outputs.get` | phone → desktop | `{}` |
+| `pc.audio.outputs` | desktop → phone | `{outputs: [{id, name, bluetooth, default}]}` (also the answer to a set) |
+| `pc.audio.output.set` | phone → desktop | `{id}`: make it Windows' default output |
+| `pc.curtain.set` | phone → desktop | `{on}`: black, click-through, topmost window per monitor, `WDA_EXCLUDEFROMCAPTURE` so the capture still sees the desktop; lifts when the phone goes away |
+| `pc.curtain.state` | desktop → phone | `{on, available, error?}` |
+| `phone.sound.ask` | desktop → phone | `{on}`: on opens the playback-capture consent (directly with overlay permission, else a notification); off stops the phone source |
+| `phone.usage.get` | desktop → phone | `{}` |
+| `phone.usage` | phone → desktop | `{allowed, totalMin, unlocks, apps: [{package, name, minutes}]}`; `allowed:false` when usage access is off (the PC can grant it over adb: `appops set app.linc.android GET_USAGE_STATS allow`) |
+| `phone.wallpaper.set` | desktop → phone | `{jpeg (base64, ≤ ~640 KB), target: home\|lock\|both}` |
+
+`pc.info` gains optional Task Manager fields: `cpuName, cores, threads, cpuMhz, processes, handles, diskPct,
+diskReadKBps, diskWriteKBps, netSendKbps, netRecvKbps, netName, gpuPct, gpuName, memCommittedMb, memCommitLimitMb`.
+`pc.term.state.shells` may now also list `winps`, `wsl:<distro>` and `gitbash`. The phone's Play everywhere
+output reports may carry status `clock` (waiting for the PC's clock). Phone colours and dark theme are set by
+the desktop over adb (`settings put secure theme_customization_overlay_packages …`, `cmd uimode night`), not
+by protocol.

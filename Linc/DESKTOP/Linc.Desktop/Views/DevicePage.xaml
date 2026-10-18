@@ -329,9 +329,9 @@
                         </Border>
 
                         <!-- Display (M5c-2 / D-055): rotation + brightness -->
-                        <Border Style="{StaticResource ExpressiveCard}">
-                            <StackPanel Spacing="14">
-                                <TextBlock Text="PHONE DISPLAY" Style="{StaticResource SectionLabel}" />
+                        <Border Style="{StaticResource ExpressiveCard}" Padding="20,12">
+                            <Expander Header="Display: rotation and brightness" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
+                            <StackPanel Spacing="14" Padding="0,12,0,0">
                                 <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}"
                                            Text="Changes apply through the phone's system settings, which needs Linc's “Modify system settings” permission on the phone." />
                                 <Grid ColumnSpacing="16" RowSpacing="12">
@@ -374,7 +374,99 @@
                                 <TextBlock Style="{StaticResource CaptionText}" Foreground="{ThemeResource ErrorBrush}" Text="{x:Bind DisplayControl.ErrorMessage, Mode=OneWay}"
                                            Visibility="{x:Bind DisplayControl.HasError, Mode=OneWay}" />
                             </StackPanel>
+                            </Expander>
                         </Border>
+
+                        <!-- Screen time today (v28): from the phone's own usage records. -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="12">
+                                <Grid>
+                                    <TextBlock Text="SCREEN TIME" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" />
+                                    <Button Style="{StaticResource QuietButton}" HorizontalAlignment="Right" Content="Refresh" Command="{x:Bind Extras.RefreshScreenTimeCommand}" />
+                                </Grid>
+                                <TextBlock Text="{x:Bind Extras.ScreenTimeTotal, Mode=OneWay}" Style="{StaticResource HeadlineText}" />
+                                <TextBlock Text="{x:Bind Extras.ScreenTimeDetail, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                                <Button Style="{StaticResource TonalButton}" Content="Allow screen time" Command="{x:Bind Extras.AllowScreenTimeCommand}"
+                                        Visibility="{x:Bind Extras.UsageNeedsAccess, Mode=OneWay}" />
+                                <ItemsControl ItemsSource="{x:Bind Extras.ScreenTimeApps}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ScreenTimeApp">
+                                            <Grid ColumnSpacing="12" Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="2*" />
+                                                    <ColumnDefinition Width="3*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <ProgressBar Grid.Column="1" Minimum="0" Maximum="1" Value="{x:Bind Fraction}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2" Text="{x:Bind Time}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- The phone's look (v28): wallpaper through Linc, colours and theme over adb. -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="WALLPAPER AND COLOURS" Style="{StaticResource SectionLabel}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Style="{StaticResource TonalButton}" Padding="18,10" Command="{x:Bind Extras.WallpaperBothCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE91B;" FontSize="16" />
+                                            <TextBlock Text="Choose wallpaper…" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource QuietButton}" Content="Home only" Command="{x:Bind Extras.WallpaperHomeCommand}" />
+                                    <Button Style="{StaticResource QuietButton}" Content="Lock only" Command="{x:Bind Extras.WallpaperLockCommand}" />
+                                </StackPanel>
+                                <TextBlock Text="Colours" Style="{StaticResource BodyText}" />
+                                <ItemsControl ItemsSource="{x:Bind Extras.Swatches}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="10" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:PaletteSwatch">
+                                            <Button Width="36" Height="36" Padding="0" CornerRadius="18" BorderThickness="0" Background="{x:Bind Brush}"
+                                                    Tag="{x:Bind Hex}" Click="OnSwatch" ToolTipService.ToolTip="{x:Bind Name}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox Header="Style" HorizontalAlignment="Stretch" ItemsSource="{x:Bind Extras.Styles}" SelectedItem="{x:Bind Extras.SelectedStyle, Mode=TwoWay}" />
+                                    <Button Grid.Column="1" VerticalAlignment="Bottom" Style="{StaticResource QuietButton}" Content="From wallpaper" Command="{x:Bind Extras.WallpaperColoursCommand}" />
+                                </Grid>
+                                <ToggleSwitch Header="Dark theme" IsOn="{x:Bind Extras.PhoneDark, Mode=TwoWay}" />
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Text="Colours and dark theme change the phone's own settings, so they need USB or Wireless debugging. Colours need Android 12 or later." />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- The phone's sound on this PC (v28): the phone records what its apps play and sends it here. -->
+                        <Border Style="{StaticResource ExpressiveCard}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="PHONE SOUND ON THIS PC" Style="{StaticResource SectionLabel}" />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Style="{StaticResource FilledButton}" Command="{x:Bind Extras.PhoneSoundStartCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE767;" FontSize="16" />
+                                            <TextBlock Text="Play here" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource QuietButton}" Content="Stop" Command="{x:Bind Extras.PhoneSoundStopCommand}" />
+                                </StackPanel>
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Text="Music and videos on the phone play on this PC's speakers, in step with the phone. The phone asks once to allow it." />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{x:Bind Extras.Message, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
                     </StackPanel>
 
                     <!-- Right: the phone's screen here, then the rest -->
@@ -509,6 +601,9 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- The rarer things, folded away so the page stays simple (the owner: "hide some stuff"). -->
+                        <Expander Header="More: install an app, connection details" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
+                            <StackPanel Spacing="20" Padding="0,12,0,0">
                         <!-- Install app (M10 Part A) -->
                         <Border Style="{StaticResource ExpressiveCard}">
                             <StackPanel Spacing="12">
@@ -565,6 +660,8 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </Grid>
             </StackPanel>

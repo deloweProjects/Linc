@@ -99,7 +99,9 @@ jobs:
         shell: pwsh
         run: |
           $publish = 'Linc\DESKTOP\Linc.Desktop\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish'
-          $name = "Linc-Desktop-$($env:GITHUB_REF_NAME -replace '/', '-').zip"
+          # "Test release" in the name, so a test build is never mistaken for a real one (owner's ask).
+          $tag = ($env:GITHUB_REF_NAME -replace '^test-build/', '' -replace '^test-', '' -replace '/', '-')
+          $name = "Linc-Test-Release-$tag-PC.zip"
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $publish), "$PWD\$name", [System.IO.Compression.CompressionLevel]::Optimal, $false)
           Get-Item $name | Format-List Name, Length
@@ -107,7 +109,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: test-desktop
-          path: Linc-Desktop-*.zip
+          path: Linc-Test-Release-*.zip
           if-no-files-found: error
 
   telegram:
@@ -140,8 +142,8 @@ jobs:
 
       - name: Name the files
         run: |
-          name="${GITHUB_REF_NAME//\//-}"
-          mv dist/app-debug.apk "dist/Linc-$name.apk"
+          name="${GITHUB_REF_NAME#test-build/}"; name="${name#test-}"; name="${name//\//-}"
+          mv dist/app-debug.apk "dist/Linc-Test-Release-$name-Android.apk"
           ls -la dist
 
       - name: Connect bot to the local server
@@ -159,16 +161,23 @@ jobs:
 
       - name: Upload to Telegram
         run: |
+          # The channel is the public one, read by supporters: the post is written for them.
+          # Releases/TEST-NOTES.md (plain text, short) says what's new; without it, the commit
+          # subjects are listed instead.
+          name="${GITHUB_REF_NAME#test-build/}"; name="${name#test-}"
           notes=""
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
+          if [ -f Releases/TEST-NOTES.md ]; then
+            notes=$(grep -v '^#' Releases/TEST-NOTES.md | sed '/./,$!d')
+          fi
+          if [ -z "$notes" ] && [ "$GITHUB_REF_TYPE" = tag ]; then
             git fetch -q --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" || true
             notes=$(git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents)')
           fi
           if [ -z "$notes" ]; then
-            notes=$(git log --no-merges --format='• %s' origin/main..HEAD | head -15)
+            notes=$(git log --no-merges --format='• %s' origin/main..HEAD | grep -v '^• WIP' | head -12)
             [ -n "$notes" ] || notes=$(git log -1 --format=%s)
           fi
-          msg="🧪 Test build $GITHUB_REF_NAME (not a release; the apps won't offer it as an update)"$'\n'"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA"$'\n\n'"$notes"$'\n\n'"Install the APK over Linc; on the PC close Linc, unzip, run Linc.Desktop.exe."
+          msg="🧪 Linc test release: $name"$'\n'"A preview for testing, not the next update. Your installed Linc won't offer it, and it installs over the one you have (no need to uninstall)."$'\n\n'"What's new:"$'\n'"$notes"$'\n\n'"📱 Phone: install the Android APK."$'\n'"💻 PC: close Linc, unzip the PC zip and run Linc.Desktop.exe."$'\n'"Found a problem? Send the logs from Settings → Logs."
           ./telegram-uploader/send.sh -m "$msg" dist/*.apk dist/*.zip
 
       - name: Release the bot from the local server
