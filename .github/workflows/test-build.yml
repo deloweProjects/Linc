@@ -1,0 +1,167 @@
+# Builds both apps from any branch and posts them to Telegram for testing — without a release.
+#
+# Push a tag named test-<anything> (an annotated tag's message becomes the Telegram text):
+#   git tag -a test-play-everywhere-1 -m "What to try" && git push origin test-play-everywhere-1
+#
+# Unlike release.yml this creates no GitHub release, writes no update.json and merges nothing,
+# so installed copies are never offered the build: only whoever installs it from Telegram gets it.
+# The APK is signed with the owner's key (ANDROID_DEBUG_KEYSTORE, checked against the released
+# certificate as release.yml does), so it installs over an existing Linc without uninstalling.
+name: Test build to Telegram
+
+on:
+  push:
+    tags: ["test-*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: APK signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::No ANDROID_DEBUG_KEYSTORE secret: an APK signed with another key can't install over Linc."
+            exit 1
+          fi
+          mkdir -p ~/.android
+          echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore
+          expected=8182d31662613b85f418e3d8601997ff957d5b7104a1ddd25ad7eed9ecd9d969
+          actual=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey \
+            | sed -n 's/.*SHA256: *//p' | tr -d ':' | tr 'A-F' 'a-f')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE holds certificate $actual, not the released one ($expected)."
+            exit 1
+          fi
+
+      # gradlew is committed without the executable bit, so run it through bash.
+      - name: Build APK and run unit tests
+        working-directory: Linc/ANDROID
+        run: bash gradlew assembleDebug testDebugUnitTest --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-apk
+          path: Linc/ANDROID/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  windows:
+    needs: android
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: microsoft/setup-msbuild@v2
+
+      # The desktop bundles the companion APK: the one just built, so both halves match.
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-apk
+          path: Linc/ANDROID/app/build/outputs/apk/debug
+
+      # As build.yml: Beta.pubxml wants exactly one VC++ redist under a VS Community path.
+      - name: Publish desktop app (Beta, self-contained)
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $latest = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } |
+            Sort-Object { [version]$_.Name } | Select-Object -Last 1
+          $redist = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC'
+          New-Item -ItemType Directory -Force $redist | Out-Null
+          New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
+          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Zip it
+        shell: pwsh
+        run: |
+          $publish = 'Linc\DESKTOP\Linc.Desktop\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish'
+          $name = "Linc-Desktop-$env:GITHUB_REF_NAME.zip"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $publish), "$PWD\$name", [System.IO.Compression.CompressionLevel]::Optimal, $false)
+          Get-Item $name | Format-List Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-desktop
+          path: Linc-Desktop-*.zip
+          if-no-files-found: error
+
+  telegram:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      botapi:
+        image: aiogram/telegram-bot-api:latest
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_LOCAL: "1"
+        ports:
+          - 8081:8081
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_API_URL: http://localhost:8081
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          fetch-tags: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Name the files
+        run: |
+          mv dist/app-debug.apk "dist/Linc-$GITHUB_REF_NAME.apk"
+          ls -la dist
+
+      - name: Connect bot to the local server
+        run: |
+          # The bot must leave the public server before a local one can use it.
+          curl -sS "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/logOut" || true
+          echo
+          for i in $(seq 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$TELEGRAM_API_URL/bot$TELEGRAM_BOT_TOKEN/getMe" || true)
+            [ "$code" = 200 ] && { echo "local Bot API server ready"; exit 0; }
+            sleep 2
+          done
+          echo "::error::Local Bot API server did not start (check TELEGRAM_API_ID / TELEGRAM_API_HASH)"
+          exit 1
+
+      - name: Upload to Telegram
+        run: |
+          git fetch -q --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" || true
+          notes=$(git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents)')
+          [ -n "$notes" ] || notes=$(git log -1 --format=%s)
+          msg="🧪 Test build $GITHUB_REF_NAME (not a release; apps won't offer it as an update)"$'\n'"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA"$'\n\n'"$notes"
+          ./telegram-uploader/send.sh -m "$msg" dist/*.apk dist/*.zip
+
+      - name: Release the bot from the local server
+        if: always()
+        run: curl -sS "$TELEGRAM_API_URL/bot$TELEGRAM_BOT_TOKEN/close" || true
