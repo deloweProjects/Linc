@@ -116,9 +116,34 @@ public interface IDeviceRegistry
 
     void SaveFolderSyncPaths(string? pcPath, string phonePath);
 
-    void SaveLastHostPort(string hostPort);
+    /// <summary>Remember (or, with null, forget — D-081) the active phone's last wireless host:port.</summary>
+    void SaveLastHostPort(string? hostPort);
     void SavePairedDevice(string serial, string model);
     void SaveClipboardSyncEnabled(bool enabled);
+
+    /// <summary>Keep a clipboard history on this PC (D-083). Default on; off = sync only.</summary>
+    bool ClipboardHistoryEnabled { get; }
+
+    /// <summary>How many clipboard items to keep per phone: 100, 500 (default) or 2000.</summary>
+    int ClipboardHistorySize { get; }
+
+    void SaveClipboardHistory(bool enabled, int size);
+
+    /// <summary>Settings → Appearance → Show explanations (D-084). Default on. Per app, no sync.</summary>
+    bool ShowExplanations { get; }
+
+    void SaveShowExplanations(bool show);
+
+    /// <summary>Raised after <see cref="SaveShowExplanations"/>.</summary>
+    event Action? ShowExplanationsChanged;
+
+    /// <summary>
+    /// Settings → Mirror PC → Use software encoding (D-087). Default off. Skips the graphics
+    /// chip's encoder and uses Windows' own: slower and heavier on the CPU, but it always works.
+    /// </summary>
+    bool ForceSoftwareEncoding { get; }
+
+    void SaveForceSoftwareEncoding(bool enabled);
     void SaveNotificationSyncEnabled(bool enabled);
     void SaveAllowUsbConnections(bool enabled);
     void SavePhoneCert(string certBase64);
@@ -181,8 +206,20 @@ public interface IDeviceRegistry
     /// <summary>Hides a device's tab without unpairing it (closing a tab ≠ forgetting — D-033).</summary>
     void SetDeviceHidden(string serial, bool hidden);
 
+    /// <summary>
+    /// No phone is active (D-079): the last open tab was closed. The phone stays paired and
+    /// known (hidden), nothing is connected, and the add-a-phone flow brings it back.
+    /// </summary>
+    void ClearActiveDevice();
+
+    /// <summary>True when a known phone's tab was closed — it isn't reconnected on its own.</summary>
+    bool IsHidden(string serial);
+
     /// <summary>Removes one device from the list (closing its tab is not this — that's explicit forget).</summary>
     void ForgetKnownDevice(string serial);
+
+    /// <summary>Remember a Wi-Fi MAC <paramref name="serial"/>'s phone was seen using (D-094).</summary>
+    void RememberWifiMac(string serial, string mac) { }
 }
 
 /// <summary>
@@ -203,7 +240,11 @@ public sealed record KnownDevice(
     ConnectionPreference Preference = ConnectionPreference.Auto,
     DesktopModeSettings? DesktopMode = null,
     MirrorSettings? Mirror = null,
-    HomeLayout? Home = null);
+    HomeLayout? Home = null,
+    // D-094: Wi-Fi hardware addresses this phone has used, learned when it connects over the LAN.
+    // Android randomises the MAC per network but keeps it stable on each, so there is one per
+    // Wi-Fi it has joined. Newest first, at most WifiMacLimit.
+    List<string>? WifiMacs = null);
 
 /// <summary>Persists known-device data under %LOCALAPPDATA%\Linc.</summary>
 public sealed class DeviceRegistry : IDeviceRegistry
@@ -247,7 +288,13 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // M19 C3: appended at the end for the same migration reason as every field above it. The
         // default is ON, so an upgraded install starts on the update channel rather than silently
         // opted out of it.
-        bool? UpdatesEnabled = null);
+        bool? UpdatesEnabled = null,
+        // 1.0.0.11 (D-083/D-084): appended at the end like every field above it.
+        bool? ClipboardHistoryEnabled = null,
+        int? ClipboardHistorySize = null,
+        bool? ShowExplanations = null,
+        // D-087: appended at the end like every field above it; missing reads back as off.
+        bool? ForceSoftwareEncoding = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -297,6 +344,12 @@ public sealed class DeviceRegistry : IDeviceRegistry
 
     // M18 B1: ON by default — `?? true` below re-asserts it for an upgraded install with no key.
     public bool UsePhoneColours { get; private set; } = true;
+
+    public bool ClipboardHistoryEnabled { get; private set; } = true;
+    public int ClipboardHistorySize { get; private set; } = 500;
+    public bool ShowExplanations { get; private set; } = true;
+    public bool ForceSoftwareEncoding { get; private set; }
+    public event Action? ShowExplanationsChanged;
 
     /// <summary>Raised when <see cref="UsePhoneColours"/> changes, so the theme can re-derive.</summary>
     public event Action? UsePhoneColoursChanged;
@@ -393,6 +446,10 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 UpdatesEnabled = settings?.UpdatesEnabled ?? true;
                 SkippedUpdateVersion = Blank(settings?.SkippedUpdateVersion);
                 UsePhoneColours = settings?.UsePhoneColours ?? true;
+                ClipboardHistoryEnabled = settings?.ClipboardHistoryEnabled ?? true;
+                ClipboardHistorySize = ClampHistorySize(settings?.ClipboardHistorySize ?? 500);
+                ShowExplanations = settings?.ShowExplanations ?? true;
+                ForceSoftwareEncoding = settings?.ForceSoftwareEncoding ?? false;
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -437,7 +494,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
         }, persist: false);
     }
 
-    public void SaveLastHostPort(string hostPort) =>
+    public void SaveLastHostPort(string? hostPort) =>
         UpdateActive(d => d with { LastHostPort = hostPort });
 
     public IReadOnlyList<KnownDevice> KnownDevices => _knownDevices;
@@ -506,6 +563,21 @@ public sealed class DeviceRegistry : IDeviceRegistry
         SyncLanesChanged?.Invoke(); // the new device's lanes are (probably) different ones
     }
 
+    public void ClearActiveDevice()
+    {
+        if (PairedSerial is null)
+        {
+            return;
+        }
+        PairedSerial = null;
+        PairedModel = null;
+        Persist();
+        ActiveDeviceChanged?.Invoke();
+    }
+
+    public bool IsHidden(string serial) =>
+        _knownDevices.FirstOrDefault(d => string.Equals(d.Serial, serial, StringComparison.OrdinalIgnoreCase)) is { Hidden: true };
+
     public void SetDeviceHidden(string serial, bool hidden)
     {
         var index = _knownDevices.FindIndex(d => d.Serial == serial);
@@ -518,6 +590,22 @@ public sealed class DeviceRegistry : IDeviceRegistry
         KnownDevicesChanged?.Invoke();
     }
 
+    private const int WifiMacLimit = 8;
+
+    public void RememberWifiMac(string serial, string mac)
+    {
+        if (PhoneFingerprint.NormalizeMac(mac) is not { } normalized) return;
+        var index = _knownDevices.FindIndex(d => d.Serial == serial);
+        if (index < 0) return;
+        var known = _knownDevices[index];
+        var macs = known.WifiMacs ?? [];
+        if (macs.Count > 0 && macs[0] == normalized) return; // already the newest: no write
+        var updated = new List<string> { normalized };
+        updated.AddRange(macs.Where(m => m != normalized).Take(WifiMacLimit - 1));
+        _knownDevices[index] = known with { WifiMacs = updated };
+        Persist();
+    }
+
     public void ForgetKnownDevice(string serial)
     {
         if (_knownDevices.RemoveAll(d => d.Serial == serial) > 0)
@@ -525,7 +613,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
             if (PairedSerial == serial)
             {
                 // The active phone was forgotten: fall back to another known one, or nothing.
-                var next = _knownDevices.FirstOrDefault(d => !d.Hidden) ?? _knownDevices.FirstOrDefault();
+                // Only an open tab takes over; a closed one stays closed (D-079), so forgetting the last
+                // open phone leaves "no phone selected" rather than reviving one the user put away.
+                var next = _knownDevices.FirstOrDefault(d => !d.Hidden);
                 PairedSerial = next?.Serial;
                 PairedModel = next?.Model;
                 ActiveDeviceChanged?.Invoke();
@@ -573,6 +663,32 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // Clamp to the three supported windows (§2.3). Anything else is a caller bug or a stray
         // JSON value from a hand-edited file; we keep the well-defined choices.
         NotificationHistoryRetentionDays = days == 7 || days == 90 ? days : 30;
+        Persist();
+    }
+
+    public void SaveClipboardHistory(bool enabled, int size)
+    {
+        ClipboardHistoryEnabled = enabled;
+        ClipboardHistorySize = ClampHistorySize(size);
+        Persist();
+    }
+
+    private static int ClampHistorySize(int size) => size is 100 or 2000 ? size : 500;
+
+    public void SaveShowExplanations(bool show)
+    {
+        if (ShowExplanations == show)
+        {
+            return;
+        }
+        ShowExplanations = show;
+        Persist();
+        ShowExplanationsChanged?.Invoke();
+    }
+
+    public void SaveForceSoftwareEncoding(bool enabled)
+    {
+        ForceSoftwareEncoding = enabled;
         Persist();
     }
 
@@ -656,7 +772,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 AllowUsbConnections, null, BackgroundConnectionEnabled, null,
                 null, null, _knownDevices,
                 NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
-                null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled)));
+                null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
+                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding)));
         }
         catch (IOException)
         {

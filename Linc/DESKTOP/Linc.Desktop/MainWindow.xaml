@@ -95,7 +95,7 @@
                                     BorderThickness="0"
                                     Padding="4"
                                     MinWidth="0"
-                                    ToolTipService.ToolTip="Close this tab (the phone stays paired)">
+                                    ToolTipService.ToolTip="Close or remove this phone">
                                     <FontIcon Glyph="&#xE8BB;" FontSize="11" />
                                 </Button>
                                 <!-- Which phone the pages are showing. -->
@@ -118,8 +118,8 @@
                     Background="Transparent"
                     BorderThickness="0"
                     AutomationProperties.AutomationId="AddDeviceButton"
-                    AutomationProperties.Name="Pair another phone"
-                    ToolTipService.ToolTip="Pair another phone">
+                    AutomationProperties.Name="Add a phone"
+                    ToolTipService.ToolTip="Add a phone, or bring back one you closed">
                     <FontIcon Glyph="&#xE710;" FontSize="13" />
                 </Button>
             </StackPanel>
@@ -138,11 +138,11 @@
                 Click="OnPairPhone"
                 Visibility="{x:Bind Tabs.IsStripHidden, Mode=OneWay}"
                 AutomationProperties.AutomationId="PairPhoneButton"
-                AutomationProperties.Name="Pair a phone"
-                ToolTipService.ToolTip="Set up your phone">
+                AutomationProperties.Name="Add a phone"
+                ToolTipService.ToolTip="Add a phone, or bring back one you closed">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <FontIcon Glyph="&#xE710;" FontSize="13" />
-                    <TextBlock Text="Pair a phone" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
+                    <TextBlock Text="Add a phone" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
                 </StackPanel>
             </Button>
 
@@ -160,10 +160,36 @@
             NoLeftClickDelay="True">
             <tb:TaskbarIcon.ContextFlyout>
                 <MenuFlyout>
-                    <MenuFlyoutItem Text="Open Linc" Command="{x:Bind ShowWindowCommand}" />
-                    <MenuFlyoutItem Text="Quick Share..." Command="{x:Bind ShowShareCommand}" />
+                    <MenuFlyoutItem Text="Open Linc" Command="{x:Bind ShowWindowCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A7;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
                     <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Exit" Command="{x:Bind ExitCommand}" />
+                    <MenuFlyoutSubItem Text="Send to phone">
+                        <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE724;" /></MenuFlyoutSubItem.Icon>
+                        <MenuFlyoutItem Text="Files…" Command="{x:Bind SendFilesCommand}">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Clipboard text" Command="{x:Bind SendClipboardCommand}">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Paste &amp; send" Command="{x:Bind PasteAndSendCommand}">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyoutSubItem>
+                    <MenuFlyoutItem Text="Quick Share…" Command="{x:Bind ShowShareCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72D;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="{x:Bind Shell.TrayPhoneText, Mode=OneWay}" IsEnabled="False">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8EA;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem Text="{x:Bind Shell.PauseText, Mode=OneWay}" Command="{x:Bind TogglePauseCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE769;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Exit" Command="{x:Bind ExitCommand}">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E8;" /></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
                 </MenuFlyout>
             </tb:TaskbarIcon.ContextFlyout>
         </tb:TaskbarIcon>
@@ -230,7 +256,12 @@
                         <FontIcon Glyph="&#xE8B7;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Share" Tag="Share" ToolTipService.ToolTip="Quick Share with nearby devices">
+                <NavigationViewItem Content="Clipboard" Tag="Clipboard" ToolTipService.ToolTip="What you copy, on both devices">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE77F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Share" Tag="Share" ToolTipService.ToolTip="Send files and links to your phone or nearby devices">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE72D;" />
                     </NavigationViewItem.Icon>

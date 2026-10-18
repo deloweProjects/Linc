@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Direct Share (1.0.0.11, D-083): "Your PC" appears at the top of Android's share sheet. The
+     shortcut itself is published at runtime by DirectShare.kt; this says where shares to it go. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="app.linc.android.ShareReceiverActivity">
+        <data android:mimeType="*/*" />
+        <category android:name="app.linc.android.category.SEND_TO_PC" />
+    </share-target>
+</shortcuts>

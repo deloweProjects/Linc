@@ -122,6 +122,17 @@ public partial class DeviceTabsViewModel : ObservableObject
     /// <summary>Raised when the user picks the "+" tab, so the shell can open the pairing page.</summary>
     public event Action? AddDeviceRequested;
 
+    /// <summary>
+    /// Raised when a tab's X is pressed (D-079). The window asks first — disconnect and close,
+    /// remove the phone completely, or cancel — and then calls <see cref="DisconnectAndClose"/>
+    /// or <see cref="Remove"/>. Closing used to happen at once, with nothing said about the link.
+    /// </summary>
+    public event Action<DeviceTabViewModel>? CloseRequested;
+
+    /// <summary>Whether this tab's phone is the one Linc is connected to right now.</summary>
+    public bool IsConnected(DeviceTabViewModel tab) =>
+        tab.Serial == _registry.PairedSerial && _supervisor.State == LinkState.Connected;
+
     [RelayCommand]
     private void AddDevice() => AddDeviceRequested?.Invoke();
 
@@ -137,23 +148,36 @@ public partial class DeviceTabsViewModel : ObservableObject
         _registry.SetActiveDevice(tab.Serial);
     }
 
-    /// <summary>Closing a tab hides it; the pairing, certificate and cache all survive (D-033).</summary>
-    private void CloseTab(DeviceTabViewModel tab)
+    private void CloseTab(DeviceTabViewModel tab) => CloseRequested?.Invoke(tab);
+
+    /// <summary>
+    /// Disconnect from the phone and close its tab; it stays paired (D-033). Closing the active
+    /// tab moves to another open one; closing the last leaves NO phone active (D-079) — it used to
+    /// stay active and connected with no tab, the pages showing a phone the strip no longer had.
+    /// A closed phone isn't reconnected on its own; + → "Phones you've used before" brings it back.
+    /// </summary>
+    public void DisconnectAndClose(DeviceTabViewModel tab)
     {
         if (tab.Serial == _registry.PairedSerial)
         {
-            // Closing the active tab moves to another visible device first, so the pages are never
-            // orphaned. When this is the only tab there is no neighbour: the device stays paired
-            // (close ≠ unpair, D-033) and the strip simply empties — Settings › Devices brings it
-            // back with "Set active" (which un-hides it). M1 guarded this to Count>1, so closing a
-            // single-device strip silently no-op'd; that guard is gone.
             var next = Tabs.FirstOrDefault(t => t.Serial != tab.Serial);
             if (next is not null)
             {
                 _registry.SetActiveDevice(next.Serial);
             }
+            else
+            {
+                _registry.ClearActiveDevice();
+            }
         }
         _registry.SetDeviceHidden(tab.Serial, hidden: true);
+    }
+
+    /// <summary>Forget the phone completely: its pairing, certificate and saved copy (D-079).</summary>
+    public void Remove(DeviceTabViewModel tab)
+    {
+        _cache.Clear(tab.Serial);
+        _registry.ForgetKnownDevice(tab.Serial);
     }
 
     private void RecordSighting(string serial)

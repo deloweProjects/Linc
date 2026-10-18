@@ -63,7 +63,10 @@ public static class AdbProcess
     public static string? Find() => ToolLocator.FindAdb();
 
     /// <summary>Runs adb and returns stdout+stderr, trimmed. Never throws.</summary>
-    public static async Task<string> RunAsync(string adbPath, CancellationToken ct, params string[] args)
+    public static Task<string> RunAsync(string adbPath, CancellationToken ct, params string[] args) =>
+        RunAsync(adbPath, TimeSpan.FromSeconds(20), ct, args);
+
+    public static async Task<string> RunAsync(string adbPath, TimeSpan limit, CancellationToken ct, params string[] args)
     {
         var info = new ProcessStartInfo(adbPath)
         {
@@ -86,7 +89,7 @@ public static class AdbProcess
             var stdout = process.StandardOutput.ReadToEndAsync(ct);
             var stderr = process.StandardError.ReadToEndAsync(ct);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            timeout.CancelAfter(limit);
             await process.WaitForExitAsync(timeout.Token);
             return new StringBuilder(await stdout).Append(await stderr).ToString().Trim();
         }
@@ -129,6 +132,8 @@ public sealed class HotspotConnector(ILogService? log = null) : IHotspotConnecto
     /// <summary>The port `adb tcpip 5555` opens. Hardcoded by design this milestone.</summary>
     public const int AdbTcpPort = 5555;
 
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(6);
+
     private const string DisconnectVerb = "disconnect";
     private const string ConnectVerb = "connect";
     private const string UsableState = "device";
@@ -156,7 +161,9 @@ public sealed class HotspotConnector(ILogService? log = null) : IHotspotConnecto
         // below succeed-looking and useless. tools\hotspotsim asserts this ordering by source
         // text; do not reorder these two calls.
         await RunAdbAsync(adb, ct, DisconnectVerb, endpoint);
-        var connect = await RunAdbAsync(adb, ct, ConnectVerb, endpoint);
+        // A phone on the same link answers `adb connect` in well under a second (measured 450-1040
+        // ms); one that has left makes it hang. Six seconds, not the generic 20 (D-081).
+        var connect = await AdbProcess.RunAsync(adb, ConnectTimeout, ct, ConnectVerb, endpoint);
 
         var connected = connect.Contains("connected to", StringComparison.OrdinalIgnoreCase);
         if (!connected)

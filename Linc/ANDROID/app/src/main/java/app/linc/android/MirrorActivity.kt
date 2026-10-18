@@ -46,6 +46,7 @@ import app.linc.android.service.MirrorSession
 import app.linc.android.service.MirrorSettings
 import app.linc.android.service.MirrorSettings.PointerMode
 import app.linc.android.service.ModifierKeys
+import app.linc.android.service.PcTabletMode
 import app.linc.android.service.PcVoiceAccess
 import app.linc.android.service.PointerGestures
 import app.linc.android.ui.PcRemoteOverlay
@@ -88,6 +89,7 @@ class MirrorActivity : ComponentActivity() {
     private val ui = RemoteUiState()
     private var phoneKeyboardUp = false
     private var keyboardAutoShown = false
+    private var lastSetupStage = 0
     private var recognizer: SpeechRecognizer? = null
     private var afterMicGranted: (() -> Unit)? = null
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -192,15 +194,20 @@ class MirrorActivity : ComponentActivity() {
         gestures = PointerGestures(
             out = object : PointerGestures.Output {
                 override fun pointerTo(x: Float, y: Float) {
-                    lastLocalInputMs = SystemClock.uptimeMillis()
+                    markLocalInput()
                     drawCursor()
                     followCursor()
                     toNormalized(x, y)?.let { (nx, ny) -> MirrorControl.pointer("move", nx, ny, "touch") }
                 }
 
                 override fun button(button: String, down: Boolean) {
-                    lastLocalInputMs = SystemClock.uptimeMillis()
+                    markLocalInput()
                     val (nx, ny) = toNormalized(gestures.cursorX, gestures.cursorY) ?: return
+                    if (down) {
+                        // Feedback now, not when the PC's next frame arrives.
+                        cursorView.pulse(button)
+                        video.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    }
                     MirrorControl.pointer(if (down) "down" else "up", nx, ny, "touch", button)
                 }
 
@@ -295,6 +302,17 @@ class MirrorActivity : ComponentActivity() {
         }
 
         override fun voiceAccess() {
+            if (PcVoiceAccess.state.value.settingUp) {
+                toast(PcVoiceAccess.state.value.setupText)
+                touched()
+                return
+            }
+            if (!PcVoiceAccess.ready() || !PcVoiceAccess.state.value.available) {
+                toast(if (!PcVoiceAccess.ready()) "Voice Access needs a newer Linc on the PC."
+                      else "This PC doesn't have Windows Voice Access (Windows 11 22H2 or later).")
+                touched()
+                return
+            }
             val on = !PcVoiceAccess.state.value.on
             val phoneMic = MirrorSettings.voicePhoneMic(this@MirrorActivity)
             if (on && phoneMic && !PcVoiceAccess.hasMicPermission(this@MirrorActivity)) {
@@ -306,6 +324,51 @@ class MirrorActivity : ComponentActivity() {
                 PcVoiceAccess.set(this@MirrorActivity, on, phoneMic)
             }
             touched()
+        }
+
+        /** Tablet mode (v22, D-074): the PC scales itself up for fingers; put back when you leave. */
+        override fun tabletMode() {
+            // Shown even to an older PC, so the button isn't mysteriously missing — it says why.
+            if (!PcTabletMode.ready()) {
+                toast("Tablet mode needs Linc 1.0.0.3 or newer on the PC. Quit Linc on the PC and run the new version.")
+                touched()
+                return
+            }
+            PcTabletMode.set(!PcTabletMode.state.value.on)
+            touched()
+        }
+
+        /**
+         * Which microphone the PC hears while you're in PC Remote (D-075). Phone: Voice Access,
+         * calls and dictation on the PC all get this phone's mic — streamed only while a PC app
+         * is actually listening. Switches Voice Access over live if it's running.
+         */
+        override fun setPhoneMic(phone: Boolean) {
+            if (phone && !PcVoiceAccess.hasMicPermission(this@MirrorActivity)) {
+                afterMicGranted = { setPhoneMic(true) }
+                askMic.launch(Manifest.permission.RECORD_AUDIO)
+                return
+            }
+            val s = PcVoiceAccess.state.value
+            if (phone && !s.cable && s.canSetUp) {
+                ui.panelOpen = false
+                AlertDialog.Builder(this@MirrorActivity)
+                    .setTitle("Set up the microphone on the PC?")
+                    .setMessage(PcVoiceAccess.SETUP_EXPLANATION)
+                    .setPositiveButton("Set up") { _, _ ->
+                        MirrorSettings.setVoicePhoneMic(this@MirrorActivity, true)
+                        PcVoiceAccess.setAuto(this@MirrorActivity, true, installCable = true)
+                        refreshUi()
+                    }
+                    .setNegativeButton("Not now", null)
+                    .show()
+                return
+            }
+            MirrorSettings.setVoicePhoneMic(this@MirrorActivity, phone)
+            if (s.on) PcVoiceAccess.set(this@MirrorActivity, true, phoneMic = phone)
+            if (PcVoiceAccess.micReady()) PcVoiceAccess.setAuto(this@MirrorActivity, phone)
+            else if (phone && !s.on) toast("Using the phone as the PC's mic outside Voice Access needs Linc 1.0.0.6 or newer on the PC.")
+            refreshUi(); touched()
         }
 
         override fun display() = pickDisplay()
@@ -354,8 +417,14 @@ class MirrorActivity : ComponentActivity() {
         ui.autoKeyboard = MirrorSettings.autoKeyboard(this)
         ui.soundAvailable = MirrorControl.v20()
         ui.soundOn = MirrorSettings.audio(this)
-        ui.voiceAccessAvailable = PcVoiceAccess.ready() && PcVoiceAccess.state.value.available
+        // Always shown, in fixed places: a button that appeared a moment after each reconnect used
+        // to shift the panel under the finger, so a tap meant for Tablet mode hit Voice Access.
+        ui.voiceAccessAvailable = true
         ui.voiceAccessOn = PcVoiceAccess.state.value.on
+        ui.tabletAvailable = true
+        ui.phoneMic = MirrorSettings.voicePhoneMic(this)
+        ui.micLive = PcVoiceAccess.micLive.value
+        ui.tabletOn = PcTabletMode.state.value.on
         ui.displays = MirrorSession.displays.value.size
         ui.zoomed = scale > 1f
         ui.picture = MirrorSettings.get(this).label
@@ -381,6 +450,12 @@ class MirrorActivity : ComponentActivity() {
                     applyTransform()
                     if (MirrorSettings.audio(this@MirrorActivity)) MirrorControl.audio(true)
                     PcVoiceAccess.refresh(this@MirrorActivity)
+                    PcTabletMode.refresh()
+                    // "Phone" chosen: the PC hears this phone whenever an app there listens (D-075).
+                    if (PcVoiceAccess.micReady() && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
+                        PcVoiceAccess.hasMicPermission(this@MirrorActivity)) {
+                        PcVoiceAccess.setAuto(this@MirrorActivity, true)
+                    }
                     refreshUi()
                 } else {
                     loading.visibility = View.VISIBLE
@@ -412,7 +487,7 @@ class MirrorActivity : ComponentActivity() {
                 // The PC's report trails a finger by a round trip, so while this phone is
                 // driving the pointer it trusts itself; otherwise the PC moved it (its own
                 // mouse, a jump to a dialog) and the phone follows.
-                if (!gestures.active && SystemClock.uptimeMillis() - lastLocalInputMs > LOCAL_AUTHORITY_MS) {
+                if (!gestures.active && SystemClock.uptimeMillis() - lastLocalInputMs > localAuthorityMs()) {
                     gestures.syncCursor(cursor.x.toFloat(), cursor.y.toFloat())
                 }
                 drawCursor()
@@ -421,15 +496,33 @@ class MirrorActivity : ComponentActivity() {
         lifecycleScope.launch { ModifierKeys.latches.collectLatest { keyboard.refresh() } }
         lifecycleScope.launch { MirrorSession.displays.collectLatest { refreshUi() } }
         lifecycleScope.launch { AudioReceiver.playing.collectLatest { refreshUi() } }
+        lifecycleScope.launch { PcVoiceAccess.micLive.collectLatest { refreshUi() } }
         lifecycleScope.launch {
             PcVoiceAccess.state.collectLatest { state ->
                 refreshUi()
                 state.error?.let { toast(it) }
                 if (state.settingUp) {
-                    toast("Setting up the microphone… on the PC, approve Windows' prompt (it may be flashing in the taskbar) and click Install Driver.")
-                } else if (state.on && state.mic != "phone" && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
+                    // One toast when setup starts and one when the installer opens, not every 5 %.
+                    val stage = if ((state.progress ?: 100) >= 100) 2 else 1
+                    if (stage != lastSetupStage) toast(state.setupText)
+                    lastSetupStage = stage
+                } else {
+                    lastSetupStage = 0
+                }
+                if (!state.settingUp && state.on && state.mic != "phone" && MirrorSettings.voicePhoneMic(this@MirrorActivity) &&
                     !state.cable && !state.canSetUp) {
                     toast("Voice Access is using the PC's own microphone. Update Linc on the PC so it can set up this phone as its microphone.")
+                }
+            }
+        }
+        lifecycleScope.launch {
+            var first = true
+            PcTabletMode.state.collectLatest { state ->
+                refreshUi()
+                if (first) { first = false; return@collectLatest }
+                state.error?.let { toast("Tablet mode: $it") }
+                if (state.error == null && state.on && state.scale != null) {
+                    toast("Tablet mode on: the PC is at ${state.scale} % so everything is finger-sized.")
                 }
             }
         }
@@ -830,6 +923,36 @@ class MirrorActivity : ComponentActivity() {
      * the app is in the foreground with the screen on — which is precisely when the mirror
      * is being watched, so it costs no battery the rest of the time. Released in [onPause].
      */
+    /**
+     * How long the phone keeps trusting its own pointer after the last touch. A fixed 400 ms let
+     * a report the PC sent before the finger lifted arrive after the window on a slow link and
+     * pull the pointer back to where it had been. So the window covers two round trips (the
+     * move out, the report back) with margin, and never less than 400 ms.
+     */
+    /**
+     * The phone just drove the pointer. Once its trust window ends, take the PC's word again —
+     * even if no new report comes, since the PC may have moved the pointer itself during the
+     * window (a dialog grabbing it) and then left it still, which sends nothing more.
+     */
+    private fun markLocalInput() {
+        lastLocalInputMs = SystemClock.uptimeMillis()
+        handler.removeCallbacks(resyncCursor)
+        handler.postDelayed(resyncCursor, localAuthorityMs() + 20)
+    }
+
+    private val resyncCursor = Runnable {
+        val cursor = MirrorSession.cursor.value ?: return@Runnable
+        if (gestures.active || SystemClock.uptimeMillis() - lastLocalInputMs <= localAuthorityMs()) return@Runnable
+        gestures.syncCursor(cursor.x.toFloat(), cursor.y.toFloat())
+        drawCursor()
+    }
+
+    private fun localAuthorityMs(): Long {
+        val rtt = MirrorSession.rttMs.value
+        if (rtt < 0) return LOCAL_AUTHORITY_MS
+        return (rtt * 2L + 150L).coerceIn(LOCAL_AUTHORITY_MS, LOCAL_AUTHORITY_MAX_MS)
+    }
+
     override fun onResume() {
         super.onResume()
         if (wifiLock == null) {
@@ -850,6 +973,10 @@ class MirrorActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Leaving PC Remote ends the automatic phone mic; the PC puts its own default back (D-075).
+        if (PcVoiceAccess.micReady()) PcVoiceAccess.setAuto(this, false)
+        // Tablet mode is for PC Remote: leaving puts the PC's own scale back (D-074).
+        if (PcTabletMode.ready() && PcTabletMode.state.value.on) PcTabletMode.set(false)
         handler.removeCallbacksAndMessages(null)
         ModifierKeys.clear()
         MirrorControl.audio(false)
@@ -870,6 +997,7 @@ class MirrorActivity : ComponentActivity() {
         const val STALL_RESTART_S = 8
         /** After the phone moves the pointer, the PC's (older) reports are ignored this long. */
         const val LOCAL_AUTHORITY_MS = 400L
+        const val LOCAL_AUTHORITY_MAX_MS = 1_500L
         const val PANEL_IDLE_MS = 10_000L
         /** Two-finger scroll: wheel units per view pixel (120 = one notch per ~50 px). */
         const val WHEEL_PER_PX = 2.4f

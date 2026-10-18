@@ -370,9 +370,18 @@ public sealed class HotspotLinkService(
 
             // M13c §2.3: an optimisation layered on top, never depended on. Only worth doing
             // when adbd is on some other port; it is already where we want it otherwise.
+            // But never while the live link to the phone rides on wireless debugging: `tcpip`
+            // restarts adbd, which cut a friend's brand-new link 10 s after first setup (D-078).
             if (port != HotspotConnector.AdbTcpPort)
             {
-                await promotion.PromoteAsync(result.Endpoint, ct);
+                if (connection.Current?.Transport == LinkTransport.AdbWireless)
+                {
+                    log.Log(LogLevel.Info, $"Not moving {result.Endpoint} to port {HotspotConnector.AdbTcpPort} now: the link to the phone runs over wireless debugging, and the move restarts it.");
+                }
+                else
+                {
+                    await promotion.PromoteAsync(result.Endpoint, ct);
+                }
             }
 
             StartHealthLoop(result.Endpoint, expectedSerial);
@@ -580,7 +589,9 @@ public sealed class HotspotLinkService(
                     log.Log(LogLevel.Info, $"Reconnected wireless debugging at {result.Endpoint}.");
                     continue;
                 }
-                if (HotspotBackoff.ShouldRetire(_consecutiveFailures))
+                // The supervisor owns whether the phone is here at all (D-081): with no link to it,
+                // a dead standby is a phone that left, not one to keep redialling.
+                if (HotspotBackoff.ShouldRetire(_consecutiveFailures, phoneLinked: connection.Current is not null))
                 {
                     await RetireAsync(endpoint,
                         $"{_consecutiveFailures} re-resolves in a row failed — the phone has most likely moved networks");
@@ -624,18 +635,24 @@ public sealed class HotspotLinkService(
         {
             _gate.Release();
         }
-        log.Log(LogLevel.Warn,
-            $"Stopped redialling wireless debugging at {endpoint} ({why}); asking the phone where it is now.");
+        var linked = connection.Current is not null;
+        log.Log(LogLevel.Info, linked
+            ? $"Stopped redialling wireless debugging at {endpoint} ({why}); asking the phone where it is now."
+            : $"Stopped redialling wireless debugging at {endpoint} ({why}); the phone isn't connected, so Linc waits for it to come back.");
         try
         {
             await connector.DisconnectAsync(endpoint, CancellationToken.None);
-            await RequestArmAsync(HotspotArmFallback.Prefer, CancellationToken.None);
+            if (linked)
+            {
+                await RequestArmAsync(HotspotArmFallback.Prefer, CancellationToken.None);
+            }
         }
         catch (Exception ex) when (ex is LincException or IOException)
         {
             log.Log(LogLevel.Warn, $"Couldn't ask the phone to re-announce wireless debugging: {ex.Message}");
         }
     }
+
 
     /// <summary>
     /// Tells the phone the outcome so it stops retrying and logs honestly (v18 <c>adb.ack</c>).

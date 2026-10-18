@@ -13,8 +13,28 @@ public sealed partial class SettingsPage : Page
     {
         ViewModel = App.Services.GetRequiredService<SettingsViewModel>();
         InitializeComponent();
+        ViewModel.RemoveRequested += vm => _ = ConfirmRemoveAsync(vm);
         _cable = new VirtualCableSetup(App.Services.GetRequiredService<ILogService>(), PcVoiceAccess.CablePresent);
         Loaded += async (_, _) => await RefreshCableAsync();
+    }
+
+    /// <summary>The same question as the tab's X "Remove completely" (D-079).</summary>
+    private async Task ConfirmRemoveAsync(KnownDeviceVm vm)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = $"Remove {vm.Model}?",
+            Content = $"Linc will unpair {vm.Model} and delete its saved copy on this PC. You'd pair it again to use it.\n\n" +
+                "To just put it away, close its tab instead — it stays paired.",
+            PrimaryButtonText = "Remove completely",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            ViewModel.RemoveDevice(vm);
+        }
     }
 
     // ---- phone as microphone (D-071) ----------------------------------------------
@@ -45,8 +65,11 @@ public sealed partial class SettingsPage : Page
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         CableInstallButton.IsEnabled = false;
-        CableStatus.Text = "Setting up… approve Windows' prompt, then click Install Driver in VB-Audio's setup.";
-        var result = await Task.Run(() => _cable.InstallAsync());
+        CableStatus.Text = "Downloading VB-CABLE…";
+        var progress = new Progress<int>(p => CableStatus.Text = p < 100
+            ? $"Downloading VB-CABLE… {p} %"
+            : "Approve Windows' prompt, then click Install Driver in VB-Audio's setup.");
+        var result = await Task.Run(() => _cable.InstallAsync(progress));
         await RefreshCableAsync(result.Ok ? null : result.Message);
     }
 

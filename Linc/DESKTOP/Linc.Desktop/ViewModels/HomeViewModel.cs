@@ -163,7 +163,7 @@ public sealed partial class AppVm(AppInfo info, System.Windows.Input.ICommand? l
     }
 }
 
-public sealed partial class PhotoVm(PhotoItem item, IConnectionManager connection, IFileService files, ILogService log) : ObservableObject
+public sealed partial class PhotoVm(PhotoItem item, IFileService files, ILogService log) : ObservableObject
 {
     public string Id => item.Id;
 
@@ -450,7 +450,7 @@ public partial class HomeViewModel : ObservableObject
             }
             foreach (var photo in cached.Photos ?? [])
             {
-                var vm = new PhotoVm(new PhotoItem(photo.Id, photo.Path, 0), _connection, _files, _log);
+                var vm = new PhotoVm(new PhotoItem(photo.Id, photo.Path, 0), _files, _log);
                 Photos.Add(vm);
                 _ = LoadThumbAsync(vm); // falls back to the remembered thumbnail while offline
             }
@@ -810,7 +810,7 @@ RefreshGradient();
 
     /// <summary>Fills the list from the on-disk cache — synchronous, no network, never throws.</summary>
     /// <remarks>
-    /// M9e (A2.5): this used to key off <c>_supervisor.Device?.Serial</c>, which is only set once a
+    /// M9e (A2.5): this used to key off <c>_supervisor.Device?.CacheKey</c>, which is only set once a
     /// live connection has already succeeded — but the one call site is in the constructor, before
     /// any connection has had a chance to complete, so that guard always no-opped and the cached
     /// Apps list never appeared until after a live phone answered at least once this session
@@ -846,7 +846,7 @@ RefreshGradient();
         {
             return;
         }
-        if (_supervisor.Device?.Serial is not { } serial)
+        if (_supervisor.Device?.CacheKey is not { } serial)
         {
             return;
         }
@@ -960,7 +960,7 @@ RefreshGradient();
     {
         try
         {
-            if (_supervisor.Device?.Serial is not { } serial)
+            if (_supervisor.Device?.CacheKey is not { } serial)
             {
                 return;
             }
@@ -1012,7 +1012,7 @@ RefreshGradient();
             Photos.Clear();
             foreach (var item in recent)
             {
-                var vm = new PhotoVm(item, _connection, _files, _log);
+                var vm = new PhotoVm(item, _files, _log);
                 Photos.Add(vm);
                 _ = LoadThumbAsync(vm);
             }
@@ -1022,7 +1022,7 @@ RefreshGradient();
 
             // §2.1 write-through: identity only (id/path/takenAt) — thumbnail bytes stay in the
             // existing M6c/M02 file cache, not sync_cache.
-            if (_supervisor.Device?.Serial is { } serial)
+            if (_supervisor.Device?.CacheKey is { } serial)
             {
                 var rows = recent
                     .Select(p => (p.Id, JsonSerializer.Serialize(new CachedSyncPhoto(p.Id, p.Path, p.TakenAt))))
@@ -1044,7 +1044,7 @@ RefreshGradient();
             if (bytes is { Length: > 0 })
             {
                 // Remember it, so the strip still has pictures next launch with the phone away.
-                if (_supervisor.Device?.Serial is { } serial)
+                if (_supervisor.Device?.CacheKey is { } serial)
                 {
                     _cache.SavePhoto(serial, vm.Id, vm.Path, bytes);
                 }
@@ -1057,7 +1057,7 @@ RefreshGradient();
             // Cosmetic; fall through to whatever was remembered.
         }
 
-        if (_supervisor.Device?.Serial is { } cachedSerial
+        if (_supervisor.Device?.CacheKey is { } cachedSerial
             && _cache.LoadPhotoThumbnail(cachedSerial, vm.Id) is { Length: > 0 } remembered)
         {
             vm.Thumbnail = await ToImageAsync(remembered);
@@ -1253,7 +1253,7 @@ RefreshGradient();
                 {
                     continue;
                 }
-                var vm = new PhotoVm(new PhotoItem(cached.Id, cached.Path, cached.TakenAt), _connection, _files, _log);
+                var vm = new PhotoVm(new PhotoItem(cached.Id, cached.Path, cached.TakenAt), _files, _log);
                 Photos.Add(vm);
                 _ = LoadThumbAsync(vm); // thumbnail bytes still come from the M6c/M02 file cache, unchanged
             }
@@ -1364,7 +1364,7 @@ RefreshGradient();
             OnPropertyChanged(nameof(HasConversations));
         OnPropertyChanged(nameof(NoConversations));
 
-            if (_supervisor.Device?.Serial is { } serial)
+            if (_supervisor.Device?.CacheKey is { } serial)
             {
                 _ = WriteThroughCacheAsync(serial, HomeCacheKinds.Conversation, cacheRows);
             }
@@ -1435,7 +1435,7 @@ RefreshGradient();
             }
             OnPropertyChanged(nameof(HasCalls));
 
-            if (_supervisor.Device?.Serial is { } serial)
+            if (_supervisor.Device?.CacheKey is { } serial)
             {
                 _ = WriteThroughCacheAsync(serial, HomeCacheKinds.Call, cacheRows);
             }
@@ -1851,7 +1851,7 @@ RefreshGradient();
         var state = _media.Current;
 
         // Remember the metadata only — never the album art, and never anything sensitive (D-032).
-        if (_supervisor.Device?.Serial is { } serial)
+        if (_supervisor.Device?.CacheKey is { } serial)
         {
             _cache.SaveMedia(serial, state is null
                 ? null
@@ -1922,7 +1922,8 @@ RefreshGradient();
     private void RebuildClips()
     {
         Clips.Clear();
-        foreach (var entry in _clipboard.History)
+        // Home shows the newest few; the Clipboard page has the whole history (D-083).
+        foreach (var entry in _clipboard.History.Where(c => !c.Pinned).Take(5))
         {
             Clips.Add(new ClipVm(entry, _clipboard, _connection));
         }

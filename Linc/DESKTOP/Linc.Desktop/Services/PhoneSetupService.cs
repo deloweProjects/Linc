@@ -51,6 +51,12 @@ public interface IPhoneSetupService
     string? LocateApk();
 
     /// <summary>
+    /// The setup wizard's "Linc is already on my phone" box (D-089): while the wizard is open, never
+    /// push the APK — connect to the app that is there. Off again when the wizard closes.
+    /// </summary>
+    bool SkipCompanionInstall { get; set; }
+
+    /// <summary>
     /// Installs an arbitrary local .apk (M10 Part A) — not the bundled companion. Reuses the
     /// same <see cref="AdbClient.InstallAsync"/> primitive as <see cref="EnsureReadyAsync"/>.
     /// Returns the raw success/failure so the caller can translate it into plain language
@@ -78,9 +84,12 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
     // M12c-amend C2.3: in-memory only, for this process's lifetime — never persisted to disk,
     // and never re-asked for a phone that already got an answer this session.
     private readonly HashSet<string> _declinedThisSession = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _upkeptThisSession = new(StringComparer.Ordinal);
     private readonly HashSet<string> _awaitingAnswer = new(StringComparer.Ordinal);
 
     public event Action<DeviceData>? InstallConfirmationNeeded;
+
+    public bool SkipCompanionInstall { get; set; }
 
     private const string ListenerComponent =
         ProtocolConstants.CompanionPackage + "/" + ProtocolConstants.CompanionPackage + ".service.LincNotificationListener";
@@ -111,12 +120,19 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
     public async Task<bool> EnsureReadyAsync(DeviceData device, CancellationToken ct)
     {
         var installed = await IsInstalledAsync(device, ct);
+        if (!installed && SkipCompanionInstall && onboarding.IsActive)
+        {
+            log.Log(LogLevel.Warn, "The phone doesn't seem to have the Linc app, but you asked not to install it. " +
+                "Install Linc on the phone, open it, and Linc here connects to it.");
+            return false;
+        }
         var declined = device.Serial is not null && _declinedThisSession.Contains(device.Serial);
         var decision = CompanionInstallGate.Decide(installed, onboarding.IsActive, declined);
 
         switch (decision)
         {
             case CompanionInstallDecision.Skip:
+                if (installed) await UpkeepAsync(device, ct);
                 return false; // already set up, or already declined this session
             case CompanionInstallDecision.Ask:
                 // M12c-amend C2.5: never block the connect on the answer — fire the request and
@@ -132,6 +148,17 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
             default: // InstallSilently — the wizard is already the user's explicit consent (C2.4)
                 return await InstallCompanionAsync(device, ct);
         }
+    }
+
+    /// <summary>Phones set up before a grant existed get it here, once per phone per session.</summary>
+    private async Task UpkeepAsync(DeviceData device, CancellationToken ct)
+    {
+        if (device.Serial is null || !_upkeptThisSession.Add(device.Serial)) return;
+        await PhoneSetupCommands.RunPlanAsync(
+            PhoneSetupCommands.UpkeepPlan(ProtocolConstants.CompanionPackage),
+            (command, token) => ShellAsync(device, command, token),
+            (command, ex) => log.Log(LogLevel.Info, $"A phone setup step didn't apply ({command}): {ex.Message}"),
+            ct);
     }
 
     public async Task<bool> ConfirmInstallAsync(DeviceData device, CancellationToken ct)

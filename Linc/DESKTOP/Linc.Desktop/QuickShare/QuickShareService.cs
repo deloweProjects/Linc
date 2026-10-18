@@ -785,7 +785,7 @@ public sealed class QuickShareService(
         return device.Transport switch
         {
             LinkTransport.DirectTls => connection.PeerAddress,
-            LinkTransport.AdbWireless => device.Serial.Contains(':') ? device.Serial[..device.Serial.LastIndexOf(':')] : null,
+            LinkTransport.AdbWireless => AdbSerial.HostOf(device.Serial),
             _ => null, // a USB link has no network address to compare against
         };
     }

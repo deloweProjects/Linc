@@ -60,6 +60,22 @@ object QuickShareLauncher {
         }
     }
 
+    /** Opens Quick Share's device picker for a piece of text or a link. */
+    fun sendText(context: Context, text: String): Boolean {
+        val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val target = quickShareTarget(context, intent)
+        return try {
+            context.startActivity(if (target != null) Intent(intent).setComponent(target)
+            else Intent.createChooser(intent, "Share with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
     /**
      * Makes this phone visible to Quick Share senders for a while, so the PC's Share page can
      * send to it. Google's Quick Share only; Samsung's has no public entry point for this.

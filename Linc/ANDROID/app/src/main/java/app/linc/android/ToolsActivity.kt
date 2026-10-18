@@ -1,21 +1,27 @@
 package app.linc.android
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import app.linc.android.ui.ToolsScreen
+import androidx.activity.enableEdgeToEdge
+import app.linc.android.ui.RemoteScreen
 import app.linc.android.ui.theme.LincTheme
 
 /**
- * Full-screen host for [ToolsScreen] (M4a): the phone's remote keyboard + trackpad. Opened only
- * from the Home "Tools" card, same precedent as [MirrorActivity].
+ * A standalone host for the Remote screen (was Tools, M4a). Remote is a tab in the main app since
+ * 1.0.0.11; this stays so anything that opens Tools directly (an old shortcut) still lands there.
  */
 class ToolsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
             LincTheme {
-                ToolsScreen(onBack = { finish() })
+                RemoteScreen(
+                    onBack = { finish() },
+                    onMirror = { startActivity(Intent(this, MirrorActivity::class.java)) },
+                )
             }
         }
     }

@@ -333,7 +333,7 @@ public partial class SyncViewModel : ObservableObject
             // cache stays fresh even if the owner never opens Home. The whole thread lives under
             // one row keyed by the address (same shape/key as HomeViewModel.LoadMessagesAsync) so
             // the two pages upsert the same rows rather than fighting over the table.
-            if (_supervisor.Device?.Serial is { } serial)
+            if (_supervisor.Device?.CacheKey is { } serial)
             {
                 var cacheRows = messages.GroupBy(m => m.Address).Select(group =>
                 {
@@ -590,7 +590,7 @@ public partial class SyncViewModel : ObservableObject
             OnPropertyChanged(nameof(ShowCallsPlaceholder));
             LaneMessage = "";
 
-            if (_supervisor.Device?.Serial is { } serial)
+            if (_supervisor.Device?.CacheKey is { } serial)
             {
                 _ = WriteThroughCacheAsync(serial, HomeCacheKinds.Call, cacheRows);
             }

@@ -129,6 +129,8 @@ public partial class App : Application
             .AddSingleton<IShareService, ShareService>()
             .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()
             .AddSingleton<QuickShareViewModel>()
+            .AddSingleton<ClipboardViewModel>()
+            .AddSingleton<ShareViewModel>()
             .AddSingleton<HomeViewModel>()
             .AddSingleton<SyncViewModel>()
             .AddSingleton<FilesViewModel>()
@@ -154,6 +156,27 @@ public partial class App : Application
     // silently disabled direct connections when a stray instance held :46001).
     private static System.Threading.Mutex? _singleInstance;
 
+    public const string RestoreAndExitArgument = "--restore-and-exit";
+
+    private void RestoreAndExit()
+    {
+        var log = Services.GetRequiredService<ILogService>();
+        log.Log(LogLevel.Info, "Uninstall: putting back the microphones, display scale, Explorer menu and autostart.");
+        try { PcVoiceAccess.RestoreAllMics(log); } catch (Exception ex) { log.Log(LogLevel.Warn, $"Uninstall: microphones: {ex.Message}"); }
+        try { PcTabletMode.RestorePending(log); } catch (Exception ex) { log.Log(LogLevel.Warn, $"Uninstall: display scale: {ex.Message}"); }
+        try { QuickShare.QsShellIntegration.Unregister(); } catch (Exception ex) { log.Log(LogLevel.Warn, $"Uninstall: Explorer menu: {ex.Message}"); }
+        try
+        {
+            using var run = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(StartupRegistration.RunKeySubPath, writable: true);
+            run?.DeleteValue(StartupRegistration.RunValueName, throwOnMissingValue: false);
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Uninstall: autostart: {ex.Message}");
+        }
+        Exit();
+    }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         // M12b Part A: on a clean machine with no debugger, an exception here used to kill the
@@ -163,15 +186,37 @@ public partial class App : Application
         // exits cleanly instead of hanging or vanishing.
         try
         {
+            // 1.0.0.11 (D-085): the uninstaller's clean-up. Put back anything Linc changed on the
+            // PC — the default and Voice Access microphones, the display scale, Explorer's menu and
+            // the autostart entry — then exit without a window. VB-CABLE stays installed.
+            if (Environment.GetCommandLineArgs().Any(a => string.Equals(a, QuickShare.QsShellIntegration.QuitArgument, StringComparison.OrdinalIgnoreCase)))
+            {
+                // The installer closing Linc before an upgrade or uninstall: ask the running copy
+                // to exit cleanly (it puts the microphones and display scale back), then go.
+                QuickShare.QsShellIntegration.TryForwardQuit();
+                Exit();
+                return;
+            }
+            if (Environment.GetCommandLineArgs().Any(a => string.Equals(a, RestoreAndExitArgument, StringComparison.OrdinalIgnoreCase)))
+            {
+                RestoreAndExit();
+                return;
+            }
             _singleInstance = new System.Threading.Mutex(initiallyOwned: true, @"Local\LincDesktopSingleInstance", out var isFirst);
             var quickSharePaths = QuickShare.QsShellIntegration.PathsFrom(Environment.GetCommandLineArgs());
+            var phonePaths = QuickShare.QsShellIntegration.PathsFrom(
+                Environment.GetCommandLineArgs(), QuickShare.QsShellIntegration.PhoneArgument);
             if (!isFirst)
             {
-                // Explorer's "Send with Quick Share" starts a second copy; hand its files to the
-                // running one, which opens its Share page with them ready to send.
+                // Explorer's "Send with Quick Share" / "Send to phone (Linc)" start a second copy;
+                // hand its files to the running one.
                 if (quickSharePaths.Count > 0)
                 {
                     QuickShare.QsShellIntegration.TryForward(quickSharePaths);
+                }
+                if (phonePaths.Count > 0)
+                {
+                    QuickShare.QsShellIntegration.TryForward(phonePaths, toPhone: true);
                 }
                 Exit(); // another Linc is already running; let it own the tray and the port
                 return;
@@ -199,10 +244,19 @@ public partial class App : Application
             }
             _window = new MainWindow();
             MainWindowInstance = _window;
+            // D-057: the cable driver and the mic-restore note live under the store root, which
+            // only the registry resolves.
+            var storeRoot = Services.GetRequiredService<IDeviceRegistry>().RootPath;
+            VirtualCablePackage.StoreRoot = storeRoot;
+            PcVoiceAccess.StoreRoot = storeRoot;
+            PcSpeakerMode.StoreRoot = storeRoot;
+            PcTabletMode.StoreRoot = storeRoot;
             // D-071: a phone-mic session cut short by a crash or a kill left the virtual cable as
             // the default microphone; put the user's own back. COM, so off the UI thread.
             var restoreLog = Services.GetRequiredService<ILogService>();
-            _ = Task.Run(() => PcVoiceAccess.RestorePendingDefaultMic(restoreLog));
+            _ = Task.Run(() => PcVoiceAccess.RestoreAllMics(restoreLog));
+            // D-074: likewise a Tablet mode left on: put back the display scale and Explorer spacing.
+            _ = Task.Run(() => PcTabletMode.RestorePending(restoreLog));
             // M9e: view models are constructed synchronously as part of Activate() — always call
             // it, even on a silent startup launch, or AppShellViewModel never starts and the app
             // sits in the tray connected to nothing. A startup launch just hides the window right
@@ -210,24 +264,51 @@ public partial class App : Application
             // MainWindow.OnAppWindowClosing) — no second hiding mechanism.
             _window.Activate();
             var commandLineArgs = Environment.GetCommandLineArgs();
-            if (StartupRegistration.IsStartupLaunch(commandLineArgs) && quickSharePaths.Count == 0)
+            if (StartupRegistration.IsStartupLaunch(commandLineArgs) && quickSharePaths.Count == 0 && phonePaths.Count == 0)
             {
                 _window.AppWindow.Hide();
             }
             var quickShare = Services.GetRequiredService<QuickShare.IQuickShareService>();
             var window = (MainWindow)_window;
             QuickShare.QsShellIntegration.Listen(
-                paths =>
+                (paths, toPhone) => window.DispatcherQueue.TryEnqueue(() =>
                 {
-                    quickShare.QueueFiles(paths);
-                    window.ShowSharePage();
-                },
+                    if (QuickShare.QsShellIntegration.IsQuit(paths))
+                    {
+                        window.ExitCommand.Execute(null);
+                    }
+                    else if (toPhone)
+                    {
+                        window.SendToPhone(paths);
+                    }
+                    else
+                    {
+                        quickShare.QueueFiles(paths);
+                        window.ShowSharePage();
+                    }
+                }),
                 message => Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, message),
                 CancellationToken.None);
             if (quickSharePaths.Count > 0)
             {
                 quickShare.QueueFiles(quickSharePaths);
                 window.ShowSharePage();
+            }
+            if (phonePaths.Count > 0)
+            {
+                window.SendToPhone(phonePaths);
+            }
+            // 1.0.0.15: Explorer's right-click entries and Send to list are on unless the user turned
+            // them off; an Explorer menu registered by an older Linc gains whatever it was missing.
+            try
+            {
+                QuickShare.QsShellIntegration.EnableOnceByDefault(Environment.ProcessPath ?? "");
+                QuickShare.QsShellIntegration.UpgradeIfRegistered(Environment.ProcessPath ?? "");
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException
+                or System.Runtime.InteropServices.COMException)
+            {
+                Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, $"Couldn't add Linc to Explorer's menus: {ex.Message}");
             }
 
             // M13a (§3.3): pre-warm the ADB server. Starting it costs 200-500 ms, and every
@@ -281,6 +362,17 @@ public partial class App : Application
                             startup.Enable(exePath);
                             Services.GetRequiredService<ILogService>().Log(
                                 LogLevel.Info, "StartupRegistration: rewrote a stale Run key entry to the current exe path.");
+                        }
+                    }
+                    else
+                    {
+                        // The installer's "Start with Windows" box writes the same Run entry the
+                        // setting does (D-085): adopt it, so Settings shows what Windows will do.
+                        var startup = Services.GetRequiredService<StartupRegistration>();
+                        var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName!;
+                        if (!StartupRegistration.NeedsRewrite(startup.CurrentValue(), StartupRegistration.BuildRunCommand(exePath)))
+                        {
+                            registry.SaveStartWithWindows(true);
                         }
                     }
                 }

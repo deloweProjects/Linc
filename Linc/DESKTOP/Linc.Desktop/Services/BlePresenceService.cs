@@ -81,7 +81,11 @@ public sealed class BlePresenceService(IDeviceRegistry registry, ILogService log
         {
             // No radio, radio off, or the stack refused us. Presence over Wi-Fi is unaffected.
             _watcher = null;
-            log.Log(LogLevel.Info, $"Bluetooth presence is unavailable on this PC: {ex.Message}");
+            // WinRT often throws with an empty message here; the HRESULT is the useful part.
+            var why = string.IsNullOrWhiteSpace(ex.Message)
+                ? $"{ex.GetType().Name} 0x{ex.HResult:X8}"
+                : ex.Message.Trim();
+            log.Log(LogLevel.Info, $"Bluetooth presence is unavailable on this PC: {why}");
         }
     }
 

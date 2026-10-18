@@ -52,8 +52,16 @@ public static class HotspotBackoff
     /// </summary>
     public const int RetireAfter = 6;
 
+    /// <summary>
+    /// With no link to the phone at all, a standby that stops answering is almost certainly a
+    /// phone that left (D-081): two misses are enough. Six, each an adb connect that hung for its
+    /// whole timeout, was the 2.5-minute redial loop in the owner's log after every drop.
+    /// </summary>
+    public const int RetireAfterWhenAlone = 2;
+
     /// <summary>True when the health loop should give the endpoint up rather than dial it again.</summary>
-    public static bool ShouldRetire(int consecutiveFailures) => consecutiveFailures >= RetireAfter;
+    public static bool ShouldRetire(int consecutiveFailures, bool phoneLinked = true) =>
+        consecutiveFailures >= (phoneLinked ? RetireAfter : RetireAfterWhenAlone);
 }
 
 /// <summary>

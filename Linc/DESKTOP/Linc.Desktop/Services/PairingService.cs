@@ -34,10 +34,22 @@ public sealed class PairingService(IAdbServerHost adbServerHost, ILogService log
         {
             result = await _adb.PairAsync(host, port, code, ct);
         }
-        catch (Exception ex) when (ex is not LincException and not OperationCanceledException)
+        catch (Exception first) when (first is not LincException and not OperationCanceledException)
         {
-            log.Log(LogLevel.Error, $"Pairing with {host}:{port} failed: {ex.Message}");
-            throw new LincException(PairFailed, ex);
+            // The ADB service, not the phone, is the usual culprit here — it was gone or got
+            // dropped mid-request — and the code is still unused, so bring the service back and
+            // try once more before blaming the code (D-078).
+            log.Log(LogLevel.Info, $"Pairing with {host}:{port} hit a problem with Linc's ADB service ({first.Message}); restarting it and trying again.");
+            try
+            {
+                await adbServerHost.EnsureRunningAsync(ct);
+                result = await _adb.PairAsync(host, port, code, ct);
+            }
+            catch (Exception ex) when (ex is not LincException and not OperationCanceledException)
+            {
+                log.Log(LogLevel.Error, $"Pairing with {host}:{port} failed: {ex.Message}");
+                throw new LincException(PairFailed, ex);
+            }
         }
         if (!result.Contains("Successfully", StringComparison.OrdinalIgnoreCase))
         {

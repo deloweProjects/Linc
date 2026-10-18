@@ -157,8 +157,62 @@ public sealed class PcControlService(IConnectionManager connection, ILogService 
             ["canBrightness"] = canBrightness,
             ["canSleep"] = TryGetCanSleep(),
             ["canShutdown"] = IsPwrShutdownAllowed(),
+            // Read-only extras for the phone's Home quick controls. Absent means unknown; an old
+            // phone ignores them.
+            ["battery"] = BatteryNode(),
+            ["network"] = NetworkKind(),
         };
     }
+
+    /// <summary>
+    /// <c>{ "percent": 0-100, "charging": bool }</c>, or null on a PC with no battery (most
+    /// desktops) or when Windows can't say.
+    /// </summary>
+    private static JsonObject? BatteryNode()
+    {
+        if (!GetSystemPowerStatus(out var status)) return null;
+        // BatteryFlag 128 = no system battery, 255 = unknown; percent 255 = unknown.
+        if (status.BatteryFlag is 128 or 255 || status.BatteryLifePercent > 100) return null;
+        return new JsonObject
+        {
+            ["percent"] = (int)status.BatteryLifePercent,
+            ["charging"] = status.ACLineStatus == 1,
+        };
+    }
+
+    /// <summary>"wifi", "ethernet", or null when the PC has no working connection we can name.</summary>
+    private static string? NetworkKind()
+    {
+        try
+        {
+            var up = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                .Where(n => n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                            n.GetIPProperties().GatewayAddresses.Count > 0)
+                .Select(n => n.NetworkInterfaceType)
+                .ToList();
+            if (up.Contains(System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211)) return "wifi";
+            if (up.Contains(System.Net.NetworkInformation.NetworkInterfaceType.Ethernet)) return "ethernet";
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public int BatteryLifeTime;
+        public int BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
 
     // ---- power: lock / sleep / shutdown / restart ---------------------------
 

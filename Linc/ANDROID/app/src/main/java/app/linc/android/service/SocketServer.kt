@@ -47,6 +47,7 @@ class SocketServer(
     private val scope: CoroutineScope,
     private val statusPayload: (negotiatedVersion: Int) -> JsonObject,
     private val onSetClipboard: (String) -> Unit,
+    private val onClipboardGet: () -> Unit = {},
     private val onDesktopConnected: () -> Unit,
     private val onDismissNotification: (String) -> Unit,
     private val bulkFetch: (kind: String, id: String) -> ByteArray?,
@@ -88,23 +89,44 @@ class SocketServer(
     // announceAdb because the handshake path must never arm on its own — arming is a visible
     // change to the user's device and only happens when the desktop explicitly asks.
     private val onAdbArm: (reason: String) -> Unit,
+    // D-088: one PC at a time, and the PC the owner picked.
+    private val gate: PcGate,
 ) {
     /** One connection, transport-agnostic: LocalSocket over ADB or SSLSocket over LAN. */
     class Peer(
         val input: DataInputStream,
         val output: DataOutputStream,
         val setTimeout: (Int) -> Unit,
+        /** Where this connection came from: null over ADB, the PC's address over Direct TLS. */
+        val tlsAddress: String? = null,
+        /** Ends the connection from outside — when the owner picks another PC (D-088). */
+        val close: () -> Unit = {},
     )
 
     private var serverSocket: LocalServerSocket? = null
+
+    /** Control connections being served right now; more than one only during a handoff (D-081). */
+    private val liveControls = java.util.concurrent.atomic.AtomicInteger(0)
     private var acceptJob: Job? = null
 
     fun start() {
         if (acceptJob != null) return
         acceptJob = scope.launch(Dispatchers.IO) {
-            val server = try {
-                LocalServerSocket(SOCKET_NAME)
-            } catch (_: IOException) {
+            // Stop then Start used to leave Linc "stopped": the old socket's name was still taken
+            // (D-091), so this bind failed once and gave up. stop() now frees it properly; a few
+            // retries cover the moment it takes Android to let go.
+            var server: LocalServerSocket? = null
+            for (attempt in 1..10) {
+                server = try {
+                    LocalServerSocket(SOCKET_NAME)
+                } catch (_: IOException) {
+                    null
+                }
+                if (server != null || !isActive) break
+                kotlinx.coroutines.delay(300)
+            }
+            if (server == null) {
+                LogStore.log(LogLevel.WARN, "Linc couldn't open its connection point; stop and start Linc again")
                 CompanionStateHolder.update(ServiceState.Stopped)
                 return@launch
             }
@@ -123,6 +145,7 @@ class SocketServer(
                         DataInputStream(client.inputStream),
                         DataOutputStream(client.outputStream),
                         { millis -> client.soTimeout = millis },
+                        close = { runCatching { client.shutdownInput() }; runCatching { client.close() } },
                     )
                     try {
                         dispatch(peer)
@@ -149,6 +172,8 @@ class SocketServer(
             DataInputStream(socket.getInputStream()),
             DataOutputStream(socket.getOutputStream()),
             { millis -> socket.soTimeout = millis },
+            tlsAddress = socket.inetAddress?.hostAddress,
+            close = { runCatching { socket.close() } },
         )
         try {
             dispatch(peer)
@@ -200,7 +225,13 @@ class SocketServer(
     fun stop() {
         acceptJob?.cancel()
         acceptJob = null
-        runCatching { serverSocket?.close() }
+        // Closing a LocalServerSocket does not wake a thread blocked in accept() on Android, and
+        // until that thread returns the socket's name stays taken, so the next Start failed to
+        // bind (D-091). Shutting the descriptor down first makes accept() return at once.
+        serverSocket?.let { s ->
+            runCatching { android.system.Os.shutdown(s.fileDescriptor, android.system.OsConstants.SHUT_RDWR) }
+            runCatching { s.close() }
+        }
         serverSocket = null
         CompanionStateHolder.update(ServiceState.Stopped)
     }
@@ -259,24 +290,54 @@ class SocketServer(
 
         peer.setTimeout(0) // idle is fine after the handshake; the desktop pings
 
+        // D-088: is this PC allowed the phone right now? One PC at a time, and the picked one.
+        val pcId = (hello.payload["pcId"] as? JsonPrimitive)?.contentOrNull
+        val pcHost = (hello.payload["host"] as? JsonPrimitive)?.contentOrNull
+        val ticket = when (val answer = gate.admit(pcId, pcHost, peer.close)) {
+            is PcGate.Answer.Refuse -> {
+                send(Envelope(
+                    type = MessageType.ERROR,
+                    replyTo = hello.id,
+                    payload = buildJsonObject {
+                        put("code", ErrorCode.BUSY)
+                        put("message", answer.message)
+                    },
+                ))
+                return
+            }
+            is PcGate.Answer.Admit -> answer.ticket
+        }
+
         // v5: hand the desktop a session token so it can open channel connections.
         val sessionToken = if (negotiated >= 5) SessionRegistry.issue() else null
         var outboxRegistration: CompanionOutbox.Registration? = null
-        send(Envelope(
-            type = MessageType.HELLO,
-            replyTo = hello.id,
-            payload = buildJsonObject {
-                put("app", "linc-android")
-                put("appVersion", BuildConfig.VERSION_NAME)
-                put("v", negotiated)
-                if (sessionToken != null) put("sessionToken", sessionToken)
-            },
-        ))
+        try {
+            send(Envelope(
+                type = MessageType.HELLO,
+                replyTo = hello.id,
+                payload = buildJsonObject {
+                    put("app", "linc-android")
+                    put("appVersion", BuildConfig.VERSION_NAME)
+                    put("v", negotiated)
+                    if (sessionToken != null) put("sessionToken", sessionToken)
+                },
+            ))
+        } catch (e: Exception) {
+            gate.release(ticket)
+            throw e
+        }
 
+        liveControls.incrementAndGet()
         try {
             val desktopApp = (hello.payload["app"] as? JsonPrimitive)?.contentOrNull ?: "desktop"
             val desktopVersion = (hello.payload["appVersion"] as? JsonPrimitive)?.contentOrNull ?: "?"
-            CompanionStateHolder.update(ServiceState.Connected(desktopApp, desktopVersion, negotiated))
+            val host = (hello.payload["host"] as? JsonPrimitive)?.contentOrNull
+            CompanionStateHolder.update(ServiceState.Connected(desktopApp, desktopVersion, negotiated, host))
+            CompanionStateHolder.setLink(CompanionStateHolder.Link(
+                if (peer.tlsAddress != null) CompanionStateHolder.Route.Direct else CompanionStateHolder.Route.Adb,
+                peer.tlsAddress,
+                System.currentTimeMillis(),
+            ))
             LogStore.log(LogLevel.INFO, "Connected to $desktopApp (protocol v$negotiated)")
 
             // Unsolicited phone -> desktop messages (clipboard, notifications) exist from v1 on.
@@ -314,6 +375,11 @@ class SocketServer(
                             onSetClipboard(text)
                         }
                         send(Envelope(type = MessageType.OK, replyTo = message.id))
+                    }
+                    // v24 (D-083): the PC's Sync now. Android lets Linc read the clipboard only
+                    // while Linc is open, so this answers then and is silently a no-op otherwise.
+                    MessageType.CLIPBOARD_GET -> if (negotiated >= 24) {
+                        onClipboardGet()
                     }
                     MessageType.NOTIFICATION_DISMISS -> {
                         val key = (message.payload["key"] as? JsonPrimitive)?.contentOrNull
@@ -408,7 +474,10 @@ class SocketServer(
                         val cert = (message.payload["cert"] as? JsonPrimitive)?.contentOrNull
                         val tlsPort = (message.payload["tlsPort"] as? JsonPrimitive)?.intOrNull ?: 0
                         val reversePort = (message.payload["reversePort"] as? JsonPrimitive)?.intOrNull ?: 0
-                        val ownCert = if (cert != null) onTlsExchange(cert, tlsPort, reversePort) else null
+                        val ownCert = if (cert != null) {
+                            gate.exchanged(ticket, pcHost, cert, tlsPort, reversePort)
+                            onTlsExchange(cert, tlsPort, reversePort)
+                        } else null
                         send(if (ownCert != null) {
                             Envelope(
                                 type = MessageType.TLS_EXCHANGE,
@@ -530,6 +599,8 @@ class SocketServer(
                     MessageType.PC_MIRROR_PONG -> if (negotiated >= 20) MirrorSession.onPong(message.payload)
                     MessageType.PC_DISPLAYS -> if (negotiated >= 14) MirrorSession.onDisplays(message.payload)
                     MessageType.PC_VOICEACCESS_STATE -> if (negotiated >= 21) PcVoiceAccess.onState(message.payload)
+                    MessageType.PC_TABLETMODE_STATE -> if (negotiated >= 22) PcTabletMode.onState(message.payload)
+                    MessageType.PC_SPEAKER_STATE -> if (negotiated >= 25) PcSpeaker.onState(message.payload)
                     // v15: the PC sets the phone's screen orientation (D-055). Bad payload →
                     // internal; WRITE_SETTINGS not granted → not-granted (a plain-language route
                     // to the Settings screen — same wording style as v7 dnd.set).
@@ -658,10 +729,20 @@ class SocketServer(
             // every unsolicited send until the next handshake.
             outboxRegistration?.let { CompanionOutbox.release(it) }
             SessionRegistry.clear(sessionToken)
-            // Only report a disconnect when the peer left, not when we're shutting down.
-            if (serverSocket != null) {
+            gate.release(ticket)
+            // Only report a disconnect when the peer left, not when we're shutting down — and not
+            // while another control connection is still live: the PC moves the link between USB
+            // and Wi-Fi by opening the new one before closing the old (D-081).
+            val remaining = liveControls.decrementAndGet()
+            if (serverSocket != null && remaining == 0) {
                 CompanionStateHolder.update(ServiceState.Listening)
+                CompanionStateHolder.setLink(null)
                 LogStore.log(LogLevel.WARN, "Desktop disconnected")
+                // The PC may still be right there on another route (the cable just came out):
+                // dial it directly now rather than after the presence loop's wait.
+                ReconnectSignal.poke("the PC link ended")
+            } else if (remaining > 0) {
+                LogStore.log(LogLevel.INFO, "One of two PC links closed; still connected on the other")
             }
         }
     }

@@ -9,10 +9,22 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- The phone as the PC's microphone (D-075): Android 14+ only lets a foreground service
+         record with the screen off or Linc in the background when it is typed "microphone". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Android 14+ requires one "device interaction" permission alongside the
          connectedDevice FGS type; CHANGE_NETWORK_STATE is normal (auto-granted). -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Background clipboard (D-092). Both are granted by the PC over ADB, never asked for:
+         READ_LOGS shows Linc the system's "denied clipboard access" line when something is
+         copied, and the overlay grant lets it briefly show an invisible window to read the clip
+         (Android 10+ lets only the focused app read the clipboard). Without them, phone-to-PC
+         clipboard still works whenever Linc is open, as before. -->
+    <uses-permission
+        android:name="android.permission.READ_LOGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!--
         M17b C: lets Linc ask Android to open its own package installer for a downloaded update.
         It does NOT allow a silent install — Android still shows its confirmation, and the user
@@ -104,6 +116,10 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Direct Share target for the PC (1.0.0.11, D-083). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- PC Remote (M05): fullscreen landscape viewer for the PC's screen. Not exported;
@@ -138,6 +154,18 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- Background clipboard (D-092): an invisible window that takes focus just long enough
+             to read the clipboard and send it to the PC, then closes. Started by
+             ClipboardWatcher only. -->
+        <activity
+            android:name=".ClipboardSyncActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Linc.Invisible"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
 
         <!-- NFC tap-to-connect: opened by the linc://tap record on a Linc desk tag. No UI;
              starts the companion, pokes the presence loop, finishes. -->
@@ -189,7 +217,7 @@
         <service
             android:name=".service.CompanionService"
             android:exported="true"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|microphone" />
 
         <service
             android:name=".service.LincNotificationListener"

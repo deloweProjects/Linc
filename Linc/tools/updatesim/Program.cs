@@ -299,22 +299,24 @@ else
     }
     else
     {
-        // The version both apps ship as. Desktop Assembly.Version is 1.0.0.0 and the Android
-        // versionName is 1.0.0-beta.1; both parse to 1.0.0 (the suffix is ignored by design).
-        const string Shipped = "1.0.0-beta.1";
-        seededAction = UpdateDecision.Decide(Shipped, seeded.Latest, seeded.MinimumSupported, null);
-        var numeric = UpdateDecision.Decide("1.0.0.0", seeded.Latest, seeded.MinimumSupported, null);
+        // The version both apps ship as, read from the desktop csproj rather than written here:
+        // a constant went stale at 1.0.0-beta.1 after the 1.0.0.2 release and failed this check
+        // against a manifest that was correct. minimumSupported may sit below it (that is what
+        // keeps older builds optional), but never above it.
+        var shipped = ShippedVersion(manifestPath);
+        seededAction = UpdateDecision.Decide(shipped, seeded.Latest, seeded.MinimumSupported, null);
+        bool floorOk = seeded.MinimumSupported is { } floor
+            && UpdateDecision.Decide(shipped, floor, floor, null) == UpdateAction.None;
 
-        Sub(seeded.Latest == Shipped, $"latest is \"{Show(seeded.Latest)}\".");
-        Sub(seeded.MinimumSupported == Shipped, $"minimumSupported is \"{Show(seeded.MinimumSupported)}\".");
+        Sub(seeded.Latest == shipped, $"latest is \"{Show(seeded.Latest)}\" (shipped: {shipped}).");
+        Sub(floorOk, $"minimumSupported \"{Show(seeded.MinimumSupported)}\" is not above the shipped version.");
         Sub(seeded.Url is { Length: > 0 }, $"the desktop asset has a url: {Show(seeded.Url)}");
         Sub(seeded.Sha256 is { Length: 64 }, "the desktop asset has a 64-char sha256.");
         Sub(seeded.Android?.Url is { Length: > 0 }, "the android asset has a url.");
         Sub(seededAction == UpdateAction.None, $"the decision for the shipped version is {seededAction}.");
-        Sub(numeric == UpdateAction.None, $"the decision for the numeric assembly version is {numeric}.");
 
-        seededOk = seededAction == UpdateAction.None && numeric == UpdateAction.None
-            && seeded.Latest == Shipped && seeded.MinimumSupported == Shipped
+        seededOk = seededAction == UpdateAction.None
+            && seeded.Latest == shipped && floorOk
             && seeded.Sha256 is { Length: 64 };
     }
 }
@@ -343,6 +345,16 @@ static string Show(string? value) => value is null ? "null" : value.Length == 0 
 
 /// <summary>Walks up from <paramref name="start"/> looking for Releases/update.json, so the harness
 /// resolves the committed manifest whether it was launched from Linc/ or from the repo root.</summary>
+/// <summary>The desktop's &lt;Version&gt;, found beside the manifest (repo root/Linc/DESKTOP/...).</summary>
+static string ShippedVersion(string manifestPath)
+{
+    var repoRoot = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(manifestPath)))!;
+    var csproj = Path.Combine(repoRoot, "Linc", "DESKTOP", "Linc.Desktop", "Linc.Desktop.csproj");
+    var match = System.Text.RegularExpressions.Regex.Match(
+        File.Exists(csproj) ? File.ReadAllText(csproj) : "", @"<Version>\s*([^<\s]+)\s*</Version>");
+    return match.Success ? match.Groups[1].Value : "unknown (Linc.Desktop.csproj not found)";
+}
+
 static string? FindManifest(string start)
 {
     for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)

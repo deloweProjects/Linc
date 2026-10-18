@@ -1,0 +1,39 @@
+Linc for Windows — third-party software
+=======================================
+
+Linc itself is MIT-licensed (see LICENSE.txt). It ships with, or is built on, the following.
+Each is the property of its authors and is used under the licence named.
+
+Runtime
+  .NET 8 runtime ............................ MIT            (c) .NET Foundation and contributors
+  Windows App SDK / WinUI 3 ................. MIT            (c) Microsoft Corporation
+  Microsoft Visual C++ runtime DLLs ......... Microsoft Visual C++ Redistributable licence
+
+Libraries (NuGet)
+  AdvancedSharpAdbClient .................... Apache-2.0
+  CommunityToolkit.Mvvm ..................... MIT            (c) .NET Foundation
+  Microsoft.Data.Sqlite / SQLitePCLRaw ...... MIT / Apache-2.0
+  SQLite .................................... Public domain
+  H.NotifyIcon .............................. MIT
+  Microsoft.Extensions.DependencyInjection .. MIT            (c) .NET Foundation
+  Microsoft.Win32.SystemEvents .............. MIT            (c) .NET Foundation
+  System.Management ......................... MIT            (c) .NET Foundation
+  Makaretu.Dns.Multicast .................... MIT
+  Zeroconf .................................. MIT
+  QRCoder ................................... MIT
+  Vortice.Direct3D11 / Vortice.DXGI ......... MIT
+  Google.Protobuf ........................... BSD-3-Clause   (c) Google Inc.
+
+Bundled tools
+  scrcpy (Linc build) ....................... Apache-2.0     (c) Genymobile, Romain Vimont — see SCRCPY\NOTICE.md
+  Android Debug Bridge (adb) ................ Apache-2.0     (c) The Android Open Source Project
+  FFmpeg / SDL2 / libusb (scrcpy's DLLs) .... LGPL-2.1 / zlib / LGPL-2.1 — unmodified, dynamically linked
+
+Protocol definitions
+  Nearby Connections / Quick Share protos ... Apache-2.0     (c) Google LLC — see QuickShare\Proto\NOTICE.txt
+
+Not bundled
+  VB-CABLE (VB-Audio) is never shipped with Linc. If you choose to use your phone as the PC's
+  microphone, Linc downloads VB-Audio's own installer from vb-audio.com with your agreement and
+  opens it; uninstalling Linc leaves it installed (remove it from Linc's Settings first, or from
+  Windows' Apps list).

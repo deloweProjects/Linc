@@ -9,6 +9,163 @@ first.
 
 ## [Unreleased]
 
+### Added — 2026-10-17 — Background clipboard, phone as PC speaker, smarter recognition (D-092–D-094)
+
+- **Clipboard without opening Linc**: copy on the phone and it reaches the PC with Linc in the
+  background, after the PC has connected over ADB once (it grants what this needs).
+- **Phone as PC speaker** (Tools): the PC's sound moves to the phone instead of playing on both,
+  so nothing echoes; the PC's own speakers come back when you stop or disconnect.
+- **Send to PC** shows a notification while sending, then "Sent", then disappears.
+- **Mirror**: a click ring and a haptic tick the instant you click; the pointer stays in step with
+  the PC on slow links and after the PC moves it itself.
+- **Home → Your PC**: battery, network, volume and brightness at a glance.
+- **Setup** explains ADB pairing and shows live checks that it worked.
+- **Recognition**: the PC also knows your phone by its Wi-Fi address and connects as soon as it
+  joins the network.
+- The PC Remote bubble menu is now called **Tools**. Protocol v25.
+
+### Fixed — 2026-10-18 — Smaller fixes and test harnesses (D-095)
+
+- Closing Linc's app windows on disconnect no longer stops at a window that had just exited and
+  leaves the rest open.
+- The PC log no longer says "Detection took -1 ms" for a link that closed before any probe failed;
+  empty Bluetooth errors show their code; direct connections name their peer.
+- Voice Access's and Tablet mode's restore notes, the mic note and the VB-CABLE download live under
+  the store root (`--data-root` is honoured). The Beta publish finds the VC++ runtime on any Visual
+  Studio edition. `updatesim`, `quicksharesim` and `applaunchsim` no longer fail for reasons that
+  aren't bugs.
+
+### Fixed — 2026-10-11 — Mirror PC no longer gets stuck; Start Linc works after Stop (1.0.0.14, D-091)
+
+- After stopping Mirror PC (more likely on 4K screens) it could refuse to start again until Linc was
+  restarted. It now always starts again.
+- On the phone, Start Linc did nothing after you had stopped Linc. It now starts.
+
+### Fixed — 2026-10-11 — Linc no longer closes when the phone disconnects (1.0.0.13, D-090)
+
+- Since 1.0.0.11 the PC app shut itself down the moment the phone's connection dropped (the
+  connected/disconnected tray icon). It now stays open and reconnects.
+
+### Fixed — 2026-10-11 — Mirror PC on Intel graphics, for real this time (1.0.0.12, D-087)
+
+- When the graphics chip's encoder won't start, Linc retries it with basic settings and then uses
+  Windows' own software encoder, so Mirror PC always starts. If the encoder stops mid-stream, Linc
+  switches without dropping the mirror.
+- Settings → Mirror PC → Use software encoding, for PCs where the graphics encoder misbehaves.
+- Mirroring keeps going through UAC prompts and the lock screen, and uses the right graphics chip on
+  PCs with two.
+
+### Added — 2026-10-11 — The phone remembers each PC; pick which one it connects to (1.0.0.12, D-088)
+
+- Phone: Connection → PCs lists every PC you've paired with. Pick one, or "Any of my PCs".
+- Linc is with one PC at a time: another PC is told the phone is busy, and by whom.
+- Forget a PC you no longer use.
+
+### Added — 2026-10-11 — Setup can skip installing Linc on the phone (1.0.0.12, D-089)
+
+- Add a phone → "Linc is already on my phone — don't install it".
+
+### Added — 2026-10-11 — A Windows installer (1.0.0.11, D-085, D-086)
+
+- `Linc-Setup-<version>.exe`: installs for your account without an admin prompt, with Start menu and
+  optional desktop shortcut and "Start when I sign in". Linc updates itself through it from now on.
+- Uninstalling puts back the PC's microphone and display scale, removes Linc's Explorer entries and
+  asks whether to delete Linc's data.
+- The portable zip is still published.
+
+### Changed — 2026-10-11 — A new look for the phone, Clipboard and Share pages on both apps (1.0.0.11, D-082–D-084)
+
+- The phone app is rebuilt in Material 3 Expressive: Home, Remote, Clipboard and Share tabs, with
+  Settings behind the gear. Remote is a full-screen trackpad with keyboard, media, presentation,
+  voice and power sheets.
+- Clipboard pages on both apps: send text to the other device, Sync now, and a searchable history of
+  500 items (or 100 / 2,000) that survives restarts. Passwords and other private copies are skipped.
+- Share pages on both apps say whether they're using Linc or Quick Share and pick by themselves;
+  transfers show progress and can be retried.
+- The PC's tray icon shows when the phone isn't connected, and its menu can send files, clipboard
+  text or a link to the phone. Explorer gains "Send to phone (Linc)".
+- "Show explanations" (Settings → Appearance) hides the helper lines in each app.
+- The phone app now actually checks for updates.
+
+### Changed — 2026-10-11 — Connections that just work (1.0.0.11, D-081)
+
+- Plugging in the USB cable while on Wi-Fi switches to the cable without disconnecting; unplugging it
+  moves back to Wi-Fi without showing a drop.
+- The phone reconnects as soon as it joins Wi-Fi, its screen comes on or you open Linc, and tries the
+  PC address that worked last time first.
+- The PC notices waking from sleep (it never did on PCs with Modern Standby) and reconnects.
+- No more minutes of redialling an old hotspot address after the phone leaves; retries back off and
+  restart the moment something changes, and addresses that keep failing are forgotten.
+- The PC log no longer repeats the same line more than three times a minute.
+
+### Fixed — 2026-10-11 — The Remote trackpad works without Mirror PC (1.0.0.11, D-080)
+
+- The phone's trackpad, keyboard and presentation keys work on their own — the PC used to ignore them
+  unless Mirror PC was running.
+- Taps click even if your finger wobbles; two-finger scroll scrolls smoothly; two-finger tap is a
+  right click; tap then drag drags; slow drags move precisely and fast ones go far.
+
+### Changed — 2026-10-11 — Adding, re-adding and closing phones flow properly (1.0.0.10, D-079)
+
+- Closing a phone's tab asks first: disconnect and close, remove completely, or cancel. Closing the
+  last one really disconnects; a closed phone isn't reconnected behind your back.
+- "Add a phone" starts with a choice: phones you've used before (reconnect, no pairing), or a new one
+  by USB, Wi-Fi QR, or "already set up". Then a checking screen, then "Added X" or "X was already
+  added", and Continue.
+
+### Fixed — 2026-10-10 — First setup, adding and removing phones (1.0.0.9, D-078)
+
+- Linc restarts its own ADB service when it has died, instead of failing every pairing after it.
+- A phone paired over Wi-Fi is no longer mistaken for a USB cable (and then "unplugged").
+- Linc no longer restarts wireless debugging under a link that is using it, right after setup.
+- One phone is one phone: its saved apps, photos and messages no longer split by how it connected.
+
+### Fixed — 2026-10-10 — Mirror PC on Intel graphics; the phone stays connected (1.0.0.8, D-077)
+
+- Mirror PC feeds encoders that won't take the screen's pixels directly (Intel Quick Sync) a
+  GPU-converted NV12 picture, and a failed start no longer blocks every retry.
+- Home warns while Linc may be stopped in the background, with Allow and the phone maker's own
+  auto-start screen; the log says plainly when Android cut the connection.
+- The phone stops redialling the PC every 3 s when the PC is already connected another way.
+
+### Fixed — 2026-10-10 — Mirror PC on hybrid-graphics PCs; icon downloads over Wi-Fi (1.0.0.7, D-076)
+
+- Mirror PC tries every hardware video encoder, the screen's own graphics chip first, and cleans up
+  one that fails — it used to try only the first and leave it stuck, so every retry failed.
+- Many app icons fetched at once over a direct Wi-Fi link no longer get mistaken for new connections.
+- PC Copy log lists the graphics chips and video encoders.
+
+### Fixed/Added — 2026-10-10 — Voice Access really hears the phone; Phone | PC mic; Microphone tool (1.0.0.6, protocol v23, D-075)
+
+- **Voice Access now hears the phone.** It keeps its own microphone setting and ignored the Windows
+  default Linc changed; Linc now points that setting at the virtual cable while the phone is chosen.
+- **Phone | PC microphone choice** in the PC Remote panel (and on the Voice Access and Microphone
+  cards); switches a running Voice Access over at once.
+- **Microphone tool** in Tools: the phone as the PC's microphone for any app (calls, Win+H dictation).
+- **Automatic in Mirror PC**: with Phone chosen, any PC app that starts listening hears the phone; the
+  phone's mic only runs while something is listening.
+- The phone keeps recording with the screen off (microphone-type foreground service).
+
+### Fixed — 2026-10-10 — Voice Access microphone setup actually finishes (1.0.0.5, D-071)
+
+- The VB-CABLE download used to time out after 5 minutes on vb-audio.com's slow server and start
+  over each time. It now downloads in parallel ranges, resumes where it stopped, waits as long as
+  data keeps arriving, and accepts a copy you downloaded yourself into Downloads.
+- The phone shows the download's progress, then what to click on the PC.
+- Taps on Voice Access while it is setting up no longer start it on the PC's own microphone.
+- The app icon's L is smaller again.
+
+### Added — 2026-10-10 — Tablet mode in the bubble; APK icon and Material You fixed (1.0.0.4, protocol v22, D-074)
+
+- **Tablet mode** toggle in the PC Remote panel makes a non-touch PC finger-friendly: the mirrored
+  display's scale goes up two steps (e.g. 125 % → 175 %) and File Explorer gets touch spacing; no
+  Windows prompt, no reconnect; all put back when it is switched off, the session ends, Linc exits,
+  or after a crash. The panel's buttons no longer shift under a finger.
+- **The app icon is the right size**: the L was drawn ~4x too big and cropped; it now fits the adaptive
+  icon, and follows Android 13+ themed icons.
+- **Material You everywhere**: the bubble and panel use the phone's wallpaper colours, and the app's
+  window follows dark mode (no white flash, dark system dialogs).
+
 ### Fixed — 2026-10-10 — Mirror PC no longer freezes on the bubble; faster start; Voice Access sets up its own microphone (D-071, D-072)
 
 - **Tapping the PC Remote bubble no longer kills Linc.** It was an ANR, not a crash: the bubble's

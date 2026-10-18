@@ -113,6 +113,7 @@ public sealed partial class QuickShareViewModel : ObservableObject
     private readonly IQuickShareService _quickShare;
     private readonly DispatcherQueue _dispatcher;
     private CancellationTokenSource? _scanCts;
+    private bool _seeding;
 
     public ObservableCollection<QsNearbyVm> Nearby { get; } = [];
     public ObservableCollection<QsTransferVm> Transfers { get; } = [];
@@ -121,10 +122,15 @@ public sealed partial class QuickShareViewModel : ObservableObject
     {
         _quickShare = quickShare;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
-        _receiveEnabled = quickShare.ReceiveEnabled;
-        _deviceName = quickShare.DeviceName;
-        _autoAcceptOwnPhone = quickShare.AutoAcceptOwnPhone;
-        _explorerMenuEnabled = QsShellIntegration.IsRegistered();
+        // Seed the partial properties without running their change hooks, which write back to
+        // the service and the registry (the old field initialisers didn't run them either).
+        _seeding = true;
+        ReceiveEnabled = quickShare.ReceiveEnabled;
+        DeviceName = quickShare.DeviceName;
+        AutoAcceptOwnPhone = quickShare.AutoAcceptOwnPhone;
+        ExplorerMenuEnabled = QsShellIntegration.IsRegistered();
+        TextToSend = "";
+        _seeding = false;
         quickShare.QueuedFilesChanged += () => _dispatcher.TryEnqueue(NotifyQueue);
         quickShare.NearbyChanged += () => _dispatcher.TryEnqueue(RebuildNearby);
         quickShare.TransferChanged += transfer => _dispatcher.TryEnqueue(() => OnTransferChanged(transfer));
@@ -136,30 +142,44 @@ public sealed partial class QuickShareViewModel : ObservableObject
     }
 
     [ObservableProperty]
-    private bool _receiveEnabled;
+    public partial bool ReceiveEnabled { get; set; }
 
     partial void OnReceiveEnabledChanged(bool value)
     {
+        if (_seeding)
+        {
+            return;
+        }
         _quickShare.SetReceiveEnabled(value);
         OnPropertyChanged(nameof(VisibilityText));
     }
 
     [ObservableProperty]
-    private string _deviceName;
+    public partial string DeviceName { get; set; }
 
     [ObservableProperty]
-    private bool _autoAcceptOwnPhone;
+    public partial bool AutoAcceptOwnPhone { get; set; }
 
-    partial void OnAutoAcceptOwnPhoneChanged(bool value) => _quickShare.SetAutoAcceptOwnPhone(value);
+    partial void OnAutoAcceptOwnPhoneChanged(bool value)
+    {
+        if (!_seeding)
+        {
+            _quickShare.SetAutoAcceptOwnPhone(value);
+        }
+    }
 
     [ObservableProperty]
-    private bool _explorerMenuEnabled;
+    public partial bool ExplorerMenuEnabled { get; set; }
 
     [ObservableProperty]
-    private string? _shellError;
+    public partial string? ShellError { get; set; }
 
     partial void OnExplorerMenuEnabledChanged(bool value)
     {
+        if (_seeding)
+        {
+            return;
+        }
         try
         {
             if (value)
@@ -172,14 +192,15 @@ public sealed partial class QuickShareViewModel : ObservableObject
             }
             ShellError = null;
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException
+            or System.Runtime.InteropServices.COMException)
         {
             ShellError = $"Couldn't change the Explorer menu: {ex.Message}";
         }
     }
 
     [ObservableProperty]
-    private string _textToSend = "";
+    public partial string TextToSend { get; set; }
 
     partial void OnTextToSendChanged(string value) => OnPropertyChanged(nameof(CanSendText));
 
@@ -248,7 +269,7 @@ public sealed partial class QuickShareViewModel : ObservableObject
     }
 
     [ObservableProperty]
-    private QsNearbyVm? _selectedDevice;
+    public partial QsNearbyVm? SelectedDevice { get; set; }
 
     partial void OnSelectedDeviceChanged(QsNearbyVm? value)
     {

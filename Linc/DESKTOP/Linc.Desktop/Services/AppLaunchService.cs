@@ -364,6 +364,13 @@ public sealed class AppLaunchService(
                 {
                     // Already exited.
                 }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    // It exited between the snapshot above and now, and the exit handler has
+                    // already disposed its Process, so the handle is gone (E_HANDLE). The window is
+                    // closed either way. Catching it here keeps one such window from aborting the
+                    // loop and leaving every window after it open (CI, 2026-10-18).
+                }
             }
         });
     }

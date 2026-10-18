@@ -157,6 +157,44 @@ public partial class SettingsViewModel : ObservableObject
         set { _clipboardSync.Enabled = value; OnPropertyChanged(); }
     }
 
+    // ---- Clipboard history (D-083) ----
+    public bool ClipboardHistoryEnabled
+    {
+        get => _registry.ClipboardHistoryEnabled;
+        set
+        {
+            _registry.SaveClipboardHistory(value, _registry.ClipboardHistorySize);
+            _clipboardSync.Reload();
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsClipboard100 { get => _registry.ClipboardHistorySize == 100; set { if (value) SetClipboardSize(100); } }
+    public bool IsClipboard500 { get => _registry.ClipboardHistorySize == 500; set { if (value) SetClipboardSize(500); } }
+    public bool IsClipboard2000 { get => _registry.ClipboardHistorySize == 2000; set { if (value) SetClipboardSize(2000); } }
+
+    private void SetClipboardSize(int size)
+    {
+        _registry.SaveClipboardHistory(_registry.ClipboardHistoryEnabled, size);
+        _clipboardSync.Reload();
+        OnPropertyChanged(nameof(IsClipboard100));
+        OnPropertyChanged(nameof(IsClipboard500));
+        OnPropertyChanged(nameof(IsClipboard2000));
+    }
+
+    // ---- Appearance → Show explanations (D-084) ----
+    public bool ForceSoftwareEncoding
+    {
+        get => _registry.ForceSoftwareEncoding;
+        set { _registry.SaveForceSoftwareEncoding(value); OnPropertyChanged(); }
+    }
+
+    public bool ShowExplanations
+    {
+        get => _registry.ShowExplanations;
+        set { _registry.SaveShowExplanations(value); OnPropertyChanged(); }
+    }
+
     public bool NotificationSyncEnabled
     {
         get => _notifications.Enabled;
@@ -415,18 +453,6 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private void ForgetDevice()
-    {
-        if (_registry.PairedSerial is { } paired)
-        {
-            _cache.Clear(paired); // don't leave a remembered page for a phone we just forgot
-        }
-        _registry.Clear();
-        _supervisor.RequestDisconnect();
-        StatusMessage = "Forgot the paired phone. Pair again from the Device page.";
-    }
-
     /// <summary>Whether the Devices management section has anything to show (M2a).</summary>
     public bool HasKnownDevices => KnownDevices.Count > 0;
 
@@ -445,7 +471,7 @@ public partial class SettingsViewModel : ObservableObject
         foreach (var device in _registry.KnownDevices)
         {
             KnownDevices.Add(new KnownDeviceVm(
-                device, device.Serial == _registry.PairedSerial, ActivateDevice, ForgetOneDevice));
+                device, device.Serial == _registry.PairedSerial, ActivateDevice, vm => RemoveRequested?.Invoke(vm)));
         }
         OnPropertyChanged(nameof(HasKnownDevices));
     }
@@ -458,14 +484,22 @@ public partial class SettingsViewModel : ObservableObject
         StatusMessage = $"Switched to {vm.Model}.";
     }
 
-    /// <summary>真forget: unpair the phone AND delete its cached copy/profile (M2a).</summary>
-    private void ForgetOneDevice(KnownDeviceVm vm)
+    /// <summary>
+    /// A row's Remove: the page asks the same question the tab's X does (D-079) — the one place
+    /// that wording lives is MainWindow's close dialog, mirrored here — then calls
+    /// <see cref="RemoveDevice"/>. (1.0.0.11: Forget used to act without asking, and a second
+    /// "Forget paired device" button above did the same for the active phone only.)
+    /// </summary>
+    public event Action<KnownDeviceVm>? RemoveRequested;
+
+    /// <summary>Unpair the phone AND delete its cached copy/profile — the tab dialog's "Remove completely".</summary>
+    public void RemoveDevice(KnownDeviceVm vm)
     {
         _cache.Clear(vm.Serial);
         // Forgetting the active phone raises ActiveDeviceChanged inside the registry, which the
         // supervisor turns into a drop + hunt for whatever gets promoted (or a device-less state).
         _registry.ForgetKnownDevice(vm.Serial);
-        StatusMessage = $"Forgot {vm.Model} and cleared its saved copy.";
+        StatusMessage = $"Removed {vm.Model}. Pair it again to use it.";
     }
 
     /// <summary>Drops the offline copy without unpairing (M02, D-032).</summary>

@@ -233,5 +233,5 @@ public static class DeviceAdmission
     public static string? OneAtATimeNotice(string? current) =>
         string.IsNullOrWhiteSpace(current)
             ? null
-            : $"Linc connects to one phone at a time. Adding another will disconnect {current!.Trim()}.";
+            : $"Linc connects to one phone at a time. Adding another will disconnect {current!.Trim()} (it stays paired).";
 }

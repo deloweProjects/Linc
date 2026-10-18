@@ -28,6 +28,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincStore.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeCacheFormat.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\OutboxService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeSettings.cs" />

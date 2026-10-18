@@ -151,7 +151,14 @@ public sealed class UpdateCheckService(
             return (false, null, "Linc can't verify this update, so it wasn't installed.");
         }
 
-        var path = Path.Combine(destinationDirectory, $"Linc-{manifest.Latest ?? "update"}.tmp");
+        // Keep the published file's extension: 1.0.0.10 and earlier saved every download as
+        // ".tmp" and then asked Windows to open it, which can run neither a zip nor a setup exe.
+        var extension = Path.GetExtension(new Uri(manifest.Url).AbsolutePath);
+        if (extension is not (".exe" or ".zip"))
+        {
+            extension = ".tmp";
+        }
+        var path = Path.Combine(destinationDirectory, $"Linc-Setup-{manifest.Latest ?? "update"}{extension}");
         try
         {
             await using (var source = await http.GetStreamAsync(manifest.Url, token).ConfigureAwait(false))

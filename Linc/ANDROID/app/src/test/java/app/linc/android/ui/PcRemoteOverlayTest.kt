@@ -35,14 +35,15 @@ class PcRemoteOverlayTest {
 
     @Test
     fun everySymbolParses() {
-        // The icons are hand-inlined path data; a typo would only blow up on first draw.
-        listOf(
-            LincSymbols.WifiGood, LincSymbols.WifiFair, LincSymbols.WifiBad, LincSymbols.Mouse,
-            LincSymbols.TouchApp, LincSymbols.Keyboard, LincSymbols.KeyboardHide, LincSymbols.Smartphone,
-            LincSymbols.VolumeUp, LincSymbols.VolumeOff, LincSymbols.Display, LincSymbols.Tune,
-            LincSymbols.FitScreen, LincSymbols.TaskView, LincSymbols.Home, LincSymbols.Power,
-            LincSymbols.Mic, LincSymbols.VoiceAccess, LincSymbols.Close, LincSymbols.Listening,
-            LincSymbols.KeyboardAlt,
-        ).forEach { assertTrue(it.name, it.root.size > 0) }
+        // The icons are hand-inlined path data; a typo would only blow up on first draw. Every
+        // ImageVector getter on LincSymbols is checked, so a newly added icon can't be missed.
+        val getters = LincSymbols::class.java.methods.filter {
+            it.parameterCount == 0 && it.returnType == androidx.compose.ui.graphics.vector.ImageVector::class.java
+        }
+        assertTrue("found ${getters.size} icons", getters.size > 90)
+        getters.forEach { getter ->
+            val icon = getter.invoke(LincSymbols) as androidx.compose.ui.graphics.vector.ImageVector
+            assertTrue(icon.name, icon.root.size > 0)
+        }
     }
 }
