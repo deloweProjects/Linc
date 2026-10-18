@@ -10,7 +10,25 @@ You are continuing work on **Linc** (Android phone ↔ Windows PC companion; Kot
 `Vibe/agent/opencode-docs/DECISIONS.md` (D-096, D-097). The owner talks directly to you, informally
 and briefly; they want features finished, built, and sent to Telegram for testing.
 
-## Where things stand
+## Update 2026-10-18 (later session, branch `claude/linc-feature-ui-polish-lgf8au`)
+
+Built on top of `ccr-2424cb9c-c1cvcg`. Protocol is now **v28** (PROTOCOL.md v28 section). Test release
+`test-build/tools-redesign-1` (commit c7a9c1c) is on Telegram as `Linc-Test-Release-…-Android.apk` / `-PC.zip`.
+- Phone: Tools tab = `ui/ToolsScreen.kt` (collapsible rail; pages Remote, Sound, PC, Files, Terminal; `ToolsNav`).
+  Remote redesigned (volume rocker, labelled actions). Sound page = PC volume + Play everywhere + PC output +
+  phone as speaker/mic. PC page = Task Manager-style graphs (`PcTools.history`). Files = grid/list, place icons,
+  breadcrumbs. Terminal = shell picker → full-screen `TerminalSession` in `PcToolActivity` (direct IME input via
+  `TerminalInputView`, Termux-style extra keys). Home redesigned (PC stat rings, 3-up tool grid).
+  Share notification is a heads-up (new channel `linc.share.progress`). PC Remote bubble: USB icon on cable,
+  "PC screen off" (v28 curtain), click circle off by default (`MirrorSettings.clickRing`).
+- Desktop: Mica backdrop (`MainWindow.ApplyBackdrop`), NavigationView Auto, Home one-pane-at-a-time under 820 px,
+  Device page: display/install/connection folded into expanders; new `PhoneExtrasViewModel` (screen time,
+  wallpaper, colours/dark over adb, phone sound). Services: `PcCurtain`, `PcPerf`, shells winps/wsl:distro/gitbash.
+- **Sound "stuck on Starting"** is NOT root-caused (no logs yet); statuses now say what they wait for
+  ("clock", "off") and a 15 s hint asks for logs. Ask the owner for phone + PC logs from a Sound attempt.
+- Not hardware-tested: everything above.
+
+## Where things stand (previous session)
 
 - **Branch:** all work is on `ccr-2424cb9c-c1cvcg` (11 commits ahead of `main`, not merged, no PR,
   no release). Protocol is **v27** on both sides. Version numbers unchanged (1.0.0.16, versionCode 17).
