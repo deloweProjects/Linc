@@ -275,7 +275,7 @@ class MirrorActivity : ComponentActivity() {
             gestures.mode = mode
             MirrorSettings.setPointerMode(this@MirrorActivity, mode)
             drawCursor()
-            touched()
+            refreshUi(); touched()
         }
 
         override fun floatingKeyboard() {
