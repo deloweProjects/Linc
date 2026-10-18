@@ -1,0 +1,63 @@
+# Posts a text message to the Telegram channel. See telegram-uploader/README.md.
+#
+# Run it from the Actions tab ("Send text to Telegram" -> Run workflow), or
+# through the GitHub API with a "text" input. Uses the same repository secrets
+# and the same temporary local Bot API server as telegram-upload.yml, so the
+# two workflows never trip over Telegram's cloud/local switch.
+name: Send text to Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: "Message to post (longer than 4096 characters is split)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      botapi:
+        image: aiogram/telegram-bot-api:latest
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_LOCAL: "1"
+        ports:
+          - 8081:8081
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_API_URL: http://localhost:8081
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: telegram-uploader
+
+      - name: Connect bot to the local server
+        run: |
+          curl -sS "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/logOut" >/dev/null || true
+          for i in $(seq 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$TELEGRAM_API_URL/bot$TELEGRAM_BOT_TOKEN/getMe" || true)
+            [ "$code" = 200 ] && { echo "local Bot API server ready"; exit 0; }
+            sleep 2
+          done
+          echo "::error::Local Bot API server did not start (check TELEGRAM_API_ID / TELEGRAM_API_HASH)"
+          exit 1
+
+      - name: Send message
+        env:
+          TEXT: ${{ inputs.text }}
+        run: ./telegram-uploader/send.sh -m "$TEXT"
+
+      - name: Release the bot from the local server
+        if: always()
+        run: curl -sS "$TELEGRAM_API_URL/bot$TELEGRAM_BOT_TOKEN/close" >/dev/null || true
