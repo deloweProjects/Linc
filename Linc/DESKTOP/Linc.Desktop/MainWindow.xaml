@@ -235,7 +235,8 @@
         <NavigationView
             Grid.Row="2"
             x:Name="Nav"
-            PaneDisplayMode="Left"
+            PaneDisplayMode="Auto"
+            ExpandedModeThresholdWidth="1000"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="True"
             SelectionChanged="OnNavSelectionChanged"

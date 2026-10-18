@@ -6,6 +6,24 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.toShape
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.draw.clip
+import app.linc.android.service.AudioReceiver
+import app.linc.android.service.CompanionStateHolder
+import app.linc.android.service.PcControl
+import app.linc.android.service.PcMediaControl
+import app.linc.android.service.PcMediaStore
+import app.linc.android.service.PcTools
+import app.linc.android.ui.kit.SettingsGroup
+import app.linc.android.ui.kit.SettingsRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -73,7 +91,7 @@ import kotlin.math.roundToInt
 
 /** The line in the Media sheet: what Play everywhere is doing, and the way to its page. */
 @Composable
-fun PlayEverywhereSummary() {
+fun PlayEverywhereSummary(onOpen: () -> Unit) {
     val context = LocalContext.current
     val state by AudioEverywhere.state.collectAsState()
     val phone by PhoneSource.state.collectAsState()
@@ -82,23 +100,23 @@ fun PlayEverywhereSummary() {
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter)
-            .clickable { PcToolActivity.open(context, PcToolActivity.SOUND) },
+            .clickable { onOpen() },
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(LincSymbols.Devices, contentDescription = null, modifier = Modifier.size(28.dp))
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text("Play everywhere", style = MaterialTheme.typography.titleMedium)
+                Text("Sound", style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
                         phone.on -> "This phone's sound, on ${speakerCount(state, phone.replays.size, true)}"
                         state.on -> "The PC's sound, on ${speakerCount(state, 0, false)}"
-                        else -> "PC and phone speakers together, in step"
+                        else -> "Play everywhere, output, speaker and microphone"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
-            Icon(LincSymbols.ChevronRight, contentDescription = if (on) "Open Play everywhere" else "Set up Play everywhere")
+            Icon(LincSymbols.ChevronRight, contentDescription = "Open Sound")
         }
     }
 }
@@ -109,15 +127,32 @@ private fun speakerCount(state: EverywhereState, local: Int, phoneSource: Boolea
     return if (n == 1) "1 speaker" else "$n speakers"
 }
 
+/**
+ * Tools → Sound: everything about the PC's sound and this phone's, on one page.
+ *  - The PC's volume and what it's playing, at the top.
+ *  - Play everywhere: the PC's sound (or this phone's) on every speaker at once, in step.
+ *  - Where the PC's sound comes out, this phone as its speaker, and this phone as its microphone.
+ * Timing knobs live under Advanced, for whoever wants to nudge by ear.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun SoundScreen(onBack: () -> Unit) {
+fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) {
     val context = LocalContext.current
     val state by AudioEverywhere.state.collectAsState()
     val phone by PhoneSource.state.collectAsState()
+    val outputs by PcTools.outputs.collectAsState()
+    val voice by PcVoiceAccess.state.collectAsState()
+    val micLive by PcVoiceAccess.micLive.collectAsState()
+    val connection by CompanionStateHolder.state.collectAsState()
     val ready = AudioEverywhere.ready()
     var advanced by remember { mutableIntStateOf(0) }
-    LaunchedEffect(ready) { if (ready) AudioEverywhere.refresh(context) }
+    var explainPhone by remember { mutableStateOf(false) }
+    LaunchedEffect(ready, connection) {
+        if (ready) AudioEverywhere.refresh(context)
+        PcControl.requestState()
+        PcTools.refreshOutputs()
+        PcVoiceAccess.refresh(context)
+    }
 
     // Recording what apps play needs the microphone permission, then Android's own consent.
     val startPhone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -126,6 +161,9 @@ fun SoundScreen(onBack: () -> Unit) {
     val alignMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) align(context, phone.on)
     }
+    val toolMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) PcVoiceAccess.setTool(context, true, installCable = voice.canSetUp)
+    }
     fun phoneSourceOn() {
         if (PcVoiceAccess.hasMicPermission(context)) context.startActivity(Intent(context, CaptureConsentActivity::class.java))
         else startPhone.launch(Manifest.permission.RECORD_AUDIO)
@@ -133,24 +171,42 @@ fun SoundScreen(onBack: () -> Unit) {
     val source = if (phone.on) "phone" else "pc"
     val on = state.on || phone.on
 
+    // A speaker that has sat on "starting" for a while says so, rather than spinning for ever.
+    var startedAt by remember { mutableStateOf(0L) }
+    LaunchedEffect(on) { startedAt = if (on) System.currentTimeMillis() else 0L }
+    val stuck = on && startedAt > 0 && state.devices.isNotEmpty() &&
+        state.devices.filter { it.enabled }.none { it.status == "playing" } &&
+        System.currentTimeMillis() - startedAt > 15_000
+
     if (advanced == 1) {
         AdvancedSound(state, phone.on, onBack = { advanced = 0 })
         return
     }
-    LincScaffold(title = "Play everywhere", onBack = onBack) { inner ->
+    LincScaffold(title = "Sound", subtitle = (connection as? CompanionStateHolder.ServiceState.Connected)?.host, onBack = onBack, onSettings = onSettings) { inner ->
         LazyColumn(contentPadding = pagePadding(inner), verticalArrangement = Arrangement.spacedBy(Kit.groupGap)) {
+            // ---- the PC's volume and what's playing -----------------------------------------
+            item { PcVolumeCard() }
+
+            // ---- play everywhere --------------------------------------------------------------
+            item { SectionHeader("Play everywhere") }
             item {
                 Surface(shape = RoundedCornerShape(28.dp), color = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth()) {
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter)) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(if (on) "On" else "Off", style = MaterialTheme.typography.headlineMedium)
+                            Box(Modifier.size(44.dp).clip(MaterialShapes.Cookie9Sided.toShape())
+                                .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer),
+                                contentAlignment = Alignment.Center) {
+                                Icon(LincSymbols.SpeakerGroup, contentDescription = null,
+                                    tint = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer)
+                            }
+                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                Text(if (on) "Playing everywhere" else "Every speaker at once", style = MaterialTheme.typography.titleMedium)
                                 Text(
                                     when {
-                                        phone.on -> "Apps on this phone play on every speaker below, in step with ${phone.nativeName}."
-                                        state.on -> "The PC's sound plays on every speaker below, together."
-                                        else -> "Every speaker you pick plays the same sound at the same moment."
+                                        phone.on -> "This phone's sound, on the speakers below, in step with ${phone.nativeName}."
+                                        state.on -> "The PC's sound, on the speakers below, together."
+                                        else -> "PC speakers, Bluetooth and this phone play the same sound at the same moment."
                                     },
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
@@ -163,14 +219,13 @@ fun SoundScreen(onBack: () -> Unit) {
                                 }
                             })
                         }
+                        Text("Whose sound", style = MaterialTheme.typography.labelLarge)
                         ConnectedChoice(
-                            options = listOf("pc" to "PC's sound", "phone" to "Phone's sound"),
+                            options = listOf("pc" to "The PC's", "phone" to "This phone's"),
                             selected = source,
                             onSelect = { chosen ->
-                                if (chosen == "phone" && !phone.on) {
-                                    if (state.on) AudioEverywhere.set(context, false)
-                                    phoneSourceOn()
-                                } else if (chosen == "pc" && phone.on) {
+                                if (chosen == "phone" && !phone.on) explainPhone = true
+                                else if (chosen == "pc" && phone.on) {
                                     PhoneSource.stop(context, "switched to the PC's sound")
                                     if (ready) AudioEverywhere.set(context, true)
                                 }
@@ -180,52 +235,189 @@ fun SoundScreen(onBack: () -> Unit) {
                             kind = Explanations.Kind.Blocked)
                         PcSpeaker.explain(state.error)?.let { HelperText(it, kind = Explanations.Kind.Error) }
                         (phone.note ?: state.note)?.let { HelperText(it, kind = Explanations.Kind.Warning) }
+                        if (stuck) HelperText("Still getting the speakers ready. If it stays like this, send the logs from Settings → Logs on both the phone and the PC.",
+                            kind = Explanations.Kind.Warning)
                         if (on && state.devices.isNotEmpty() && state.devices.none { it.calibrated } && state.testing == null && !phone.on) {
                             HelperText("Tap Align once so Bluetooth and the phone line up exactly.", kind = Explanations.Kind.Warning)
                         }
                     }
                 }
             }
-            item { SectionHeader("Speakers") }
-            if (phone.on) {
-                item { NativeRow(phone.nativeName) }
-                val outputs = AudioOutputs.list(context).filter { it.name != phone.nativeName }
-                for (o in outputs) item(o.id) {
-                    SpeakerRow(
-                        name = o.name, icon = if (o.bluetooth) LincSymbols.Devices else LincSymbols.Smartphone,
-                        status = if (PhoneSource.localEnabled(context, o.id)) "Plays in step" else "Off",
-                        enabled = PhoneSource.localEnabled(context, o.id), volume = PhoneSource.localVolume(context, o.id), muted = false,
-                        onEnabled = { PhoneSource.setLocal(context, o.id, enabled = it) },
-                        onVolume = { PhoneSource.setLocal(context, o.id, volume = it) },
-                        onMuted = null,
-                    )
+            if (on) {
+                item { SectionHeader("Speakers") }
+                if (phone.on) {
+                    item { NativeRow(phone.nativeName) }
+                    val outputs = AudioOutputs.list(context).filter { it.name != phone.nativeName }
+                    for (o in outputs) item(o.id) {
+                        SpeakerRow(
+                            name = o.name, icon = if (o.bluetooth) LincSymbols.Headphones else LincSymbols.Smartphone,
+                            status = if (PhoneSource.localEnabled(context, o.id)) "Plays in step" else "Off",
+                            enabled = PhoneSource.localEnabled(context, o.id), volume = PhoneSource.localVolume(context, o.id), muted = false,
+                            onEnabled = { PhoneSource.setLocal(context, o.id, enabled = it) },
+                            onVolume = { PhoneSource.setLocal(context, o.id, volume = it) },
+                            onMuted = null,
+                        )
+                    }
+                    for (d in state.devices.filter { it.kind == "pc" }) item(d.id) { DeviceSpeakerRow(d) }
+                    if (state.devices.none { it.kind == "pc" }) item {
+                        HelperText("Connect the PC to add its speakers.", modifier = Modifier.padding(horizontal = Kit.gutter))
+                    }
+                } else {
+                    if (state.devices.isEmpty()) item {
+                        HelperText("Looking for speakers…", modifier = Modifier.padding(horizontal = Kit.gutter))
+                    }
+                    for (d in state.devices) item(d.id) { DeviceSpeakerRow(d) }
                 }
-                for (d in state.devices.filter { it.kind == "pc" }) item(d.id) { DeviceSpeakerRow(d) }
-                if (state.devices.none { it.kind == "pc" }) item {
-                    HelperText("Connect the PC to add its speakers.", modifier = Modifier.padding(horizontal = Kit.gutter))
+                item {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = Kit.gutter, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { if (PcVoiceAccess.hasMicPermission(context)) align(context, phone.on) else alignMic.launch(Manifest.permission.RECORD_AUDIO) },
+                            enabled = state.testing == null && !state.listening && !phone.listening,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(if (state.listening || phone.listening) "Listening…" else "Align") }
+                        OutlinedButton(onClick = { advanced = 1 }, modifier = Modifier.weight(1f)) { Text("Timing") }
+                    }
                 }
-            } else {
-                if (state.devices.isEmpty()) item {
-                    HelperText(if (on) "Looking for speakers…" else "Turn it on to see the speakers on the PC and this phone.",
+                item {
+                    HelperText(if (phone.on) "Align plays a short sweep and times the copies against ${phone.nativeName} with the microphone. Pause your music first."
+                        else "Align plays a short sweep on each speaker and times it with this phone's microphone. Hold the phone where you'll listen.",
                         modifier = Modifier.padding(horizontal = Kit.gutter))
                 }
-                for (d in state.devices) item(d.id) { DeviceSpeakerRow(d) }
             }
-            if (on) item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = Kit.gutter, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { if (PcVoiceAccess.hasMicPermission(context)) align(context, phone.on) else alignMic.launch(Manifest.permission.RECORD_AUDIO) },
-                        enabled = state.testing == null && !state.listening && !phone.listening,
-                        modifier = Modifier.weight(1f),
-                    ) { Text(if (state.listening || phone.listening) "Listening…" else "Align") }
-                    OutlinedButton(onClick = { advanced = 1 }, modifier = Modifier.weight(1f)) { Text("Advanced") }
+
+            // ---- where the PC's sound comes out ------------------------------------------------
+            val list = outputs
+            if (!on && list != null && list.isNotEmpty()) {
+                item { SectionHeader("The PC plays on") }
+                item {
+                    SettingsGroup(rows = list.map { o ->
+                        { seg ->
+                            SettingsRow(
+                                title = o.name, segment = seg,
+                                icon = if (o.bluetooth) LincSymbols.Headphones else LincSymbols.Speaker,
+                                iconContainer = if (o.isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+                                iconTint = if (o.isDefault) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                value = if (o.isDefault) "Playing here" else null,
+                                onClick = { PcTools.setOutput(o.id) },
+                                trailing = { RadioButton(selected = o.isDefault, onClick = { PcTools.setOutput(o.id) }) },
+                            )
+                        }
+                    })
                 }
             }
-            if (on) item {
-                HelperText(if (phone.on) "Align plays a short sweep and times the copies against ${phone.nativeName} with the microphone. Pause your music first."
-                    else "Align plays a short sweep on each speaker and times it with this phone's microphone. Hold the phone where you'll listen.",
-                    modifier = Modifier.padding(horizontal = Kit.gutter))
+
+            // ---- phone and PC ---------------------------------------------------------------
+            item { SectionHeader("This phone and the PC") }
+            item {
+                val speaker by PcSpeaker.state.collectAsState()
+                val playing by AudioReceiver.playing.collectAsState()
+                SettingsGroup(rows = listOf(
+                    { seg ->
+                        SettingsRow(
+                            title = "Phone as the PC's speaker", segment = seg, icon = LincSymbols.Smartphone,
+                            supporting = when {
+                                !PcSpeaker.ready() -> "Update Linc on the PC to play its sound here."
+                                state.on -> "Play everywhere already plays the PC's sound here."
+                                speaker.on && playing -> "On: the PC's sound plays on this phone, not the PC."
+                                speaker.on -> "On: waiting for the PC's sound…"
+                                else -> "The PC's sound on this phone instead of the PC's own speakers."
+                            },
+                            supportingKind = if (!PcSpeaker.ready()) Explanations.Kind.Blocked else Explanations.Kind.Helper,
+                            enabled = PcSpeaker.ready() && !state.on,
+                            trailing = { Switch(checked = speaker.on, enabled = PcSpeaker.ready() && !state.on, onCheckedChange = { PcSpeaker.set(it) }) },
+                        )
+                    },
+                    { seg ->
+                        val micReady = PcVoiceAccess.micReady()
+                        SettingsRow(
+                            title = "Phone as the PC's microphone", segment = seg, icon = LincSymbols.Mic,
+                            supporting = if (voice.tool && micLive) "On: calls, dictation (Win+H) and every app on the PC hear this phone."
+                                else "For calls, dictation and any app on the PC.",
+                            enabled = micReady && !voice.settingUp,
+                            trailing = {
+                                Switch(checked = voice.tool, enabled = micReady && !voice.settingUp, onCheckedChange = { want ->
+                                    if (!want) PcVoiceAccess.setTool(context, false)
+                                    else if (PcVoiceAccess.hasMicPermission(context)) PcVoiceAccess.setTool(context, true, installCable = voice.canSetUp)
+                                    else toolMic.launch(Manifest.permission.RECORD_AUDIO)
+                                })
+                            },
+                        )
+                    },
+                ))
+                PcSpeaker.explain(speaker.error)?.let {
+                    HelperText(it, kind = Explanations.Kind.Error, modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 4.dp))
+                }
             }
+        }
+    }
+
+    if (explainPhone) {
+        AlertDialog(
+            onDismissRequest = { explainPhone = false },
+            icon = { Icon(LincSymbols.GraphicEq, contentDescription = null) },
+            title = { Text("Play this phone's sound everywhere") },
+            text = {
+                Text("Android lets an app hear what other apps play only through its screen-recording prompt, so it will ask " +
+                    "to \"start recording or casting\". Linc takes the sound only — never the picture — and stops when you turn this off. " +
+                    "If it offers a choice, pick the entire screen.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    explainPhone = false
+                    if (state.on) AudioEverywhere.set(context, false)
+                    phoneSourceOn()
+                }) { Text("Continue") }
+            },
+            dismissButton = { TextButton(onClick = { explainPhone = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** The PC's master volume, mute, and what it's playing, as Sound's first card. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun PcVolumeCard() {
+    val pcState by PcControl.state.collectAsState()
+    val media by PcMediaStore.state.collectAsState()
+    val connection by CompanionStateHolder.state.collectAsState()
+    val ready = controlsReason(connection) == null
+    val playing = media?.present == true
+    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(56.dp).clip(MaterialShapes.Cookie12Sided.toShape()).background(MaterialTheme.colorScheme.tertiaryContainer),
+                    contentAlignment = Alignment.Center) {
+                    Icon(LincSymbols.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(if (playing) media?.title?.takeIf { it.isNotBlank() } ?: "Something is playing" else "Nothing playing on the PC",
+                        style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val sub = listOfNotNull(media?.artist?.takeIf { it.isNotBlank() && playing }, media?.app?.takeIf { it.isNotBlank() && playing })
+                    Text(if (sub.isNotEmpty()) sub.joinToString(" · ") else "The PC's volume", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (playing) {
+                    IconButton(onClick = { PcMediaControl.send("prev") }) { Icon(LincSymbols.SkipPrevious, contentDescription = "Previous") }
+                    FilledIconButton(onClick = { PcMediaControl.send(if (media?.playing == true) "pause" else "play") }) {
+                        Icon(if (media?.playing == true) LincSymbols.Pause else LincSymbols.Play, contentDescription = if (media?.playing == true) "Pause" else "Play")
+                    }
+                    IconButton(onClick = { PcMediaControl.send("next") }) { Icon(LincSymbols.SkipNext, contentDescription = "Next") }
+                }
+            }
+            var volume by remember(pcState?.volume) { mutableFloatStateOf((pcState?.volume ?: 50).toFloat()) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconToggleButton(checked = pcState?.muted == true, onCheckedChange = { PcControl.volumeMute() }, enabled = ready) {
+                    Icon(if (pcState?.muted == true) LincSymbols.VolumeOff else LincSymbols.VolumeUp,
+                        contentDescription = if (pcState?.muted == true) "Unmute the PC" else "Mute the PC")
+                }
+                Slider(
+                    value = volume, onValueChange = { volume = it }, onValueChangeFinished = { PcControl.volumeSet(volume.roundToInt()) },
+                    valueRange = 0f..100f, enabled = ready, modifier = Modifier.weight(1f).semantics { contentDescription = "PC volume" },
+                )
+                Text("${volume.roundToInt()}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(36.dp))
+            }
+            controlsReason(connection)?.let { HelperText(it, kind = Explanations.Kind.Blocked) }
         }
     }
 }
@@ -300,7 +492,9 @@ private fun statusText(d: EverywhereDevice): String = when {
     d.status == "rerouted" -> "Android played it elsewhere: this phone plays one output at a time"
     d.status == "playing" && d.muted -> "Muted"
     d.status == "playing" -> "In step" + (if (abs(d.offByMs) >= 0.5) ", within ${"%.1f".format(abs(d.offByMs))} ms" else "")
-    else -> "Starting…"
+    d.status == "clock" -> "Syncing with the PC's clock…"
+    d.status == "off" -> "Waiting for the sound to arrive…"
+    else -> "Getting ready…"
 }
 
 // ---- Advanced ---------------------------------------------------------------------------------
@@ -308,7 +502,7 @@ private fun statusText(d: EverywhereDevice): String = when {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AdvancedSound(state: EverywhereState, phoneSource: Boolean, onBack: () -> Unit) {
-    LincScaffold(title = "Advanced", subtitle = "Play everywhere", onBack = onBack) { inner ->
+    LincScaffold(title = "Timing", subtitle = "Play everywhere", onBack = onBack) { inner ->
         LazyColumn(contentPadding = pagePadding(inner), verticalArrangement = Arrangement.spacedBy(Kit.groupGap)) {
             item {
                 HelperText(
@@ -330,8 +524,6 @@ private fun AdvancedSound(state: EverywhereState, phoneSource: Boolean, onBack: 
                 for (d in state.devices.filter { it.enabled }) item(d.id) { NudgeRow(d) }
                 item { SectionHeader("Safety margin") }
                 item { MarginRow(state.marginMs) }
-                item { SectionHeader("Phone as PC speaker") }
-                item { PcSpeakerSection() }
             } else {
                 item { SectionHeader("Speakers on the PC") }
                 for (d in state.devices.filter { it.kind == "pc" && it.enabled }) item(d.id) { NudgeRow(d) }

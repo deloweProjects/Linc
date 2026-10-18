@@ -51,6 +51,7 @@ public sealed partial class HomePage : Page
             else if (e.PropertyName is nameof(HomeViewModel.PanesSwapped))
             {
                 ApplyPaneOrder();
+                if (_narrow) ApplyWidth(ActualWidth);
             }
             else if (e.PropertyName is nameof(HomeViewModel.AppsPaneHeight)
                      or nameof(HomeViewModel.ShowApps))
@@ -61,6 +62,9 @@ public sealed partial class HomePage : Page
                 ApplyAppsHeight();
             }
         };
+
+        // A small window gets one pane at a time (the owner: "isn't adjusting to small windows").
+        SizeChanged += (_, e) => ApplyWidth(e.NewSize.Width);
 
         // The row heights only become meaningful once the page has a size; re-clamp then so a
         // persisted height saved on a bigger window cannot swallow the tabs panel on a smaller one.
@@ -234,6 +238,55 @@ public sealed partial class HomePage : Page
     /// the star column and squeeze the tabbed panel into 430px — so the widths and MinWidths move
     /// with the panes. The splitter stays in column 1 either way.
     /// </summary>
+    // ---- Narrow windows ----
+    //
+    // Below NarrowWidth the two panes can't both keep their minimums, so they stop sharing the
+    // row: the switch above picks one (Phone = the widgets, Activity = the tabs and Apps), and it
+    // fills the width. Widening the window puts both back, in the saved order and split.
+
+    private const double NarrowWidth = 820;
+    private bool _narrow;
+    private bool _narrowShowsPanel;
+
+    private void ApplyWidth(double width)
+    {
+        bool narrow = width > 0 && width < NarrowWidth;
+        if (narrow == _narrow && !narrow) return;
+        _narrow = narrow;
+        NarrowSwitch.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
+        Splitter.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+        if (!narrow)
+        {
+            WidgetsPane.Visibility = Visibility.Visible;
+            RightPane.Visibility = Visibility.Visible;
+            ApplyPaneOrder();
+            return;
+        }
+        ShowWidgetsButton.IsChecked = !_narrowShowsPanel;
+        ShowPanelButton.IsChecked = _narrowShowsPanel;
+        WidgetsPane.Visibility = _narrowShowsPanel ? Visibility.Collapsed : Visibility.Visible;
+        RightPane.Visibility = _narrowShowsPanel ? Visibility.Visible : Visibility.Collapsed;
+        // Whichever is shown takes the whole width, in whichever column it sits.
+        var shownColumn = Grid.GetColumn(_narrowShowsPanel ? RightPane : WidgetsPane) == 0 ? LeftColumn : RightColumn;
+        var hiddenColumn = ReferenceEquals(shownColumn, LeftColumn) ? RightColumn : LeftColumn;
+        shownColumn.MinWidth = 0;
+        shownColumn.Width = new GridLength(1, GridUnitType.Star);
+        hiddenColumn.MinWidth = 0;
+        hiddenColumn.Width = new GridLength(0);
+    }
+
+    private void OnShowWidgets(object sender, RoutedEventArgs e)
+    {
+        _narrowShowsPanel = false;
+        ApplyWidth(ActualWidth);
+    }
+
+    private void OnShowPanel(object sender, RoutedEventArgs e)
+    {
+        _narrowShowsPanel = true;
+        ApplyWidth(ActualWidth);
+    }
+
     private void ApplyPaneOrder()
     {
         var swapped = ViewModel.PanesSwapped;

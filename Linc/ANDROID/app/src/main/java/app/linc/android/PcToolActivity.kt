@@ -9,12 +9,13 @@ import androidx.activity.enableEdgeToEdge
 import app.linc.android.ui.PcFilesScreen
 import app.linc.android.ui.PcScreen
 import app.linc.android.ui.SoundScreen
-import app.linc.android.ui.TerminalScreen
+import app.linc.android.ui.TerminalSession
 import app.linc.android.ui.theme.LincTheme
 
 /**
- * The full-page tools opened from Tools (D-097): Play everywhere's own page, the PC's look and
- * feel, a terminal on the PC, and the PC's files. One host, the tool picked by [EXTRA_TOOL].
+ * The PC tools on a page of their own, outside the Tools tab: above all a terminal, full screen
+ * (Tools → Terminal opens each shell here), and Sound, PC and Files for anything that links
+ * straight to them. One host, the tool picked by [EXTRA_TOOL].
  */
 class PcToolActivity : ComponentActivity() {
 
@@ -22,11 +23,12 @@ class PcToolActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val tool = intent.getStringExtra(EXTRA_TOOL) ?: SOUND
+        val shell = intent.getStringExtra(EXTRA_SHELL)
         setContent {
             LincTheme {
                 when (tool) {
                     PC -> PcScreen(onBack = { finish() })
-                    TERMINAL -> TerminalScreen(onBack = { finish() })
+                    TERMINAL -> TerminalSession(shell = shell, onClose = { finish() })
                     FILES -> PcFilesScreen(onBack = { finish() })
                     else -> SoundScreen(onBack = { finish() })
                 }
@@ -40,9 +42,16 @@ class PcToolActivity : ComponentActivity() {
         const val PC = "pc"
         const val TERMINAL = "terminal"
         const val FILES = "files"
+        const val EXTRA_SHELL = "shell"
 
         fun open(context: Context, tool: String) {
             context.startActivity(Intent(context, PcToolActivity::class.java).putExtra(EXTRA_TOOL, tool)
+                .addFlags(if (context is android.app.Activity) 0 else Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+
+        /** A shell full screen; [shell] null goes back to the one already running. */
+        fun openTerminal(context: Context, shell: String?) {
+            context.startActivity(Intent(context, PcToolActivity::class.java).putExtra(EXTRA_TOOL, TERMINAL).putExtra(EXTRA_SHELL, shell)
                 .addFlags(if (context is android.app.Activity) 0 else Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }

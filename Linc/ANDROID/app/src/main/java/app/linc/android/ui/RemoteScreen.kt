@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -149,14 +150,16 @@ fun RemoteScreen(
     // PROTOCOL.md v17 has no unsolicited pc.state push: ask when Remote opens and on reconnect.
     LaunchedEffect(connection) { PcControl.requestState() }
 
-    LincScaffold(title = "Tools", onSettings = onSettings, onBack = onBack) { inner ->
+    val pcName = (connection as? ServiceState.Connected)?.host
+    LincScaffold(title = "Remote", subtitle = pcName, onSettings = onSettings, onBack = onBack, compactBar = true) { inner ->
         Column(
             Modifier.page(inner)
                 .then(if (onBack != null) Modifier.navigationBarsPadding() else Modifier)
-                .padding(horizontal = Kit.gutter),
+                .padding(horizontal = Kit.gutter)
+                .padding(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(Kit.groupGap),
         ) {
-            ToolShortcuts()
+            QuickKeys(inputReady = inputReady, controlsReady = controlsReason == null)
             Trackpad(
                 ready = inputReady,
                 blockedReason = inputReason,
@@ -168,14 +171,12 @@ fun RemoteScreen(
             if (partial != null) {
                 HelperText(partial, kind = Explanations.Kind.Blocked)
             }
-            RemoteToolbar(
+            RemoteActionsRow(
                 inputReady = inputReady,
                 mediaReady = mediaReason == null,
                 controlsReady = controlsReason == null,
                 voiceReady = PcVoiceAccess.ready() || PcVoiceAccess.micReady(),
                 onOpen = { sheet = it },
-                onMirror = onMirror,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp),
             )
         }
     }
@@ -184,7 +185,7 @@ fun RemoteScreen(
         RemoteSheetHost(open, onDismiss = { sheet = null }) {
             when (open) {
                 RemoteSheet.Keyboard -> KeyboardSheet(inputReason)
-                RemoteSheet.Media -> MediaSheet(mediaReason, controlsReason)
+                RemoteSheet.Media -> MediaSheet(mediaReason, controlsReason) { sheet = null; ToolsNav.open(ToolPage.Sound) }
                 RemoteSheet.Present -> PresentSheet(inputReason)
                 RemoteSheet.Voice -> VoiceSheet()
                 RemoteSheet.Power -> PowerSheet(controlsReason)
@@ -195,29 +196,49 @@ fun RemoteScreen(
 
 enum class RemoteSheet { Keyboard, Media, Present, Voice, Power }
 
-/** The full-page tools (D-097): a row of tonal chips above the pad, so the pad keeps its room. */
+/**
+ * The keys you reach for most, above the pad: the PC's volume as one rocker (down, mute, up),
+ * then Task view and Show desktop. Big, round and labelled by icon, as a TV remote's are.
+ */
 @Composable
-private fun ToolShortcuts() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        for ((tool, label, icon) in listOf(
-            Triple(app.linc.android.PcToolActivity.SOUND, "Sound", LincSymbols.Devices),
-            Triple(app.linc.android.PcToolActivity.PC, "PC", LincSymbols.Computer),
-            Triple(app.linc.android.PcToolActivity.FILES, "Files", LincSymbols.Folder),
-            Triple(app.linc.android.PcToolActivity.TERMINAL, "Terminal", LincSymbols.TextSnippet),
-        )) {
-            androidx.compose.material3.FilledTonalButton(
-                onClick = { app.linc.android.PcToolActivity.open(context, tool) },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(label)
-            }
+private fun QuickKeys(inputReady: Boolean, controlsReady: Boolean) {
+    val view = LocalView.current
+    val pcState by PcControl.state.collectAsState()
+    fun tap(action: () -> Unit) { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); action() }
+    fun combo(vararg keys: Int) {
+        keys.forEach { MirrorControl.key(it, down = true) }
+        keys.reversed().forEach { MirrorControl.key(it, down = false) }
+    }
+    Row(Modifier.fillMaxWidth().height(56.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // The volume rocker: three connected segments in one pill.
+        Row(Modifier.weight(1.6f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            RockerSegment(LincSymbols.VolumeDown, "PC volume down", controlsReady, RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp, topEnd = 6.dp, bottomEnd = 6.dp),
+                Modifier.weight(1f)) { tap { PcControl.volumeDown() } }
+            val muted = pcState?.muted == true
+            RockerSegment(LincSymbols.VolumeOff, if (muted) "Unmute the PC" else "Mute the PC", controlsReady,
+                RoundedCornerShape(6.dp), Modifier.weight(1f), active = muted) { tap { PcControl.volumeMute() } }
+            RockerSegment(LincSymbols.VolumeUp, "PC volume up", controlsReady, RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 28.dp, bottomEnd = 28.dp),
+                Modifier.weight(1f)) { tap { PcControl.volumeUp() } }
         }
+        RockerSegment(LincSymbols.TaskView, "Task view", inputReady, CircleShape, Modifier.weight(0.7f)) { tap { combo(0x5B, 0x09) } }
+        RockerSegment(LincSymbols.DesktopWindows, "Show the desktop", inputReady, CircleShape, Modifier.weight(0.7f)) { tap { combo(0x5B, 0x44) } }
+    }
+}
+
+@Composable
+private fun RockerSegment(
+    icon: ImageVector, label: String, enabled: Boolean, shape: androidx.compose.ui.graphics.Shape,
+    modifier: Modifier, active: Boolean = false, onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        color = if (active) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = if (active) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.fillMaxHeight().alpha(if (enabled) 1f else 0.38f).semantics { contentDescription = label },
+    ) {
+        Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null) }
     }
 }
 
@@ -401,40 +422,46 @@ private fun ClickButtons(enabled: Boolean) {
 
 // ---- toolbar ---------------------------------------------------------------------------------
 
+/**
+ * What opens a sheet, as labelled buttons along the bottom — an icon in a tonal shape over its
+ * name — so each one says what it is (the old floating toolbar was five bare icons). Blocked
+ * ones stay, disabled (M4b's rule); the pad or the line above says why.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun RemoteToolbar(
+private fun RemoteActionsRow(
     inputReady: Boolean,
     mediaReady: Boolean,
     controlsReady: Boolean,
     voiceReady: Boolean,
     onOpen: (RemoteSheet) -> Unit,
-    onMirror: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    HorizontalFloatingToolbar(
-        expanded = true,
-        modifier = modifier,
-        floatingActionButton = {
-            FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onMirror) {
-                Icon(LincSymbols.ScreenShare, contentDescription = "Mirror PC")
-            }
-        },
-    ) {
-        // Blocked items are disabled, not removed (M4b's rule); the pad or the line above the
-        // toolbar says why.
-        ToolbarItem(LincSymbols.Keyboard, "Keyboard", inputReady) { onOpen(RemoteSheet.Keyboard) }
-        ToolbarItem(LincSymbols.MusicNote, "Media", mediaReady) { onOpen(RemoteSheet.Media) }
-        ToolbarItem(LincSymbols.Slideshow, "Present", inputReady) { onOpen(RemoteSheet.Present) }
-        ToolbarItem(LincSymbols.KeyboardVoice, "Voice", voiceReady) { onOpen(RemoteSheet.Voice) }
-        ToolbarItem(LincSymbols.PowerOff, "Power", controlsReady) { onOpen(RemoteSheet.Power) }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        ActionButton(LincSymbols.Keyboard, "Keyboard", inputReady, MaterialShapes.Cookie9Sided.toShape()) { onOpen(RemoteSheet.Keyboard) }
+        ActionButton(LincSymbols.MusicNote, "Media", mediaReady, MaterialShapes.Clover4Leaf.toShape()) { onOpen(RemoteSheet.Media) }
+        ActionButton(LincSymbols.Slideshow, "Slides", inputReady, MaterialShapes.Square.toShape()) { onOpen(RemoteSheet.Present) }
+        ActionButton(LincSymbols.KeyboardVoice, "Voice", voiceReady, MaterialShapes.Pill.toShape()) { onOpen(RemoteSheet.Voice) }
+        ActionButton(LincSymbols.PowerOff, "Power", controlsReady, MaterialShapes.Sunny.toShape()) { onOpen(RemoteSheet.Power) }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ToolbarItem(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
-        Icon(icon, contentDescription = label)
+private fun ActionButton(icon: ImageVector, label: String, enabled: Boolean, shape: androidx.compose.ui.graphics.Shape, onClick: () -> Unit) {
+    Column(
+        Modifier.width(64.dp).clip(RoundedCornerShape(16.dp))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(vertical = 4.dp)
+            .semantics { contentDescription = label },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            Modifier.size(52.dp).clip(shape).background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer) }
+        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
 
@@ -627,7 +654,7 @@ private fun rememberDictation(): Dictation {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun MediaSheet(transportReason: String?, volumeReason: String?) {
+private fun MediaSheet(transportReason: String?, volumeReason: String?, onOpenSound: () -> Unit) {
     val media by PcMediaStore.state.collectAsState()
     val pcState by PcControl.state.collectAsState()
     // pc.media.state with nothing present: the PC has no player to route a press to, so the
@@ -706,7 +733,7 @@ private fun MediaSheet(transportReason: String?, volumeReason: String?) {
         )
         Text("${volume.toInt()}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(36.dp))
     }
-    PlayEverywhereSummary()
+    PlayEverywhereSummary(onOpen = onOpenSound)
 }
 
 private fun nowPlayingTitle(media: PcMedia?): String = when {

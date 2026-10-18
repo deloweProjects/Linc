@@ -8,6 +8,9 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.net.wifi.WifiManager
+import app.linc.android.service.CompanionStateHolder
+import app.linc.android.service.PcTools
+import app.linc.android.ui.transportLabel
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -377,6 +380,18 @@ class MirrorActivity : ComponentActivity() {
         override fun fit() { scale = 1f; applyTransform(); refreshUi() }
         override fun taskView() = combo(0x5B, 0x09)     // Win+Tab
         override fun showDesktop() = combo(0x5B, 0x44)  // Win+D
+
+        /**
+         * The PC's screen goes dark while you use it from here (v28) — nobody at the desk sees
+         * what you do — and the stream carries on: the PC leaves its curtain out of the capture.
+         */
+        override fun curtain() {
+            val on = !PcTools.curtain.value.on
+            PcTools.setCurtain(on)
+            ui.curtainOn = on
+            toast(if (on) "The PC's screen is dark; you still see it here" else "The PC's screen is back")
+            touched()
+        }
         override fun end() = finish()
 
         override fun bubbleMoved(right: Boolean, y: Float) {
@@ -429,6 +444,8 @@ class MirrorActivity : ComponentActivity() {
         ui.displays = MirrorSession.displays.value.size
         ui.zoomed = scale > 1f
         ui.picture = MirrorSettings.get(this).label
+        ui.curtainOn = if (PcTools.v28()) PcTools.curtain.value.on else null
+        ui.usb = transportLabel(this, CompanionStateHolder.link.value)?.startsWith("USB") == true
     }
 
     private fun observe() {
@@ -573,6 +590,7 @@ class MirrorActivity : ComponentActivity() {
                 else -> LinkStats.Quality.POOR
             }
             ui.pingMs = rtt
+            ui.usb = transportLabel(this@MirrorActivity, CompanionStateHolder.link.value)?.startsWith("USB") == true
             ui.fps = fps
             ui.mbps = kbps / 1000f
         }
@@ -978,6 +996,8 @@ class MirrorActivity : ComponentActivity() {
         if (PcVoiceAccess.micReady()) PcVoiceAccess.setAuto(this, false)
         // Tablet mode is for PC Remote: leaving puts the PC's own scale back (D-074).
         if (PcTabletMode.ready() && PcTabletMode.state.value.on) PcTabletMode.set(false)
+        // The curtain is for PC Remote too: leaving lights the PC's screen again.
+        if (PcTools.v28() && PcTools.curtain.value.on) PcTools.setCurtain(false)
         handler.removeCallbacksAndMessages(null)
         ModifierKeys.clear()
         MirrorControl.audio(false)

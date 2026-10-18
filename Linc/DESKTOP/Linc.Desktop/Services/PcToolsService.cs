@@ -22,6 +22,10 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
 
     private bool _attached;
     private PcTerminal? _terminal;
+    private PcCurtain? _curtain;
+
+    /// <summary>PC Remote's "PC screen off" (v28); lifts by itself when the phone goes away.</summary>
+    private PcCurtain Curtain => _curtain ??= new PcCurtain(() => connection.Current is not null, log);
 
     public void Attach()
     {
@@ -34,6 +38,7 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
     [
         MessageType.PcLookGet, MessageType.PcLookSet, MessageType.PcWallpaperSet, MessageType.PcInfoGet, MessageType.PcAppsGet,
         MessageType.PcAppsEnd, MessageType.PcOpen, MessageType.PcFilesList, MessageType.PcFilesOp, MessageType.PcTermGet, MessageType.PcTermOpen,
+        MessageType.PcAudioOutputsGet, MessageType.PcAudioOutputSet, MessageType.PcCurtainSet,
     ];
 
     private void OnMessage(Envelope envelope)
@@ -55,7 +60,39 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
             case MessageType.PcFilesOp: _ = Task.Run(() => FileOpAsync(p)); break;
             case MessageType.PcTermGet: _ = Task.Run(() => Reply(MessageType.PcTermState, PcTerminal.State(_terminal))); break;
             case MessageType.PcTermOpen: _ = Task.Run(() => OpenTerminalAsync(p)); break;
+            case MessageType.PcAudioOutputsGet: _ = Task.Run(() => Reply(MessageType.PcAudioOutputs, Outputs())); break;
+            case MessageType.PcAudioOutputSet: _ = Task.Run(() => SetOutputAsync(p)); break;
+            case MessageType.PcCurtainSet:
+                _ = Task.Run(() =>
+                {
+                    Curtain.Set((bool?)p["on"] ?? false);
+                    return Reply(MessageType.PcCurtainState, Curtain.State());
+                });
+                break;
         }
+    }
+
+    /// <summary>The PC's speakers and headphones, and which one Windows plays on (Sound → The PC plays on).</summary>
+    private JsonObject Outputs()
+    {
+        var list = new JsonArray();
+        try
+        {
+            string? current = PcVoiceAccess.DefaultRenderId();
+            foreach (var d in PcRenderSink.ListOutputs())
+                list.Add(new JsonObject { ["id"] = d.Id, ["name"] = d.Name, ["bluetooth"] = d.Bluetooth, ["default"] = d.Id == current });
+        }
+        catch (Exception ex) { log.Log(LogLevel.Warn, $"PC tools: couldn't list the PC's speakers ({ex.Message})"); }
+        return new JsonObject { ["outputs"] = list };
+    }
+
+    private async Task SetOutputAsync(JsonObject p)
+    {
+        if ((string?)p["id"] is not { Length: > 0 } id) return;
+        string name = PcRenderSink.ListOutputs().FirstOrDefault(d => d.Id == id)?.Name ?? "that output";
+        if (PcVoiceAccess.SetDefaultEndpoint(id)) log.Log(LogLevel.Info, $"PC tools: the PC now plays on {name} (chosen on the phone)");
+        else log.Log(LogLevel.Warn, $"PC tools: Windows wouldn't switch its output to {name}");
+        await Reply(MessageType.PcAudioOutputs, Outputs());
     }
 
     private async Task Reply(string type, JsonObject payload)
@@ -326,8 +363,36 @@ internal static class PcInfo
             ["user"] = Environment.UserName,
             ["os"] = RuntimeInformation.OSDescription,
             ["uptimeMin"] = Environment.TickCount64 / 60_000,
-            ["cpuPct"] = CpuPercent(),
         };
+        // Task Manager's Performance figures (v28): from the performance counters when they
+        // answer, else the processor from the system's own idle times, as before.
+        var perf = Perf.Sample();
+        info["cpuPct"] = perf?.CpuPct ?? CpuPercent();
+        if (perf is { } f)
+        {
+            if (f.CpuMhz > 0) info["cpuMhz"] = f.CpuMhz;
+            if (f.DiskPct >= 0) info["diskPct"] = f.DiskPct;
+            if (f.DiskReadKBps >= 0) info["diskReadKBps"] = f.DiskReadKBps;
+            if (f.DiskWriteKBps >= 0) info["diskWriteKBps"] = f.DiskWriteKBps;
+            if (f.GpuPct >= 0) info["gpuPct"] = f.GpuPct;
+        }
+        var (sendKbps, recvKbps, netName) = Perf.Network();
+        if (sendKbps >= 0) { info["netSendKbps"] = sendKbps; info["netRecvKbps"] = recvKbps; }
+        if (netName is not null) info["netName"] = netName;
+        var hw = Perf.Hardware();
+        if (hw.CpuName is not null) info["cpuName"] = hw.CpuName;
+        if (hw.Cores > 0) info["cores"] = hw.Cores;
+        info["threads"] = Environment.ProcessorCount;
+        if (hw.GpuName is not null) info["gpuName"] = hw.GpuName;
+        var pi = new PERFORMANCE_INFORMATION { cb = (uint)Marshal.SizeOf<PERFORMANCE_INFORMATION>() };
+        if (GetPerformanceInfo(ref pi, pi.cb))
+        {
+            long page = (long)(ulong)pi.PageSize;
+            info["processes"] = pi.ProcessCount;
+            info["handles"] = pi.HandleCount;
+            info["memCommittedMb"] = (long)(ulong)pi.CommitTotal * page / (1024 * 1024);
+            info["memCommitLimitMb"] = (long)(ulong)pi.CommitLimit * page / (1024 * 1024);
+        }
         var memory = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
         if (GlobalMemoryStatusEx(ref memory))
         {
@@ -410,6 +475,15 @@ internal static class PcInfo
         public int BatteryLifeTime, BatteryFullLifeTime;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PERFORMANCE_INFORMATION
+    {
+        public uint cb;
+        public UIntPtr CommitTotal, CommitLimit, CommitPeak, PhysicalTotal, PhysicalAvailable, SystemCache, KernelTotal, KernelPaged, KernelNonpaged, PageSize;
+        public uint HandleCount, ProcessCount, ThreadCount;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)] private static extern bool GetPerformanceInfo(ref PERFORMANCE_INFORMATION info, uint size);
     [DllImport("kernel32.dll")] private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX buffer);
     [DllImport("kernel32.dll")] private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
     [DllImport("kernel32.dll")] private static extern bool GetSystemTimes(out long idle, out long kernel, out long user);

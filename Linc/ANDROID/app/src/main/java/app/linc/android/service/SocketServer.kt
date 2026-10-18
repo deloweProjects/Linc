@@ -618,6 +618,12 @@ class SocketServer(
                     MessageType.PC_FILES_LISTING -> if (negotiated >= 27) PcTools.onListing(message.payload)
                     MessageType.PC_FILES_DONE -> if (negotiated >= 27) PcTools.onDone(message.payload)
                     MessageType.PC_TERM_STATE -> if (negotiated >= 27) PcTools.onTermState(message.payload)
+                    // v28: the PC's outputs, its screen curtain, and the Device page reaching in.
+                    MessageType.PC_AUDIO_OUTPUTS -> if (negotiated >= 28) PcTools.onOutputs(message.payload)
+                    MessageType.PC_CURTAIN_STATE -> if (negotiated >= 28) PcTools.onCurtain(message.payload)
+                    MessageType.PHONE_SOUND_ASK -> if (negotiated >= 28) PhoneReach.soundAsk(message.payload)
+                    MessageType.PHONE_USAGE_GET -> if (negotiated >= 28) PhoneReach.usage()
+                    MessageType.PHONE_WALLPAPER_SET -> if (negotiated >= 28) PhoneReach.wallpaper(message.payload)
                     // v15: the PC sets the phone's screen orientation (D-055). Bad payload →
                     // internal; WRITE_SETTINGS not granted → not-granted (a plain-language route
                     // to the Settings screen — same wording style as v7 dnd.set).

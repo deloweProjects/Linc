@@ -273,8 +273,10 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
                     }
                 }
                 if (!trackClock.ready || !timeline.ready) {
-                    // Until the track says where it is and the PC's clock is known, play silence.
+                    // Until the track says where it is and the PC's clock is known, play silence;
+                    // the mixer says which of the two it is waiting for.
                     buffer.fill(0f)
+                    status = if (!timeline.ready) "clock" else "starting"
                 } else {
                     if (!checkedRoute) { checkedRoute = true; checkRoute() }
                     val nextLeavesUs = trackClock.leaveUs(written).toLong()

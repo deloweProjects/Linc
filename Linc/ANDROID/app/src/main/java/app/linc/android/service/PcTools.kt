@@ -46,11 +46,30 @@ data class PcLookState(
 data class PcInfoState(
     val name: String = "", val os: String = "", val cpuPct: Int = -1, val memUsedMb: Long = 0, val memTotalMb: Long = 0,
     val uptimeMin: Long = 0, val disks: List<Triple<String, Double, Double>> = emptyList(), val battery: Pair<Int, Boolean>? = null,
+    // Task Manager's Performance figures (v28, optional: an older PC leaves them out).
+    val cpuName: String? = null, val cores: Int = 0, val threads: Int = 0, val cpuMhz: Int = 0,
+    val processes: Int = 0, val handles: Int = 0, val diskPct: Int = -1, val diskReadKBps: Long = -1, val diskWriteKBps: Long = -1,
+    val netSendKbps: Long = -1, val netRecvKbps: Long = -1, val netName: String? = null,
+    val gpuPct: Int = -1, val gpuName: String? = null, val memCommittedMb: Long = 0, val memCommitLimitMb: Long = 0,
+    /** When it arrived (phone clock, ms), so the graphs can space the points. */
+    val at: Long = 0,
 )
+
+/** The last couple of minutes of [PcInfoState]s, for the PC page's graphs. */
+data class PcHistory(
+    val cpu: List<Float> = emptyList(), val memory: List<Float> = emptyList(), val disk: List<Float> = emptyList(),
+    val netSend: List<Float> = emptyList(), val netRecv: List<Float> = emptyList(), val gpu: List<Float> = emptyList(),
+)
+
+/** One of the PC's sound outputs (v28), for Sound → Output on the PC. */
+data class PcAudioOutput(val id: String, val name: String, val bluetooth: Boolean, val isDefault: Boolean)
+
+/** The curtain over the PC's screen while it is used from the phone (v28). */
+data class PcCurtainState(val on: Boolean = false, val available: Boolean = false, val error: String? = null)
 
 data class PcApp(val pid: Int, val name: String, val title: String, val memMb: Long)
 
-data class PcFileEntry(val name: String, val path: String, val dir: Boolean, val size: Long, val modified: Long, val drive: Boolean, val place: Boolean, val freeGb: Double?)
+data class PcFileEntry(val name: String, val path: String, val dir: Boolean, val size: Long, val modified: Long, val drive: Boolean, val place: Boolean, val freeGb: Double?, val totalGb: Double? = null)
 
 data class PcListing(val path: String = "", val parent: String? = null, val entries: List<PcFileEntry> = emptyList(), val error: String? = null, val loading: Boolean = false)
 
@@ -110,6 +129,9 @@ object PcTools {
     private val _apps = MutableStateFlow<List<PcApp>?>(null)
     val apps: StateFlow<List<PcApp>?> = _apps
 
+    private val _history = MutableStateFlow(PcHistory())
+    val history: StateFlow<PcHistory> = _history
+
     fun refreshInfo() = send(MessageType.PC_INFO_GET)
     fun refreshApps() = send(MessageType.PC_APPS_GET)
     fun endApp(pid: Int) = send(MessageType.PC_APPS_END, buildJsonObject { put("pid", pid) })
@@ -124,7 +146,64 @@ object PcTools {
                 Triple(o.str("name") ?: "", o.double("freeGb") ?: 0.0, o.double("totalGb") ?: 0.0)
             },
             battery = (p["battery"] as? JsonObject)?.let { (it.int("percent") ?: 0) to it.bool("charging") },
+            cpuName = p.str("cpuName"), cores = p.int("cores") ?: 0, threads = p.int("threads") ?: 0, cpuMhz = p.int("cpuMhz") ?: 0,
+            processes = p.int("processes") ?: 0, handles = p.int("handles") ?: 0, diskPct = p.int("diskPct") ?: -1,
+            diskReadKBps = p.long("diskReadKBps") ?: -1, diskWriteKBps = p.long("diskWriteKBps") ?: -1,
+            netSendKbps = p.long("netSendKbps") ?: -1, netRecvKbps = p.long("netRecvKbps") ?: -1, netName = p.str("netName"),
+            gpuPct = p.int("gpuPct") ?: -1, gpuName = p.str("gpuName"),
+            memCommittedMb = p.long("memCommittedMb") ?: 0, memCommitLimitMb = p.long("memCommitLimitMb") ?: 0,
+            at = System.currentTimeMillis(),
         )
+        val i = _info.value
+        fun List<Float>.plus(v: Float?) = if (v == null) this else (this + v).takeLast(HISTORY_POINTS)
+        val h = _history.value
+        _history.value = PcHistory(
+            cpu = h.cpu.plus(i.cpuPct.takeIf { it >= 0 }?.toFloat()),
+            memory = h.memory.plus(if (i.memTotalMb > 0) 100f * i.memUsedMb / i.memTotalMb else null),
+            disk = h.disk.plus(i.diskPct.takeIf { it >= 0 }?.toFloat()),
+            netSend = h.netSend.plus(i.netSendKbps.takeIf { it >= 0 }?.toFloat()),
+            netRecv = h.netRecv.plus(i.netRecvKbps.takeIf { it >= 0 }?.toFloat()),
+            gpu = h.gpu.plus(i.gpuPct.takeIf { it >= 0 }?.toFloat()),
+        )
+    }
+
+    /** Points kept per graph: at one a second, the last two minutes. */
+    const val HISTORY_POINTS = 120
+
+    // ---- sound output and the screen curtain (v28) ------------------------------------------
+
+    fun v28(): Boolean = CompanionOutbox.canSend(28)
+
+    private val _outputs = MutableStateFlow<List<PcAudioOutput>?>(null)
+    val outputs: StateFlow<List<PcAudioOutput>?> = _outputs
+
+    fun refreshOutputs() {
+        if (v28()) CompanionOutbox.trySend(Envelope(type = MessageType.PC_AUDIO_OUTPUTS_GET, payload = buildJsonObject { }), requiredVersion = 28)
+    }
+
+    fun setOutput(id: String) {
+        CompanionOutbox.trySend(Envelope(type = MessageType.PC_AUDIO_OUTPUT_SET, payload = buildJsonObject { put("id", id) }), requiredVersion = 28)
+        // Show the choice at once; the PC's answer confirms it.
+        _outputs.value = _outputs.value?.map { it.copy(isDefault = it.id == id) }
+    }
+
+    fun onOutputs(p: JsonObject) {
+        _outputs.value = (p["outputs"] as? JsonArray).orEmpty().mapNotNull { e ->
+            val o = runCatching { e.jsonObject }.getOrNull() ?: return@mapNotNull null
+            PcAudioOutput(o.str("id") ?: return@mapNotNull null, o.str("name") ?: "", o.bool("bluetooth"), o.bool("default"))
+        }
+    }
+
+    private val _curtain = MutableStateFlow(PcCurtainState())
+    val curtain: StateFlow<PcCurtainState> = _curtain
+
+    fun setCurtain(on: Boolean) {
+        CompanionOutbox.trySend(Envelope(type = MessageType.PC_CURTAIN_SET, payload = buildJsonObject { put("on", on) }), requiredVersion = 28)
+        _curtain.value = _curtain.value.copy(on = on)
+    }
+
+    fun onCurtain(p: JsonObject) {
+        _curtain.value = PcCurtainState(p.bool("on"), p.bool("available"), p.str("error"))
     }
 
     fun onApps(p: JsonObject) {
@@ -161,7 +240,7 @@ object PcTools {
             entries = (p["entries"] as? JsonArray).orEmpty().mapNotNull { e ->
                 val o = runCatching { e.jsonObject }.getOrNull() ?: return@mapNotNull null
                 PcFileEntry(o.str("name") ?: "", o.str("path") ?: return@mapNotNull null, o.bool("dir"), o.long("size") ?: 0,
-                    o.long("modified") ?: 0, o.bool("drive"), o.bool("place"), o.double("freeGb"))
+                    o.long("modified") ?: 0, o.bool("drive"), o.bool("place"), o.double("freeGb"), o.double("totalGb"))
             },
             error = p.str("error"),
         )

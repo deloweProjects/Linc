@@ -48,7 +48,9 @@ import app.linc.android.ui.HomeScreen
 import app.linc.android.ui.LincSymbols
 import app.linc.android.ui.LogsScreen
 import app.linc.android.ui.OnboardingScreen
-import app.linc.android.ui.RemoteScreen
+import app.linc.android.ui.ToolPage
+import app.linc.android.ui.ToolsNav
+import app.linc.android.ui.ToolsScreen
 import app.linc.android.ui.SettingsScreen
 import app.linc.android.ui.ShareScreen
 import app.linc.android.ui.UpdateRequiredScreen
@@ -217,15 +219,24 @@ fun LincApp() {
                                 onSettings = settings,
                                 onNavigate = { d ->
                                     tab = when (d) {
-                                        HomeDestination.Remote -> Tab.Remote
                                         HomeDestination.Share -> Tab.Share
                                         HomeDestination.Clipboard -> Tab.Clipboard
+                                        else -> {
+                                            ToolsNav.open(when (d) {
+                                                HomeDestination.Sound -> ToolPage.Sound
+                                                HomeDestination.Pc -> ToolPage.Pc
+                                                HomeDestination.Files -> ToolPage.Files
+                                                HomeDestination.Terminal -> ToolPage.Terminal
+                                                else -> ToolPage.Remote
+                                            })
+                                            Tab.Remote
+                                        }
                                     }
                                 },
                                 onMirror = openMirror,
                                 onSetUp = rerunSetup,
                             )
-                            Tab.Remote -> RemoteScreen(onSettings = settings, onMirror = openMirror)
+                            Tab.Remote -> ToolsScreen(onSettings = settings, onMirror = openMirror)
                             Tab.Clipboard -> ClipboardScreen(onSettings = settings)
                             Tab.Share -> ShareScreen(onSettings = settings)
                         }

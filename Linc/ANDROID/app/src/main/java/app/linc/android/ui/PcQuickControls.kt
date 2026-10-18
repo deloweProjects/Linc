@@ -10,7 +10,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,29 +51,25 @@ fun PcQuickControls(connectionKey: Any?) {
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Your PC", style = MaterialTheme.typography.titleMedium)
-            Text(
-                listOfNotNull(
-                    pc.batteryPercent?.let { "Battery $it%" + if (pc.charging) " · charging" else "" },
-                    when (pc.network) { "wifi" -> "On Wi-Fi"; "ethernet" -> "On Ethernet"; else -> null },
-                ).joinToString("  ·  ").ifEmpty { "Plugged in" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             QuickSlider(
+                icon = if (pc.muted) LincSymbols.VolumeOff else LincSymbols.VolumeUp,
+                iconLabel = if (pc.muted) "Unmute the PC" else "Mute the PC",
+                onIcon = { PcControl.volumeMute(!pc.muted) },
                 label = if (pc.muted) "Volume (muted)" else "Volume",
                 value = pc.volume,
                 onSet = { PcControl.volumeSet(it) },
-                trailing = {
-                    TextButton(onClick = { PcControl.volumeMute(!pc.muted) }) {
-                        Text(if (pc.muted) "Unmute" else "Mute")
-                    }
-                },
             )
             if (pc.canBrightness && pc.brightness != null) {
-                QuickSlider(label = "Brightness", value = pc.brightness, onSet = { PcControl.brightnessSet(it) })
+                QuickSlider(icon = LincSymbols.Brightness, iconLabel = null, onIcon = null,
+                    label = "Brightness", value = pc.brightness, onSet = { PcControl.brightnessSet(it) })
             }
+            val facts = listOfNotNull(
+                pc.batteryPercent?.let { "Battery $it%" + if (pc.charging) " · charging" else "" },
+                when (pc.network) { "wifi" -> "On Wi-Fi"; "ethernet" -> "On Ethernet"; else -> null },
+            )
+            if (facts.isNotEmpty()) Text(facts.joinToString("  ·  "), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp, bottom = 8.dp))
         }
     }
 }
@@ -79,19 +77,19 @@ fun PcQuickControls(connectionKey: Any?) {
 /** A 0-100 slider that sends once, when the finger lifts, rather than on every pixel of drag. */
 @Composable
 private fun QuickSlider(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconLabel: String?,
+    onIcon: (() -> Unit)?,
     label: String,
     value: Int,
     onSet: (Int) -> Unit,
-    trailing: @Composable () -> Unit = {},
 ) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging ?: value.toFloat()
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$label  ${shown.roundToInt()}%", style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.weight(1f))
-            trailing()
-        }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (onIcon != null) androidx.compose.material3.IconButton(onClick = onIcon) {
+            androidx.compose.material3.Icon(icon, contentDescription = iconLabel)
+        } else androidx.compose.material3.Icon(icon, contentDescription = null, modifier = Modifier.padding(12.dp))
         Slider(
             value = shown,
             onValueChange = { dragging = it },
@@ -100,6 +98,8 @@ private fun QuickSlider(
                 dragging = null
             },
             valueRange = 0f..100f,
+            modifier = Modifier.weight(1f).semantics { contentDescription = label },
         )
+        Text("${shown.roundToInt()}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(40.dp).padding(start = 8.dp))
     }
 }

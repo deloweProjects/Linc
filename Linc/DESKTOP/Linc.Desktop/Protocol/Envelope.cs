@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 27;
+    public const int Version = 28;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -133,6 +133,18 @@ public static class MessageType
     public const string PcTermGet = "pc.term.get";             // phone → desktop: {}
     public const string PcTermOpen = "pc.term.open";           // phone → desktop: {shell, cols, rows} → channel 9
     public const string PcTermState = "pc.term.state";         // desktop → phone: {shells, running, error?}
+
+    // v28 — the PC's sound output, a curtain over the PC's screen while the phone uses it, and
+    // the Device page reaching into the phone: its sound on the PC, screen time, wallpaper.
+    public const string PcAudioOutputsGet = "pc.audio.outputs.get"; // phone → desktop: {}
+    public const string PcAudioOutputs = "pc.audio.outputs";        // desktop → phone: {outputs: [{id, name, bluetooth, default}]}
+    public const string PcAudioOutputSet = "pc.audio.output.set";   // phone → desktop: {id}
+    public const string PcCurtainSet = "pc.curtain.set";            // phone → desktop: {on}
+    public const string PcCurtainState = "pc.curtain.state";        // desktop → phone: {on, available, error?}
+    public const string PhoneSoundAsk = "phone.sound.ask";          // desktop → phone: {on}
+    public const string PhoneUsageGet = "phone.usage.get";          // desktop → phone: {}
+    public const string PhoneUsage = "phone.usage";                 // phone → desktop: {allowed, totalMin, unlocks?, apps}
+    public const string PhoneWallpaperSet = "phone.wallpaper.set";  // desktop → phone: {jpeg (base64), target}
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies

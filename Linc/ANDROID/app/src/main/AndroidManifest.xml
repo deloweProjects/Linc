@@ -72,6 +72,14 @@
          system settings, and DisplayControl.canWrite() re-checks before every write. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
+    <!-- v28: the PC's Device page sets this phone's wallpaper (a normal permission), and shows
+         today's screen time. Usage access is an appop: declaring it grants nothing; the PC turns
+         it on over USB debugging (appops set … GET_USAGE_STATS allow), or the user does under
+         Settings > Apps > Special app access > Usage access. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- v18 / M13c: lets the companion arm wireless debugging itself
          (Settings.Global "adb_wifi_enabled"), so a hotspot link comes up with no cable and no
          trip into Developer options. This is a signature|privileged permission: DECLARING it

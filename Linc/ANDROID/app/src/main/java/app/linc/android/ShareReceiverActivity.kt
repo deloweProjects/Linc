@@ -110,7 +110,7 @@ class ShareReceiverActivity : ComponentActivity() {
             ShareStore.transfers.first { list ->
                 val mine = list.filter { it.id in ids }
                 val done = mine.count { it.state != TransferState.Copying }
-                mine.firstOrNull { it.state == TransferState.Copying }?.let { progress.sending(done, it.name) }
+                mine.firstOrNull { it.state == TransferState.Copying }?.let { progress.sending(done, it.name, it.progress.takeIf { p -> p > 0f }) }
                 mine.size == ids.size && done == ids.size
             }.let { list ->
                 progress.done(failed = list.count { it.id in ids && it.state == TransferState.Failed })

@@ -101,6 +101,10 @@ class RemoteUiState {
     var tabletOn by mutableStateOf(false)
     var displays by mutableIntStateOf(1)
     var zoomed by mutableStateOf(false)
+    /** The link runs over the USB cable: the bubble shows a plug, not Wi-Fi bars. */
+    var usb by mutableStateOf(false)
+    /** The PC's screen is dark while it is used from here (v28); null when the PC can't. */
+    var curtainOn by mutableStateOf<Boolean?>(null)
     /** Bubble position: which edge, and how far down (0..1). */
     var bubbleRight by mutableStateOf(true)
     var bubbleY by mutableFloatStateOf(0.1f)
@@ -120,6 +124,7 @@ interface RemoteActions {
     fun fit()
     fun taskView()
     fun showDesktop()
+    fun curtain()
     fun end()
     fun bubbleMoved(right: Boolean, y: Float)
 }
@@ -170,10 +175,11 @@ fun PcRemoteOverlay(state: RemoteUiState, actions: RemoteActions) {
             val spin by animateFloatAsState(if (state.panelOpen) 90f else 0f,
                 MaterialTheme.motionScheme.defaultSpatialSpec(), label = "bubbleSpin")
 
+            // Over the cable the icon is a plug, coloured by how the link is doing, as Wi-Fi's is.
             val (icon, tint) = when {
-                state.stalled || state.quality == LinkStats.Quality.POOR -> LincSymbols.WifiBad to Poor
-                state.quality == LinkStats.Quality.FAIR -> LincSymbols.WifiFair to Fair
-                else -> LincSymbols.WifiGood to Good
+                state.stalled || state.quality == LinkStats.Quality.POOR -> (if (state.usb) LincSymbols.Usb else LincSymbols.WifiBad) to Poor
+                state.quality == LinkStats.Quality.FAIR -> (if (state.usb) LincSymbols.Usb else LincSymbols.WifiFair) to Fair
+                else -> (if (state.usb) LincSymbols.Usb else LincSymbols.WifiGood) to Good
             }
 
             // ---- the panel -------------------------------------------------------------------
@@ -265,7 +271,8 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                 Column(Modifier.weight(1f)) {
                     Text("Tools", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        if (state.stalled) "Picture stalled — recovering" else "${state.quality.label} connection",
+                        if (state.stalled) "Picture stalled — recovering"
+                        else "${state.quality.label} connection" + if (state.usb) " · USB cable" else " · Wi-Fi",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -338,6 +345,11 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                 if (state.displays > 1) Toggle(false, LincSymbols.Display, "Display") { actions.display() }
                 Toggle(false, LincSymbols.Tune, state.picture.ifEmpty { "Quality" }) { actions.quality() }
                 if (state.zoomed) Toggle(false, LincSymbols.FitScreen, "Fit") { actions.fit() }
+                key("curtain") {
+                    state.curtainOn?.let { on ->
+                        Toggle(on, LincSymbols.DesktopAccessDisabled, if (on) "PC screen is off" else "PC screen off") { actions.curtain() }
+                    }
+                }
                 Toggle(false, LincSymbols.TaskView, "Task view") { actions.taskView() }
                 Toggle(false, LincSymbols.Home, "Desktop") { actions.showDesktop() }
             }

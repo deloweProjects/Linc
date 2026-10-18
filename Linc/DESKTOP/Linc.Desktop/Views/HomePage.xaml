@@ -32,6 +32,8 @@
             <!-- Offline banner row (M9d-1, §2.5): Auto so it only takes space while shown, then
                  the widgets/right-pane row below fills the rest exactly as before this row existed. -->
             <RowDefinition Height="Auto" />
+            <!-- A narrow window shows one pane at a time; this switch picks which (code-behind). -->
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -53,7 +55,16 @@
 
         <!-- Widgets section: floats on the phone's (pre-blurred) wallpaper with a theme-aware
              scrim (whitey fog in light, shadow in dark) tinted toward its dominant colour. -->
-        <Border x:Name="WidgetsPane" Grid.Row="1" Grid.Column="0" CornerRadius="28">
+        <!-- Shown only in a narrow window (HomePage.ApplyWidth): Phone | Activity, one pane at a time. -->
+        <StackPanel x:Name="NarrowSwitch" Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="2"
+                    HorizontalAlignment="Center" Margin="0,0,0,12" Visibility="Collapsed">
+            <ToggleButton x:Name="ShowWidgetsButton" MinWidth="120" Padding="16,8" CornerRadius="20,4,4,20" BorderThickness="0"
+                          Content="Phone" IsChecked="True" Click="OnShowWidgets" />
+            <ToggleButton x:Name="ShowPanelButton" MinWidth="120" Padding="16,8" CornerRadius="4,20,20,4" BorderThickness="0"
+                          Content="Activity" Click="OnShowPanel" />
+        </StackPanel>
+
+        <Border x:Name="WidgetsPane" Grid.Row="2" Grid.Column="0" CornerRadius="28">
             <Border.Background>
                 <ImageBrush ImageSource="{x:Bind ViewModel.Wallpaper, Mode=OneWay}" Stretch="UniformToFill" />
             </Border.Background>
@@ -354,7 +365,7 @@
         <!-- Draggable divider between the widgets and notifications panes. -->
         <Border
             x:Name="Splitter"
-            Grid.Row="1"
+            Grid.Row="2"
             Grid.Column="1"
             Width="14"
             Background="Transparent"
@@ -374,7 +385,7 @@
              height-sync was faking; a Grid row does it structurally, so TabsPane must NOT carry an
              explicit Height (it would fight the splitter). The pane order moves THIS container, so
              tabs, splitter and Apps travel together when the sides are swapped. -->
-        <Grid x:Name="RightPane" Grid.Row="1" Grid.Column="2">
+        <Grid x:Name="RightPane" Grid.Row="2" Grid.Column="2">
             <Grid.RowDefinitions>
                 <!-- Default split ≈ 65/35 in the tabs panel's favour; a dragged size replaces the
                      Apps row with a pixel height and is persisted per device. -->
@@ -840,7 +851,7 @@
              not just the row the banner introduced. -->
         <Border
             Grid.Row="0"
-            Grid.RowSpan="2"
+            Grid.RowSpan="3"
             Grid.Column="0"
             Grid.ColumnSpan="3"
             Background="{ThemeResource SurfaceBrush}"

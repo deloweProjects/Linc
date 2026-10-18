@@ -34,18 +34,63 @@ public sealed class PcTerminal : IDisposable
 
     public string Shell { get; }
 
-    /// <summary>The shells this PC has: always PowerShell and Command Prompt; WSL when installed.</summary>
+    /// <summary>
+    /// The shells this PC has: PowerShell (7 when installed, else Windows PowerShell), Windows
+    /// PowerShell too when 7 is the default, Command Prompt, each WSL distribution, and Git Bash.
+    /// </summary>
     public static JsonObject State(PcTerminal? running)
     {
-        var shells = new JsonArray { "powershell", "cmd" };
-        if (File.Exists(Path.Combine(Environment.SystemDirectory, "wsl.exe"))) shells.Add("wsl");
+        var shells = new JsonArray { "powershell" };
+        if (FindOnPath("pwsh.exe") is not null) shells.Add("winps");
+        shells.Add("cmd");
+        if (File.Exists(Path.Combine(Environment.SystemDirectory, "wsl.exe")))
+        {
+            var distros = WslDistros();
+            if (distros.Count == 0) shells.Add("wsl");
+            foreach (var d in distros) shells.Add("wsl:" + d);
+        }
+        if (GitBash() is not null) shells.Add("gitbash");
         return new JsonObject { ["shells"] = shells, ["running"] = running?.Shell };
+    }
+
+    /// <summary>Installed WSL distributions, from the registry (no wsl.exe start-up, no UTF-16 parsing).</summary>
+    private static List<string> WslDistros()
+    {
+        var list = new List<string>();
+        try
+        {
+            using var lxss = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Lxss");
+            if (lxss is null) return list;
+            foreach (var id in lxss.GetSubKeyNames())
+            {
+                using var d = lxss.OpenSubKey(id);
+                if (d?.GetValue("DistributionName") is string name && !name.StartsWith("docker-desktop", StringComparison.OrdinalIgnoreCase))
+                    list.Add(name);
+            }
+        }
+        catch { /* no WSL settings for this user */ }
+        return list;
+    }
+
+    private static string? GitBash()
+    {
+        foreach (var root in new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs") })
+        {
+            if (string.IsNullOrEmpty(root)) continue;
+            string bash = Path.Combine(root, "Git", "bin", "bash.exe");
+            if (File.Exists(bash)) return bash;
+        }
+        return null;
     }
 
     private static string CommandLine(string shell) => shell switch
     {
         "cmd" => "cmd.exe",
         "wsl" => "wsl.exe",
+        "winps" => "powershell.exe -NoLogo",
+        "gitbash" => GitBash() is { } bash ? $"\"{bash}\" --login -i" : "cmd.exe",
+        _ when shell.StartsWith("wsl:", StringComparison.Ordinal) => $"wsl.exe -d \"{shell[4..].Replace("\"", "")}\" --cd ~",
         // PowerShell 7 if it is installed (it is what Windows Terminal opens), else Windows PowerShell.
         _ => FindOnPath("pwsh.exe") is { } pwsh ? $"\"{pwsh}\" -NoLogo" : "powershell.exe -NoLogo",
     };
@@ -55,7 +100,7 @@ public sealed class PcTerminal : IDisposable
         .Select(dir => Path.Combine(dir.Trim(), exe)).FirstOrDefault(File.Exists);
 
     public static PcTerminal Start(string shell, int cols, int rows, Stream channel, ILogService log) =>
-        new(shell is "cmd" or "wsl" ? shell : "powershell", cols, rows, channel, log);
+        new(shell is "cmd" or "wsl" or "winps" or "gitbash" || shell.StartsWith("wsl:", StringComparison.Ordinal) ? shell : "powershell", cols, rows, channel, log);
 
     private PcTerminal(string shell, int cols, int rows, Stream channel, ILogService log)
     {

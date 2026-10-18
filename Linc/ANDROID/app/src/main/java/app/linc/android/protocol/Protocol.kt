@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 27
+const val PROTOCOL_VERSION = 28
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -124,6 +124,17 @@ object MessageType {
     const val PC_TERM_GET = "pc.term.get"
     const val PC_TERM_OPEN = "pc.term.open"
     const val PC_TERM_STATE = "pc.term.state"
+    // v28: the PC's sound output, a curtain over the PC's screen while you use it from the phone,
+    // and the PC's Device page reaching into the phone (its sound, screen time, wallpaper).
+    const val PC_AUDIO_OUTPUTS_GET = "pc.audio.outputs.get"   // phone → desktop: {}
+    const val PC_AUDIO_OUTPUTS = "pc.audio.outputs"           // desktop → phone: {outputs: [{id, name, bluetooth, default}]}
+    const val PC_AUDIO_OUTPUT_SET = "pc.audio.output.set"     // phone → desktop: {id}
+    const val PC_CURTAIN_SET = "pc.curtain.set"               // phone → desktop: {on}
+    const val PC_CURTAIN_STATE = "pc.curtain.state"           // desktop → phone: {on, available, error?}
+    const val PHONE_SOUND_ASK = "phone.sound.ask"             // desktop → phone: {on} send (or stop sending) this phone's sound to the PC
+    const val PHONE_USAGE_GET = "phone.usage.get"             // desktop → phone: {}
+    const val PHONE_USAGE = "phone.usage"                     // phone → desktop: {allowed, totalMin, unlocks?, apps: [{package, name, minutes}]}
+    const val PHONE_WALLPAPER_SET = "phone.wallpaper.set"     // desktop → phone: {jpeg (base64), target: home|lock|both}
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

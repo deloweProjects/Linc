@@ -91,10 +91,38 @@ public sealed partial class MainWindow : Window
 
         // Live-retint the app to match the phone's Material You palette once connected.
         App.Services.GetRequiredService<IThemeSyncService>().Start((FrameworkElement)Content);
+        ApplyBackdrop();
 
 
         // Closing the window hides Linc to the tray; it keeps watching for the phone.
         AppWindow.Closing += OnAppWindowClosing;
+    }
+
+    /// <summary>
+    /// Transparency (the owner: "the background is just dark, add transparency effects"): Mica —
+    /// the desktop's wallpaper, blurred and tinted — behind the whole window, or Desktop Acrylic
+    /// where Mica isn't available (Windows 10). The window's surface colour, which follows the
+    /// phone's palette, is laid over it part-transparent, so the colours still come from the
+    /// phone and the cards stay solid on top. Windows' own "Transparency effects" switch off turns
+    /// both backdrops into a plain fill by themselves.
+    /// </summary>
+    private void ApplyBackdrop()
+    {
+        try
+        {
+            bool mica = Microsoft.UI.Composition.SystemBackdrops.MicaController.IsSupported();
+            if (mica) SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
+            else if (Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported()) SystemBackdrop = new Microsoft.UI.Xaml.Media.DesktopAcrylicBackdrop();
+            else return;
+            if (Application.Current.Resources["SurfaceBrush"] is not Microsoft.UI.Xaml.Media.SolidColorBrush surface || Content is not Grid root) return;
+            var tint = new Microsoft.UI.Xaml.Media.SolidColorBrush(surface.Color) { Opacity = mica ? 0.55 : 0.7 };
+            surface.RegisterPropertyChangedCallback(Microsoft.UI.Xaml.Media.SolidColorBrush.ColorProperty, (_, _) => tint.Color = surface.Color);
+            root.Background = tint;
+        }
+        catch (Exception ex)
+        {
+            App.Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, $"Window transparency isn't available ({ex.GetType().Name}: {ex.Message})");
+        }
     }
 
     /// <summary>
