@@ -12,7 +12,6 @@ import app.linc.android.service.CompanionOutbox
 import app.linc.android.service.LogLevel
 import app.linc.android.service.LogStore
 import app.linc.android.service.ShareSender
-import app.linc.android.service.ShareSizeLimits
 import app.linc.android.service.ShareStore
 import app.linc.android.service.ShareProgress
 import app.linc.android.service.TransferState
@@ -90,13 +89,6 @@ class ShareReceiverActivity : ComponentActivity() {
             } else {
                 Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
             }
-            return
-        }
-
-        val sizes = uris.map { ShareSender.sizeOf(this, it) }
-        val refusal = ShareSizeLimits.check(sizes)
-        if (refusal != null) {
-            Toast.makeText(this, refusal, Toast.LENGTH_LONG).show()
             return
         }
 

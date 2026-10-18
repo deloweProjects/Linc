@@ -51,7 +51,6 @@ import app.linc.android.service.CompanionStateHolder.ServiceState
 import app.linc.android.service.QuickShareLauncher
 import app.linc.android.service.ReceivedFile
 import app.linc.android.service.ShareSender
-import app.linc.android.service.ShareSizeLimits
 import app.linc.android.service.ShareStore
 import app.linc.android.service.Transfer
 import app.linc.android.service.TransferState
@@ -118,7 +117,6 @@ private fun ShareContent(
         fun sendUris(uris: List<Uri>) {
             if (uris.isEmpty()) return
             if (overLinc) {
-                ShareSizeLimits.check(uris.map { ShareSender.sizeOf(context, it) })?.let { notify(it); return }
                 uris.forEach { ShareStore.send(context, it) }
             } else if (!QuickShareLauncher.send(context, uris)) {
                 notify("Quick Share isn't available on this phone, and Linc isn't connected")
