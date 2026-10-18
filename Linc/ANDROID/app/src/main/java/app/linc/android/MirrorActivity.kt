@@ -209,7 +209,7 @@ class MirrorActivity : ComponentActivity() {
                     if (down) {
                         // Feedback now, not when the PC's next frame arrives.
                         val (vx, vy) = streamToView(gestures.cursorX, gestures.cursorY).let { it[0] to it[1] }
-                        cursorView.pulse(button, vx, vy)
+                        if (ui.clickRing) cursorView.pulse(button, vx, vy)
                         video.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     }
                     MirrorControl.pointer(if (down) "down" else "up", nx, ny, "touch", button)
@@ -291,6 +291,11 @@ class MirrorActivity : ComponentActivity() {
             MirrorSettings.setFloatingKeyboard(this@MirrorActivity, false)
             if (phoneKeyboardUp) hidePhoneKeyboard()
             else { showPhoneKeyboard(); ui.panelOpen = false }
+        }
+
+        override fun setClickRing(on: Boolean) {
+            MirrorSettings.setClickRing(this@MirrorActivity, on)
+            refreshUi(); touched()
         }
 
         override fun setAutoKeyboard(on: Boolean) {
@@ -431,6 +436,7 @@ class MirrorActivity : ComponentActivity() {
         ui.floatingKeyboard = keyboard.visibility == View.VISIBLE
         ui.phoneKeyboard = phoneKeyboardUp
         ui.autoKeyboard = MirrorSettings.autoKeyboard(this)
+        ui.clickRing = MirrorSettings.clickRing(this)
         ui.soundAvailable = MirrorControl.v20()
         ui.soundOn = MirrorSettings.audio(this)
         // Always shown, in fixed places: a button that appeared a moment after each reconnect used

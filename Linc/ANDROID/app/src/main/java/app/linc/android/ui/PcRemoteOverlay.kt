@@ -90,6 +90,8 @@ class RemoteUiState {
     var floatingKeyboard by mutableStateOf(false)
     var phoneKeyboard by mutableStateOf(false)
     var autoKeyboard by mutableStateOf(true)
+    /** A circle where each click lands; off by default. */
+    var clickRing by mutableStateOf(false)
     var soundAvailable by mutableStateOf(false)
     var soundOn by mutableStateOf(true)
     var voiceAccessAvailable by mutableStateOf(false)
@@ -115,6 +117,7 @@ interface RemoteActions {
     fun floatingKeyboard()
     fun phoneKeyboard()
     fun setAutoKeyboard(on: Boolean)
+    fun setClickRing(on: Boolean)
     fun sound()
     fun voiceAccess()
     fun tabletMode()
@@ -299,6 +302,10 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                     checked = state.mouseMode, onCheckedChange = { actions.setMouseMode(true) },
                     shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(), modifier = Modifier.weight(1f),
                 ) { IconLabel(LincSymbols.Mouse, "Mouse") }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Show a circle where you click", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Switch(checked = state.clickRing, onCheckedChange = actions::setClickRing)
             }
 
             // Keyboard: which one, and whether it pops up by itself.
