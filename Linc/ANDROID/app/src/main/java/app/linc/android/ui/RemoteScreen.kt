@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -155,6 +156,7 @@ fun RemoteScreen(
                 .padding(horizontal = Kit.gutter),
             verticalArrangement = Arrangement.spacedBy(Kit.groupGap),
         ) {
+            ToolShortcuts()
             Trackpad(
                 ready = inputReady,
                 blockedReason = inputReason,
@@ -192,6 +194,32 @@ fun RemoteScreen(
 }
 
 enum class RemoteSheet { Keyboard, Media, Present, Voice, Power }
+
+/** The full-page tools (D-097): a row of tonal chips above the pad, so the pad keeps its room. */
+@Composable
+private fun ToolShortcuts() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        for ((tool, label, icon) in listOf(
+            Triple(app.linc.android.PcToolActivity.SOUND, "Sound", LincSymbols.Devices),
+            Triple(app.linc.android.PcToolActivity.PC, "PC", LincSymbols.Computer),
+            Triple(app.linc.android.PcToolActivity.FILES, "Files", LincSymbols.Folder),
+            Triple(app.linc.android.PcToolActivity.TERMINAL, "Terminal", LincSymbols.TextSnippet),
+        )) {
+            androidx.compose.material3.FilledTonalButton(
+                onClick = { app.linc.android.PcToolActivity.open(context, tool) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(label)
+            }
+        }
+    }
+}
 
 // ---- reasons (the three gates) --------------------------------------------------------------
 
@@ -609,45 +637,54 @@ private fun MediaSheet(transportReason: String?, volumeReason: String?) {
     val volumeReady = volumeReason == null
 
     SheetTitle("Media")
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = Kit.gutter),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    // Now playing: one card, the PC's track and its controls together.
+    androidx.compose.material3.Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter),
     ) {
-        Box(
-            Modifier.size(88.dp).clip(MaterialShapes.Cookie12Sided.toShape()).background(MaterialTheme.colorScheme.tertiaryContainer),
-            contentAlignment = Alignment.Center,
-        ) { Icon(LincSymbols.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(36.dp)) }
-        Column(Modifier.weight(1f)) {
-            Text(nowPlayingTitle(media), style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            media?.artist?.takeIf { it.isNotBlank() && playing }?.let {
-                Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(
+                    Modifier.size(72.dp).clip(MaterialShapes.Cookie12Sided.toShape()).background(MaterialTheme.colorScheme.tertiaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(LincSymbols.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(32.dp)) }
+                Column(Modifier.weight(1f)) {
+                    Text(nowPlayingTitle(media), style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    val sub = listOfNotNull(media?.artist?.takeIf { it.isNotBlank() && playing }, media?.app?.takeIf { it.isNotBlank() && playing })
+                    if (sub.isNotEmpty()) Text(sub.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            val m = media
+            if (playing && m != null && m.durationMs > 0) {
+                androidx.compose.material3.LinearWavyProgressIndicator(
+                    progress = { (m.positionMs.toFloat() / m.durationMs).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { PcMediaControl.send("prev") }, enabled = canTransport, modifier = Modifier.size(56.dp)) {
+                    Icon(LincSymbols.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(32.dp))
+                }
+                FilledIconButton(
+                    onClick = { PcMediaControl.send(if (media?.playing == true) "pause" else "play") },
+                    enabled = canTransport,
+                    modifier = Modifier.size(72.dp),
+                    shape = MaterialShapes.Cookie9Sided.toShape(),
+                ) {
+                    Icon(if (media?.playing == true) LincSymbols.Pause else LincSymbols.Play,
+                        contentDescription = if (media?.playing == true) "Pause" else "Play", modifier = Modifier.size(32.dp))
+                }
+                IconButton(onClick = { PcMediaControl.send("next") }, enabled = canTransport, modifier = Modifier.size(56.dp)) {
+                    Icon(LincSymbols.SkipNext, contentDescription = "Next", modifier = Modifier.size(32.dp))
+                }
             }
         }
     }
     SheetBlocked(transportReason)
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = Kit.gutter),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = { PcMediaControl.send("prev") }, enabled = canTransport, modifier = Modifier.size(56.dp)) {
-            Icon(LincSymbols.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(32.dp))
-        }
-        FilledIconButton(
-            onClick = { PcMediaControl.send(if (media?.playing == true) "pause" else "play") },
-            enabled = canTransport,
-            modifier = Modifier.size(80.dp),
-            shape = MaterialShapes.Cookie9Sided.toShape(),
-        ) {
-            Icon(if (media?.playing == true) LincSymbols.Pause else LincSymbols.Play,
-                contentDescription = if (media?.playing == true) "Pause" else "Play", modifier = Modifier.size(36.dp))
-        }
-        IconButton(onClick = { PcMediaControl.send("next") }, enabled = canTransport, modifier = Modifier.size(56.dp)) {
-            Icon(LincSymbols.SkipNext, contentDescription = "Next", modifier = Modifier.size(32.dp))
-        }
-    }
-    SectionHeader("PC volume")
+
+    // The PC's volume. With Play everywhere on it is the master for every speaker at once.
     SheetBlocked(volumeReason)
     var volume by remember(pcState?.volume) { mutableFloatStateOf((pcState?.volume ?: 50).toFloat()) }
     Row(Modifier.fillMaxWidth().padding(horizontal = Kit.gutter), verticalAlignment = Alignment.CenterVertically) {
@@ -657,7 +694,7 @@ private fun MediaSheet(transportReason: String?, volumeReason: String?) {
             enabled = volumeReady,
         ) {
             Icon(if (pcState?.muted == true) LincSymbols.VolumeOff else LincSymbols.VolumeUp,
-                contentDescription = if (pcState?.muted == true) "Unmute" else "Mute")
+                contentDescription = if (pcState?.muted == true) "Unmute the PC" else "Mute the PC")
         }
         Slider(
             value = volume,
@@ -669,8 +706,7 @@ private fun MediaSheet(transportReason: String?, volumeReason: String?) {
         )
         Text("${volume.toInt()}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(36.dp))
     }
-    PcSpeakerSection()
-    PlayEverywhereSection()
+    PlayEverywhereSummary()
 }
 
 private fun nowPlayingTitle(media: PcMedia?): String = when {

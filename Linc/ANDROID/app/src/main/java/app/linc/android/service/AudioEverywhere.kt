@@ -64,6 +64,8 @@ data class EverywhereState(
     val devices: List<EverywhereDevice> = emptyList(),
     /** The phone is recording for an alignment right now. */
     val listening: Boolean = false,
+    /** Whose sound plays everywhere: "pc" or "phone" (v27). */
+    val source: String = "pc",
 )
 
 /**
@@ -151,6 +153,13 @@ object AudioEverywhere {
 
     fun setMargin(ms: Int) = send(buildJsonObject { put("marginMs", ms) })
 
+    /** The phone became (or stopped being) the source: the PC listens on channel 8, or stops (v27). */
+    fun setPhoneSource(on: Boolean) {
+        if (!CompanionOutbox.canSend(27)) return
+        CompanionOutbox.trySend(Envelope(type = MessageType.AUDIO_EVERYWHERE_SET,
+            payload = buildJsonObject { put("source", if (on) "phone" else "pc"); put("on", on) }), requiredVersion = 27)
+    }
+
     fun calibrate() = send(buildJsonObject { put("calibrate", true) })
 
     fun clicks() = send(buildJsonObject { put("clicks", true) })
@@ -193,6 +202,7 @@ object AudioEverywhere {
             delayMs = delayMs,
             marginMs = (payload["marginMs"] as? JsonPrimitive)?.intOrNull ?: 0,
             testing = str(payload, "testing"),
+            source = str(payload, "source") ?: "pc",
             note = str(payload, "note"),
             devices = devices,
         )

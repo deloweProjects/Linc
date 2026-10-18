@@ -67,9 +67,19 @@ public sealed class PcAudioEverywhere(
     {
         try
         {
+            string? source = (string?)p["source"];
             if (p["on"] is JsonValue onValue && onValue.TryGetValue(out bool on))
             {
-                if (on && !On) await EnableAsync();
+                if (source == "phone")
+                {
+                    if (on) await EnablePhoneSourceAsync();
+                    else if (_phoneSource) Disable("the phone stopped being the source");
+                }
+                else if (on && (!On || _phoneSource))
+                {
+                    if (_phoneSource) Disable("switching back to the PC's own sound");
+                    await EnableAsync();
+                }
                 else if (!on && On) Disable("turned off on the phone");
             }
             if (p["device"] is JsonObject d && (string?)d["id"] is { Length: > 0 } id)
@@ -155,6 +165,99 @@ public sealed class PcAudioEverywhere(
         new Thread(() => Monitor(stop.Token)) { IsBackground = true, Name = "linc-everywhere" }.Start();
     }
 
+    // ---- the phone as the source (v27, D-097) ------------------------------------------------
+
+    public const int PhoneAudioChannel = 8;
+    private bool _phoneSource;
+    private Stream? _phoneChannel;
+
+    /// <summary>
+    /// The phone records what its apps play and sends it on channel 8, each block stamped with
+    /// the PC-clock moment it must be heard (when the phone's own output plays it). The PC's
+    /// speakers simply play each block at that moment: no capture, no cable, no group delay here.
+    /// </summary>
+    private async Task EnablePhoneSourceAsync()
+    {
+        if (_phoneSource) return;
+        if (On) Disable("switching to the phone as the source");
+        Stream channel;
+        try { channel = await connection.OpenPhoneDialledChannelAsync(PhoneAudioChannel, CancellationToken.None); }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Play everywhere: couldn't open the phone's sound channel: {ex.Message}");
+            _error = "audio";
+            return;
+        }
+        _phoneChannel = channel;
+        _phoneSource = true;
+        _sourceRate = 48_000;
+        Interlocked.Exchange(ref _delayUs, 0); // the blocks already carry when they must be heard
+        On = true;
+        _error = null;
+        _note = null;
+        log.Log(LogLevel.Info, "Play everywhere: playing the phone's sound on this PC's speakers, in step with the phone");
+        new Thread(() => ReadPhoneAudio(channel)) { IsBackground = true, Name = "linc-everywhere-phone", Priority = ThreadPriority.AboveNormal }.Start();
+        RefreshDevices(PcClock.NowUs());
+        var stop = new CancellationTokenSource();
+        _monitorStop = stop;
+        new Thread(() => Monitor(stop.Token)) { IsBackground = true, Name = "linc-everywhere" }.Start();
+    }
+
+    /// <summary>Channel 8: sound blocks, and clock probes answered at once (the same as channel 6's, mirrored).</summary>
+    private void ReadPhoneAudio(Stream channel)
+    {
+        var header = new byte[Protocol.VideoFraming.HeaderBytes];
+        var reply = new byte[Protocol.VideoFraming.HeaderBytes + PcAudioStreamer.ClockReplyBytes];
+        try
+        {
+            while (true)
+            {
+                ReadExactly(channel, header);
+                var h = Protocol.VideoFraming.ReadHeader(header);
+                if (h.Length < 0 || h.Length > 1 << 20) throw new InvalidDataException($"packet length {h.Length}");
+                var payload = new byte[h.Length];
+                ReadExactly(channel, payload);
+                if (h.Config)
+                {
+                    long arrived = PcClock.NowUs();
+                    if (payload.Length != PcAudioStreamer.ClockProbeBytes ||
+                        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(payload) != PcAudioStreamer.ClockMagic) continue;
+                    long sent = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(payload.AsSpan(8));
+                    long leaving = PcClock.NowUs();
+                    Protocol.VideoFraming.WriteHeader(reply, arrived, config: true, keyframe: false, PcAudioStreamer.ClockReplyBytes);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(reply.AsSpan(12), sent);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(reply.AsSpan(20), arrived);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(reply.AsSpan(28), leaving);
+                    channel.Write(reply, 0, reply.Length);
+                    channel.Flush();
+                    continue;
+                }
+                var pcm = new short[payload.Length / 2];
+                Buffer.BlockCopy(payload, 0, pcm, 0, pcm.Length * 2); // little-endian 16-bit stereo
+                OnBlock(new SoundBlock(pcm, h.TimestampUs));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or EndOfStreamException or InvalidDataException)
+        {
+            if (ReferenceEquals(_phoneChannel, channel) && On)
+            {
+                log.Log(LogLevel.Info, $"Play everywhere: the phone's sound stopped ({ex.Message})");
+                Disable("the phone stopped sending its sound");
+            }
+        }
+    }
+
+    private static void ReadExactly(Stream stream, byte[] buffer)
+    {
+        int read = 0;
+        while (read < buffer.Length)
+        {
+            int n = stream.Read(buffer, read, buffer.Length - read);
+            if (n == 0) throw new EndOfStreamException("the phone hung up");
+            read += n;
+        }
+    }
+
     /// <summary>Stop every speaker and give Windows its own output back.</summary>
     public void Disable(string why)
     {
@@ -171,6 +274,15 @@ public sealed class PcAudioEverywhere(
             _testMode = null;
         }
         foreach (var sink in sinks) sink.Dispose();
+        if (_phoneSource)
+        {
+            _phoneSource = false;
+            var channel = Interlocked.Exchange(ref _phoneChannel, null);
+            try { channel?.Dispose(); } catch { }
+            Interlocked.Exchange(ref _delayUs, GroupDelay.MinUs);
+            log.Log(LogLevel.Info, $"Play everywhere: off ({why})");
+            return;
+        }
         stopAudio();
         RestoreCable();
         speaker.Disable();
@@ -205,7 +317,8 @@ public sealed class PcAudioEverywhere(
     /// <summary>The phone's sound channel closed: nobody is controlling this any more.</summary>
     public void OnAudioEnded()
     {
-        if (On) Disable("the phone went away");
+        // Channel 6 is the PC's own sound; with the phone as the source it isn't this stream.
+        if (On && !_phoneSource) Disable("the phone went away");
     }
 
     // ---- the PC's sound, fanned out -------------------------------------------------------------
@@ -233,7 +346,7 @@ public sealed class PcAudioEverywhere(
             log.Log(LogLevel.Warn, $"Play everywhere: couldn't list this PC's speakers: {ex.Message}");
             return;
         }
-        string? own = speaker.OwnOutputId;
+        string? own = speaker.OwnOutputId ?? PcVoiceAccess.DefaultRenderId();
         var start = new List<PcOutputDevice>();
         var stop = new List<PcRenderSink>();
         bool added = false;
@@ -380,7 +493,7 @@ public sealed class PcAudioEverywhere(
     /// </summary>
     private void KeepCableDefault()
     {
-        if (_cableId is null) return;
+        if (_cableId is null || _phoneSource) return;
         string? current = PcVoiceAccess.DefaultRenderId();
         if (current is null || current == _cableId) return;
         string name;
@@ -401,6 +514,7 @@ public sealed class PcAudioEverywhere(
 
     private bool UpdateGroupDelay(long now)
     {
+        if (_phoneSource) return false; // the phone's own output sets the moment
         var needs = new List<(string, long)>();
         lock (_lock)
         {
@@ -569,6 +683,7 @@ public sealed class PcAudioEverywhere(
             payload = new JsonObject
             {
                 ["on"] = On,
+                ["source"] = _phoneSource ? "phone" : "pc",
                 ["delayMs"] = DelayUs / 1000,
                 ["marginMs"] = Settings.MarginMs,
                 ["testing"] = _testMode,

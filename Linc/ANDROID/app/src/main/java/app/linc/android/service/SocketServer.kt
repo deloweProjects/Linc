@@ -197,6 +197,7 @@ class SocketServer(
             CHANNEL_VIDEO -> videoReceive(input)
             CHANNEL_AUDIO -> audioReceive(input, output)
             CHANNEL_MIC -> PcVoiceAccess.stream(output)
+            CHANNEL_PHONE_AUDIO -> PhoneSource.serve(input, output)
         }
     }
 
@@ -800,5 +801,7 @@ class SocketServer(
         const val CHANNEL_VIDEO = 5
         const val CHANNEL_AUDIO = 6
         const val CHANNEL_MIC = 7
+        /** v27 (D-097): the phone's own sound, phone → desktop, for Play everywhere. */
+        const val CHANNEL_PHONE_AUDIO = 8
     }
 }

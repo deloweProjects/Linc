@@ -473,9 +473,64 @@ data class ChirpHit(val index: Int, val snr: Double)
  */
 object ChirpDetector {
     const val MIN_SNR = 6.0
+    const val MIN_APART_MS = 3
 
     /** Search [from, to) in [recording] for where [template] starts. Null when nothing stands out. */
     fun find(recording: FloatArray, from: Int, to: Int, template: FloatArray, sampleRate: Int): ChirpHit? {
+        val c = correlate(recording, from, to, template) ?: return null
+        val best = c.peak(-1, 0)
+        val snr = c.snr(best, sampleRate / 200)
+        return if (snr >= MIN_SNR) ChirpHit(c.start + best, snr) else null
+    }
+
+    /**
+     * The same chirp heard twice — once played by the phone's own output, once by a speaker
+     * replaying it — as (the one nearer [nativeAt], the other). The second must stand out too
+     * and be at least [MIN_APART_MS] from the first; closer than that, the two are already in
+     * step, and the pair comes back with both at the same place.
+     */
+    fun findPair(recording: FloatArray, from: Int, to: Int, template: FloatArray, sampleRate: Int, nativeAt: Int): Pair<ChirpHit, ChirpHit>? {
+        val c = correlate(recording, from, to, template) ?: return null
+        val apart = sampleRate * MIN_APART_MS / 1000
+        val first = c.peak(-1, 0)
+        val firstSnr = c.snr(first, sampleRate / 200)
+        if (firstSnr < MIN_SNR) return null
+        val second = c.peak(first, apart)
+        val secondSnr = c.snr(second, sampleRate / 200, exclude = first)
+        val a = ChirpHit(c.start + first, firstSnr)
+        if (second < 0 || secondSnr < MIN_SNR) return a to a
+        val b = ChirpHit(c.start + second, secondSnr)
+        return if (abs(a.index - nativeAt) <= abs(b.index - nativeAt)) a to b else b to a
+    }
+
+    private class Correlation(val start: Int, val values: DoubleArray, val lags: Int) {
+        /** The strongest lag, skipping within [guard] of [skip] (none when skip < 0). */
+        fun peak(skip: Int, guard: Int): Int {
+            var best = -1
+            var peak = 0.0
+            for (k in 0 until lags) {
+                if (skip >= 0 && abs(k - skip) <= guard) continue
+                val v = abs(values[k])
+                if (v > peak) { peak = v; best = k }
+            }
+            return best
+        }
+
+        /** Peak over the RMS of everything away from it (and from [exclude]). */
+        fun snr(at: Int, guard: Int, exclude: Int = -1): Double {
+            if (at < 0) return 0.0
+            var sum = 0.0
+            var count = 0
+            for (k in 0 until lags) {
+                if (abs(k - at) <= guard || (exclude >= 0 && abs(k - exclude) <= guard)) continue
+                sum += values[k] * values[k]; count++
+            }
+            val rms = if (count > 0) sqrt(sum / count) else 0.0
+            return if (rms > 0) abs(values[at]) / rms else 0.0
+        }
+    }
+
+    private fun correlate(recording: FloatArray, from: Int, to: Int, template: FloatArray): Correlation? {
         val start = from.coerceAtLeast(0)
         val end = minOf(to + template.size, recording.size)
         if (end - start < template.size * 2) return null
@@ -495,20 +550,7 @@ object ChirpDetector {
         fft(xr, xi, true)
         val lags = minOf(to, recording.size - template.size) - start
         if (lags <= 0) return null
-        var best = 0
-        var peak = 0.0
-        for (k in 0 until lags) {
-            val v = abs(xr[k])
-            if (v > peak) { peak = v; best = k }
-        }
-        // Noise floor: the RMS of the correlation away from the peak (±5 ms).
-        val guard = sampleRate / 200
-        var sum = 0.0
-        var count = 0
-        for (k in 0 until lags) if (abs(k - best) > guard) { sum += xr[k] * xr[k]; count++ }
-        val rms = if (count > 0) sqrt(sum / count) else 0.0
-        val snr = if (rms > 0) peak / rms else 0.0
-        return if (snr >= MIN_SNR) ChirpHit(start + best, snr) else null
+        return Correlation(start, xr, lags)
     }
 
     /** In-place iterative radix-2 FFT; [inverse] also divides by n. */
@@ -568,3 +610,20 @@ object CalibrationMath {
         return DeviceCalibration(deviceId, agreeing >= 2, median, snr)
     }
 }
+
+/**
+ * When the phone is the source (D-097), its own output — usually a Bluetooth device, the
+ * slowest in the room — plays apps' sound on its own; Linc can't delay it, so it sets the time
+ * everything else aims for. These are where that time starts before the microphone has measured
+ * it: what a phone's speaker or a typical A2DP device adds after the mixer.
+ */
+object NativeRoute {
+    fun baseUs(type: String): Long = when (type) {
+        "bt" -> 180_000
+        "ble" -> 100_000
+        "wired" -> 25_000
+        "usb" -> 40_000
+        else -> 40_000 // the phone's speaker
+    }
+}
+

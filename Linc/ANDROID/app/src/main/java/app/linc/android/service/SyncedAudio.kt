@@ -50,6 +50,15 @@ object SyncedAudio {
 
     fun outputsSnapshot(): List<PhoneOutput> = synchronized(outputs) { outputs.values.toList() }
 
+    /** The PC's sound, on the PC's clock, aimed at Play everywhere's target (or the picture's). */
+    val timeline = object : PlayoutTimeline {
+        override val ready get() = clock.ready
+        override fun fromPhoneUs(phoneUs: Long) = clock.toPc(phoneUs)
+        override fun delayUs(needUs: Long) = AudioEverywhere.targetDelayUs(needUs)
+        override val arrivalUs get() = SyncedAudio.arrivalUs
+        override fun sounds(id: String) = AudioEverywhere.soundsFor(id)
+    }
+
     /** Open or close outputs to match what the mixer says should play. */
     fun setOutputs(context: Context, wanted: List<PhoneOutputSpec>) {
         val stop = ArrayList<PhoneOutput>()
@@ -58,7 +67,7 @@ object SyncedAudio {
                 if (!streaming || wanted.none { it.id == id }) stop += outputs.remove(id)!!
             }
             if (streaming) {
-                for (spec in wanted) if (spec.id !in outputs) outputs[spec.id] = PhoneOutput(context, spec, rate)
+                for (spec in wanted) if (spec.id !in outputs) outputs[spec.id] = PhoneOutput(context, spec, rate, timeline)
             }
         }
         stop.forEach { it.close() }
@@ -183,7 +192,20 @@ data class PhoneOutputSpec(
  * a time by its own thread. When the next frame will be heard comes from the track's timestamp
  * (frame N played at time T), mapped onto the PC's clock, plus the output's hidden latency.
  */
-class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate: Int) {
+/**
+ * What a [PhoneOutput] plays to: which clock its blocks are stamped on (the PC's, or this
+ * phone's own when the phone is the source), what it aims for, and its test sounds.
+ */
+interface PlayoutTimeline {
+    val ready: Boolean
+    fun fromPhoneUs(phoneUs: Long): Long
+    fun delayUs(needUs: Long): Long
+    /** How long blocks take to reach the output after capture, µs (part of what it needs). */
+    val arrivalUs: Long
+    fun sounds(id: String): List<TestSound>
+}
+
+class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate: Int, private val timeline: PlayoutTimeline) {
 
     val engine = PlayoutEngine(rate)
 
@@ -196,7 +218,7 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
     @Volatile private var running = true
 
     /** What this output needs the group delay to be: arrival, its own output, its hidden latency, a margin. */
-    val needUs: Long get() = SyncedAudio.arrivalUs + outUs + spec.hiddenUs + NEED_MARGIN_US
+    val needUs: Long get() = timeline.arrivalUs + outUs + spec.hiddenUs + NEED_MARGIN_US
 
     var skippedFrames = 0L
     var underruns = 0L
@@ -205,6 +227,9 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
         .setAudioAttributes(AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            // Never captured: when the phone is the source, Linc records what apps play, and
+            // must not record its own copies back (an echo that feeds itself).
+            .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
             .build())
         .setAudioFormat(AudioFormat.Builder()
             .setSampleRate(rate)
@@ -247,7 +272,7 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
                         engine.realign()
                     }
                 }
-                if (!trackClock.ready || !SyncedAudio.clock.ready) {
+                if (!trackClock.ready || !timeline.ready) {
                     // Until the track says where it is and the PC's clock is known, play silence.
                     buffer.fill(0f)
                 } else {
@@ -255,15 +280,15 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
                     val nextLeavesUs = trackClock.leaveUs(written).toLong()
                     val out = nextLeavesUs - now
                     if (out >= outUs || now - outAt > 5_000_000) { outUs = maxOf(0L, out); outAt = now }
-                    val firstHeard = SyncedAudio.clock.toPc(nextLeavesUs) + spec.hiddenUs
-                    val stats = engine.render(buffer, chunk, firstHeard, AudioEverywhere.targetDelayUs(needUs), (now - last) / 1_000_000.0)
+                    val firstHeard = timeline.fromPhoneUs(nextLeavesUs) + spec.hiddenUs
+                    val stats = engine.render(buffer, chunk, firstHeard, timeline.delayUs(needUs), (now - last) / 1_000_000.0)
                     skippedFrames += stats.skippedFrames
                     if (stats.underrun) underruns++
                     offByUs = engine.controller.smoothedErrorUs
                     status = "playing"
                     if (spec.silenced) buffer.fill(0f)
                     else if (spec.gain < 0.999f) for (i in buffer.indices) buffer[i] *= spec.gain
-                    val sounds = AudioEverywhere.soundsFor(spec.id)
+                    val sounds = timeline.sounds(spec.id)
                     if (sounds.isNotEmpty()) TestSignal.mix(buffer, chunk, rate, firstHeard, sounds, chirp, click)
                 }
                 last = now

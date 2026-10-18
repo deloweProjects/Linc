@@ -224,4 +224,24 @@ class AudioSyncTest {
         repeat(60) { v.add(1_000_000 + 150_000, 1_000_000) } // the link really got slower
         assertEquals(150_000L, v.us)
     }
+
+    @Test
+    fun `the native chirp and a replay of it are told apart`() {
+        val rate = 48_000
+        val chirp = TestSignal.chirp(rate)
+        val rnd = Random(9)
+        val rec = FloatArray(rate) { (rnd.nextDouble(-1.0, 1.0) * 0.05).toFloat() }
+        val native = 12_000
+        val replay = native + 1_900 // ~40 ms late
+        for (i in chirp.indices) { rec[native + i] += chirp[i] * 0.2f; rec[replay + i] += chirp[i] * 0.12f }
+        val pair = ChirpDetector.findPair(rec, 2_000, 30_000, chirp, rate, nativeAt = native + 300)
+        assertNotNull(pair)
+        assertEquals(native, pair!!.first.index)
+        assertEquals(replay, pair.second.index)
+        // Already in step: one peak, both halves at the same place.
+        val rec2 = FloatArray(rate) { (rnd.nextDouble(-1.0, 1.0) * 0.05).toFloat() }
+        for (i in chirp.indices) rec2[native + i] += chirp[i] * 0.3f
+        val same = ChirpDetector.findPair(rec2, 2_000, 30_000, chirp, rate, nativeAt = native)!!
+        assertEquals(same.first.index, same.second.index)
+    }
 }
