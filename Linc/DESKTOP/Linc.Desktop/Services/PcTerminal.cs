@@ -74,13 +74,17 @@ public sealed class PcTerminal : IDisposable
 
     private static string? GitBash()
     {
-        foreach (var root in new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs") })
+        // Git for Windows' own install places (a per-user install is found through PATH below).
+        foreach (var root in new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) })
         {
             if (string.IsNullOrEmpty(root)) continue;
             string bash = Path.Combine(root, "Git", "bin", "bash.exe");
             if (File.Exists(bash)) return bash;
         }
+        // git.exe on PATH lives in <Git>\cmd; bash sits beside it in <Git>\bin.
+        if (FindOnPath("git.exe") is { } git && Path.GetDirectoryName(Path.GetDirectoryName(git)) is { } home
+            && File.Exists(Path.Combine(home, "bin", "bash.exe")))
+            return Path.Combine(home, "bin", "bash.exe");
         return null;
     }
 
