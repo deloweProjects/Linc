@@ -98,6 +98,9 @@ object FileChannelServer {
                 }
             }
         }.isSuccess
+        // Index what the PC just wrote (Share, Files, Sync), so pictures and videos reach the
+        // Gallery at once.
+        if (ok) ShareStore.scan(file.absolutePath)
         Framing.write(output, if (ok) """{"ok":true}""" else errorJson("write-failed"))
     }
 
