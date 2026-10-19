@@ -35,12 +35,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,6 +51,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +82,7 @@ import app.linc.android.ui.kit.Kit
 import app.linc.android.ui.kit.LincScaffold
 import app.linc.android.ui.kit.SectionHeader
 import app.linc.android.ui.kit.pagePadding
+import kotlin.math.abs
 
 /*
  * Tools → Terminal (D-097): PowerShell, Command Prompt, WSL and the rest, on the PC, in a real
@@ -188,7 +192,7 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
     val linkState by app.linc.android.service.CompanionStateHolder.state.collectAsState()
     val ready = remember(linkState) { PcTools.ready() }
     var started by remember { mutableStateOf(shell == null) }
-    var fontSp by remember { mutableFloatStateOf(prefs.getFloat(KEY_FONT, 13f)) }
+    var fontSp by remember { mutableFloatStateOf(prefs.getFloat(KEY_FONT, 13f).coerceIn(MIN_FONT, MAX_FONT)) }
     var input by remember { mutableStateOf<TerminalInputView?>(null) }
     var ctrl by remember { mutableStateOf(false) }
     var alt by remember { mutableStateOf(false) }
@@ -225,152 +229,205 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
         if (open) PcTools.closeTerminal()
         onClose()
     }
+    // The pinched size, kept once the fingers settle (not on every step of the pinch).
+    LaunchedEffect(fontSp) {
+        kotlinx.coroutines.delay(500)
+        prefs.edit { putFloat(KEY_FONT, fontSp) }
+    }
 
-    Column(Modifier.fillMaxSize().background(colors.surface).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        // ---- top bar: the shell's title, keyboard, close --------------------------------------
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onClose) { Icon(LincSymbols.ArrowBack, contentDescription = "Leave it running") }
-            Column(Modifier.weight(1f)) {
-                Text(shell?.let { shellLook(it).title } ?: "Terminal", style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                val title = remember(version) { PcTools.screen.title }
-                Text(if (!open && started) "Closed" else title.ifEmpty { "On your PC" }, style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            IconButton(onClick = { showKeyboard() }) { Icon(LincSymbols.Keyboard, contentDescription = "Show the keyboard") }
-            IconButton(onClick = { close() }) { Icon(LincSymbols.Close, contentDescription = "Close the shell") }
-        }
-
-        // ---- the console ----------------------------------------------------------------------
-        BoxWithConstraints(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(20.dp))
-                .background(if (dark) colors.surfaceContainerLowest else colors.surfaceContainerLow),
-        ) {
-            val density = LocalDensity.current
-            val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE } }
-            val textPx = with(density) { fontSp.sp.toPx() }
-            paint.textSize = textPx
-            val cellW = paint.measureText("M")
-            val metrics = paint.fontMetrics
-            val cellH = (metrics.descent - metrics.ascent) * 1.08f
-            val pad = with(density) { 10.dp.toPx() }
-            val cols = ((constraints.maxWidth - 2 * pad) / cellW).toInt().coerceIn(20, 300)
-            val rows = ((constraints.maxHeight - 2 * pad) / cellH).toInt().coerceIn(5, 200)
-
-            // The invisible view the keyboard types into; the console is drawn over it.
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    TerminalInputView(ctx).also {
-                        it.onText = { t -> send(t) }
-                        input = it
-                    }
-                },
-            )
-            LaunchedEffect(cols, rows) {
-                if (!started && shell != null && ready) {
-                    PcTools.openTerminal(shell, cols, rows)
-                    started = true
-                } else if (open) PcTools.resize(cols, rows)
-            }
-            LaunchedEffect(input) {
-                kotlinx.coroutines.delay(300)
-                showKeyboard()
+    // No Surface holds this page, so text and icons would default to black: on a dark theme, unreadable.
+    CompositionLocalProvider(LocalContentColor provides colors.onSurface) {
+        Column(Modifier.fillMaxSize().background(colors.surface).statusBarsPadding().navigationBarsPadding().imePadding()) {
+            // ---- top bar: the shell's title, keyboard, close --------------------------------------
+            Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) { Icon(LincSymbols.ArrowBack, contentDescription = "Leave it running") }
+                Column(Modifier.weight(1f)) {
+                    Text(shell?.let { shellLook(it).title } ?: "Terminal", style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface, maxLines = 1)
+                    val title = remember(version) { PcTools.screen.title }
+                    Text(if (!open && started) "Closed" else title.ifEmpty { "On your PC" }, style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = { showKeyboard() }) { Icon(LincSymbols.Keyboard, contentDescription = "Show the keyboard") }
+                IconButton(onClick = { close() }) { Icon(LincSymbols.Close, contentDescription = "Close the shell") }
             }
 
-            val fg = colors.onSurface
-            val cursor = colors.primary
-            Canvas(
-                Modifier.fillMaxSize()
-                    .pointerInput(Unit) { detectTapGestures(onTap = { showKeyboard() }) }
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            if (zoom != 1f) {
-                                fontSp = (fontSp * zoom).coerceIn(7f, 28f)
-                                prefs.edit { putFloat(KEY_FONT, fontSp) }
-                            }
-                            if (pan.y != 0f) {
-                                val max = synchronized(PcTools.screen) { PcTools.screen.scrollbackSize }
-                                scrollBack = (scrollBack + (pan.y / cellH).toInt()).coerceIn(0, max)
-                            }
-                        }
-                    }
-                    .semantics { contentDescription = "Terminal" },
+            // ---- the console ----------------------------------------------------------------------
+            BoxWithConstraints(
+                Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(20.dp))
+                    .background(if (dark) colors.surfaceContainerLowest else colors.surfaceContainerLow),
             ) {
-                val drawn = version // read here, so the console redraws when it changes
-                if (drawn < 0) return@Canvas
-                val screen = PcTools.screen
-                val (lines, cRow, cCol, cVisible) = synchronized(screen) {
-                    Quad(screen.lines().map { Snapshot(String(it.chars), it.attrs.copyOf()) }, screen.cursorRow, screen.cursorCol, screen.cursorVisible)
-                }
-                val first = (lines.size - rows - scrollBack).coerceAtLeast(0)
-                val canvas = drawContext.canvas.nativeCanvas
-                for (r in 0 until rows) {
-                    val line = lines.getOrNull(first + r) ?: break
-                    val y = pad + r * cellH
-                    var i = 0
-                    val n = line.text.length
-                    while (i < n) {
-                        val attr = line.attrs[i]
-                        var j = i
-                        while (j < n && line.attrs[j] == attr) j++
-                        val inverse = attr and TerminalEmulator.INVERSE != 0L
-                        var f = TerminalEmulator.fg(attr).let { if (it < 0) fg else themed(Color(0xFF000000 or it.toLong()), dark, fg) }
-                        var b = TerminalEmulator.bg(attr).let { if (it < 0) null else Color(0xFF000000 or it.toLong()) }
-                        if (inverse) { val t = b ?: Color.Transparent; b = f; f = if (t == Color.Transparent) colors.surface else t }
-                        val x = pad + i * cellW
-                        if (b != null) {
-                            paint.color = b.toArgb()
-                            canvas.drawRect(x, y, x + (j - i) * cellW, y + cellH, paint)
-                        }
-                        val run = line.text.substring(i, j)
-                        if (run.isNotBlank()) {
-                            paint.color = f.toArgb()
-                            paint.isFakeBoldText = attr and TerminalEmulator.BOLD != 0L
-                            paint.isUnderlineText = attr and TerminalEmulator.UNDERLINE != 0L
-                            canvas.drawText(run, x, y - metrics.ascent, paint)
-                        }
-                        i = j
-                    }
-                }
-                // The cursor: a block in the theme's primary colour, on the live screen only.
-                val cursorLine = lines.size - screen.rows + cRow
-                if (cVisible && open && scrollBack == 0 && cursorLine >= first && cursorLine < first + rows) {
-                    val x = pad + cCol * cellW
-                    val y = pad + (cursorLine - first) * cellH
-                    paint.color = cursor.copy(alpha = 0.75f).toArgb()
-                    canvas.drawRect(x, y, x + cellW, y + cellH, paint)
-                }
-            }
-            if (!ready) {
-                HelperText("Connect the PC, and update Linc on it, to open a terminal.", kind = Explanations.Kind.Blocked,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp))
-            } else if (started && !open && shell == null) {
-                Button(onClick = onClose, modifier = Modifier.align(Alignment.Center)) { Text("The shell has closed") }
-            }
-            if (scrollBack > 0) {
-                Surface(onClick = { scrollBack = 0 }, shape = RoundedCornerShape(16.dp), color = colors.secondaryContainer,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(LincSymbols.ArrowDown, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Back to the bottom", style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-            }
-        }
-        error?.let { HelperText(it, kind = Explanations.Kind.Error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+                val density = LocalDensity.current
+                val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE } }
+                val textPx = with(density) { fontSp.sp.toPx() }
+                paint.textSize = textPx
+                val cellW = paint.measureText("M")
+                val metrics = paint.fontMetrics
+                val cellH = (metrics.descent - metrics.ascent) * 1.08f
+                val pad = with(density) { 10.dp.toPx() }
+                // The width alone sets the columns: the keyboard only takes height (imePadding above), so
+                // opening or closing it changes the rows and never re-wraps the text.
+                val cols = ((constraints.maxWidth - 2 * pad) / cellW).toInt().coerceIn(20, 300)
+                val rows = ((constraints.maxHeight - 2 * pad) / cellH).toInt().coerceIn(5, 200)
 
-        // ---- the extra keys -----------------------------------------------------------------
-        ExtraKeys(ctrl = ctrl, alt = alt,
-            onCtrl = { ctrl = !ctrl; view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) },
-            onAlt = { alt = !alt; view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) },
-            onKey = { seq -> view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); send(seq) })
+                // The invisible view the keyboard types into; the console is drawn over it.
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        TerminalInputView(ctx).also {
+                            it.onText = { t -> send(t) }
+                            input = it
+                        }
+                    },
+                )
+                LaunchedEffect(cols, rows) {
+                    if (!started && shell != null && ready) {
+                        PcTools.openTerminal(shell, cols, rows)
+                        started = true
+                    } else if (open) {
+                        // Settled first: a pinch or the keyboard sliding in would otherwise resize the PC's console every frame.
+                        kotlinx.coroutines.delay(150)
+                        PcTools.resize(cols, rows)
+                    }
+                }
+                LaunchedEffect(input) {
+                    kotlinx.coroutines.delay(300)
+                    showKeyboard()
+                }
+
+                val fg = colors.onSurface
+                val cursor = colors.primary
+                val lineH by rememberUpdatedState(cellH) // the pinch changes it; the gesture below outlives one size
+                Canvas(
+                    Modifier.fillMaxSize()
+                        .pointerInput(Unit) { detectTapGestures(onTap = { showKeyboard() }) }
+                        .pointerInput(Unit) {
+                            var dragged = 0f // pixels dragged and not yet a whole line
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                if (zoom != 1f) {
+                                    // Pinch: the text size, and with it the columns and rows (the PC's console follows).
+                                    fontSp = (fontSp * zoom).coerceIn(MIN_FONT, MAX_FONT)
+                                    dragged = 0f
+                                } else if (pan.y != 0f) {
+                                    dragged += pan.y
+                                    val steps = (dragged / lineH).toInt()
+                                    if (steps != 0) {
+                                        dragged -= steps * lineH
+                                        val max = synchronized(PcTools.screen) { PcTools.screen.scrollbackSize }
+                                        scrollBack = (scrollBack + steps).coerceIn(0, max)
+                                    }
+                                }
+                            }
+                        }
+                        .semantics { contentDescription = "Terminal" },
+                ) {
+                    val drawn = version // read here, so the console redraws when it changes
+                    if (drawn < 0) return@Canvas
+                    val screen = PcTools.screen
+                    val (lines, cRow, cCol, cVisible) = synchronized(screen) {
+                        Quad(screen.lines().map { Snapshot(String(it.chars), it.attrs.copyOf()) }, screen.cursorRow, screen.cursorCol, screen.cursorVisible)
+                    }
+                    val first = (lines.size - rows - scrollBack).coerceAtLeast(0)
+                    val canvas = drawContext.canvas.nativeCanvas
+                    for (r in 0 until rows) {
+                        val line = lines.getOrNull(first + r) ?: break
+                        val y = pad + r * cellH
+                        val baseline = y - metrics.ascent
+                        var i = 0
+                        val n = line.text.length
+                        while (i < n) {
+                            val attr = line.attrs[i]
+                            var j = i
+                            while (j < n && line.attrs[j] == attr) j++
+                            val inverse = attr and TerminalEmulator.INVERSE != 0L
+                            var f = TerminalEmulator.fg(attr).let { if (it < 0) fg else themed(Color(0xFF000000 or it.toLong()), dark, fg) }
+                            var b = TerminalEmulator.bg(attr).let { if (it < 0) null else Color(0xFF000000 or it.toLong()) }
+                            if (inverse) { val t = b ?: Color.Transparent; b = f; f = if (t == Color.Transparent) colors.surface else t }
+                            val x = pad + i * cellW
+                            if (b != null) {
+                                paint.color = b.toArgb()
+                                canvas.drawRect(x, y, x + (j - i) * cellW, y + cellH, paint)
+                            }
+                            if (line.text.substring(i, j).isNotBlank()) {
+                                paint.color = f.toArgb()
+                                paint.isFakeBoldText = attr and TerminalEmulator.BOLD != 0L
+                                paint.isUnderlineText = attr and TerminalEmulator.UNDERLINE != 0L
+                                drawCells(canvas, paint, line.text, i, j, pad, baseline, cellW)
+                            }
+                            i = j
+                        }
+                    }
+                    // The cursor: a block in the theme's primary colour, on the live screen only.
+                    val cursorLine = lines.size - screen.rows + cRow
+                    if (cVisible && open && scrollBack == 0 && cursorLine >= first && cursorLine < first + rows) {
+                        val x = pad + cCol * cellW
+                        val y = pad + (cursorLine - first) * cellH
+                        paint.color = cursor.copy(alpha = 0.75f).toArgb()
+                        canvas.drawRect(x, y, x + cellW, y + cellH, paint)
+                    }
+                }
+                if (!ready) {
+                    HelperText("Connect the PC, and update Linc on it, to open a terminal.", kind = Explanations.Kind.Blocked,
+                        modifier = Modifier.align(Alignment.Center).padding(24.dp))
+                } else if (started && !open && shell == null) {
+                    Button(onClick = onClose, modifier = Modifier.align(Alignment.Center)) { Text("The shell has closed") }
+                }
+                if (scrollBack > 0) {
+                    Surface(onClick = { scrollBack = 0 }, shape = RoundedCornerShape(16.dp), color = colors.secondaryContainer,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(LincSymbols.ArrowDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Back to the bottom", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+            error?.let { HelperText(it, kind = Explanations.Kind.Error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+
+            // ---- the extra keys -----------------------------------------------------------------
+            ExtraKeys(ctrl = ctrl, alt = alt,
+                onCtrl = { ctrl = !ctrl; view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) },
+                onAlt = { alt = !alt; view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) },
+                onKey = { seq -> view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); send(seq) })
+        }
     }
 
     DisposableEffect(Unit) { onDispose { input = null } }
 }
 
 private data class Snapshot(val text: String, val attrs: LongArray)
+
+/**
+ * Cells [from] until [to] of one line, each at its own column. Plain ASCII is drawn in runs (the
+ * monospace font's advance is the cell); anything else — box drawing, accents, CJK, emoji — is
+ * drawn one character at a time, fitted to its one or two cells, since a fallback font's glyphs
+ * are rarely the cell's width and would push the rest of the line out of its columns.
+ */
+private fun drawCells(canvas: android.graphics.Canvas, paint: Paint, text: String, from: Int, to: Int,
+                      left: Float, baseline: Float, cellW: Float) {
+    var k = from
+    while (k < to) {
+        var e = k
+        while (e < to && text[e].code in 0x20..0x7E) e++
+        if (e > k) { canvas.drawText(text, k, e, left + k * cellW, baseline, paint); k = e; continue }
+        val c = text[k]
+        val next = if (k + 1 < text.length) text[k + 1] else ' '
+        if (TerminalEmulator.isTail(c) || (c.isHighSurrogate() && !next.isLowSurrogate())) { k++; continue }
+        val wide = TerminalEmulator.isWideHead(c, next)
+        val glyph = if (c.isHighSurrogate()) text.substring(k, k + 2) else c.toString()
+        val want = (if (wide) 2 else 1) * cellW
+        val have = paint.measureText(glyph)
+        val x = left + k * cellW
+        if (have > 0f && (have > want + 0.5f || (c.code in 0x2500..0x259F && abs(have - want) > 0.5f))) {
+            // Too wide for its cells, or a line-drawing piece that must meet its neighbours: fitted.
+            paint.textScaleX = want / have
+            canvas.drawText(glyph, x, baseline, paint)
+            paint.textScaleX = 1f
+        } else canvas.drawText(glyph, x + (want - have).coerceAtLeast(0f) / 2, baseline, paint)
+        k += if (wide) 2 else 1
+    }
+}
 private data class Quad(val lines: List<Snapshot>, val row: Int, val col: Int, val visible: Boolean)
 
 /**
@@ -509,3 +566,5 @@ class TerminalInputView(context: Context) : View(context) {
 }
 
 private const val KEY_FONT = "terminal_font_sp"
+private const val MIN_FONT = 6f
+private const val MAX_FONT = 24f

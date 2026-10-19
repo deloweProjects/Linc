@@ -7,6 +7,11 @@ package app.linc.android.service
  * colours (16, 256 and true colour), cursor positioning and movement, erase in line/display,
  * insert/delete characters and lines, scroll regions, the alternate screen, and OSC titles.
  * Anything else is read and ignored, never shown as garbage.
+ *
+ * Wide characters (CJK, emoji) take two cells, the second holding [WIDE_TAIL] (or, for a character
+ * past U+FFFF, its low surrogate). Lines remember when text ran on past their last column, so a
+ * change of width re-wraps earlier output the way Termux does, instead of leaving it cut where the
+ * old width cut it.
  */
 class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 3000) {
 
@@ -14,6 +19,8 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
     class Line(var cols: Int) {
         var chars = CharArray(cols) { ' ' }
         var attrs = LongArray(cols) { DEFAULT_ATTR }
+        /** The text ran on past the last column into the next line (an automatic wrap, not a line break). */
+        var wrapped = false
         fun resize(n: Int) {
             if (n == cols) return
             chars = chars.copyOf(n).also { for (i in cols until n) it[i] = ' ' }
@@ -22,8 +29,9 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
         }
         fun clear(from: Int = 0, to: Int = cols, attr: Long = DEFAULT_ATTR) {
             for (i in from.coerceAtLeast(0) until to.coerceAtMost(cols)) { chars[i] = ' '; attrs[i] = attr }
+            if (to >= cols) wrapped = false
         }
-        fun text(): String = String(chars).trimEnd()
+        fun text(): String = String(chars).replace(WIDE_TAIL.toString(), "").trimEnd()
     }
 
     var cols = cols; private set
@@ -58,19 +66,130 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
     fun lines(): List<Line> = scrollback.toList() + screen
     val scrollbackSize: Int get() = scrollback.size
 
+    /**
+     * A new size. A new width re-wraps the main screen and scrollback (an alternate screen, a
+     * full-screen program's, is only cut or padded: the program redraws it); a new height alone,
+     * the keyboard opening or closing, only moves lines between the screen and scrollback.
+     */
     fun resize(newCols: Int, newRows: Int) {
         if (newCols == cols && newRows == rows) return
-        screen.forEach { it.resize(newCols) }
-        scrollback.forEach { it.resize(newCols) }
-        while (screen.size > newRows) {
-            // Shrinking: keep the cursor's line on screen, push lines above it into scrollback.
-            if (cursorRow > 0) { pushScrollback(screen.removeAt(0)); cursorRow-- } else screen.removeAt(screen.size - 1)
+        val saved = savedScreen
+        if (newCols != cols) {
+            reflow(newCols, newRows)
+            if (saved != null) {
+                screen.forEach { it.resize(newCols) }
+                cursorRow = fitRows(screen, cursorRow, newRows, newCols, toScrollback = false)
+            }
+        } else if (saved == null) {
+            cursorRow = fitRows(screen, cursorRow, newRows, newCols, toScrollback = true)
+        } else {
+            cursorRow = fitRows(screen, cursorRow, newRows, newCols, toScrollback = false)
+            savedRow = fitRows(saved, savedRow, newRows, newCols, toScrollback = true)
         }
-        while (screen.size < newRows) screen.add(Line(newCols))
         cols = newCols; rows = newRows
         top = 0; bottom = rows - 1
         cursorRow = cursorRow.coerceIn(0, rows - 1); cursorCol = cursorCol.coerceIn(0, cols - 1)
+        savedRow = savedRow.coerceIn(0, rows - 1); savedCol = savedCol.coerceIn(0, cols - 1)
+        if (cursorCol < cols - 1) wrapPending = false
         version++
+    }
+
+    /** [lines] made [newRows] long, keeping the cursor's line; returns the cursor's new row. */
+    private fun fitRows(lines: MutableList<Line>, row: Int, newRows: Int, newCols: Int, toScrollback: Boolean): Int {
+        var r = row
+        while (lines.size > newRows) {
+            // Shrinking: blank lines under the cursor go first, then lines above it, into scrollback.
+            val blankBelow = lines.size - 1 > r && lines.last().text().isEmpty()
+            if (!blankBelow && r > 0) { val gone = lines.removeAt(0); if (toScrollback) pushScrollback(gone); r-- } else lines.removeAt(lines.size - 1)
+        }
+        while (lines.size < newRows) lines.add(Line(newCols))
+        return r
+    }
+
+    /**
+     * The main screen and scrollback re-wrapped at [newCols]: each run of wrapped lines is joined
+     * back into the one line it was and laid out again at the new width, wide characters kept
+     * whole, the cursor kept on the same character. The screen is then the last [newRows] lines
+     * (blank lines under the cursor dropped first, so the prompt doesn't scroll away).
+     */
+    private fun reflow(newCols: Int, newRows: Int) {
+        val alt = savedScreen != null
+        val main = savedScreen ?: screen
+        val mainRow = (if (alt) savedRow else cursorRow).coerceIn(0, main.size - 1)
+        val mainCol = if (alt) savedCol else cursorCol
+        val pending = !alt && wrapPending
+        val all = ArrayList<Line>(scrollback.size + main.size).apply { addAll(scrollback); addAll(main) }
+        val cursorAt = scrollback.size + mainRow
+        val out = ArrayList<Line>()
+        var newRow = -1
+        var newCol = 0
+        var newPending = false
+        var start = 0
+        while (start < all.size) {
+            var end = start
+            while (end < all.size - 1 && all[end].wrapped) end++
+            // The run's cells end to end; the last line's trailing blanks dropped, unless the cursor is past them.
+            val last = all[end]
+            var lastLen = last.cols
+            while (lastLen > 0 && last.chars[lastLen - 1] == ' ' && last.attrs[lastLen - 1] and BG_MASK == 0L) lastLen--
+            var cursorOff = -1
+            if (cursorAt in start..end) {
+                cursorOff = mainCol.coerceIn(0, all[cursorAt].cols - 1) + (if (pending) 1 else 0)
+                for (k in start until cursorAt) cursorOff += all[k].cols
+            }
+            var total = lastLen
+            for (k in start until end) total += all[k].cols
+            val length = maxOf(total, cursorOff)
+            val lc = CharArray(length) { ' ' }
+            val la = LongArray(length) { DEFAULT_ATTR }
+            var p = 0
+            for (k in start..end) {
+                val l = all[k]
+                val m = if (k == end) lastLen else l.cols
+                l.chars.copyInto(lc, p, 0, m); l.attrs.copyInto(la, p, 0, m)
+                p += m
+            }
+            // Laid out again at the new width.
+            var line = Line(newCols)
+            var x = 0
+            var i = 0
+            while (i < length) {
+                val c = lc[i]
+                val wide = i + 1 < length && isWideHead(c, lc[i + 1])
+                if (!wide && isTail(c)) { // a padding cell, or half of a character something overwrote
+                    if (i == cursorOff) { newRow = out.size; newCol = x.coerceAtMost(newCols - 1) }
+                    i++; continue
+                }
+                val w = if (wide) 2 else 1
+                if (x + w > newCols) {
+                    if (x < newCols) { line.chars[x] = WIDE_TAIL; line.attrs[x] = la[i] } // a wide character that doesn't fit
+                    line.wrapped = true
+                    out.add(line); line = Line(newCols); x = 0
+                }
+                if (i == cursorOff || (wide && i + 1 == cursorOff)) { newRow = out.size; newCol = x }
+                line.chars[x] = c; line.attrs[x] = la[i]
+                if (wide) { line.chars[x + 1] = lc[i + 1]; line.attrs[x + 1] = la[i + 1] }
+                x += w; i += w
+            }
+            if (cursorOff == length) {
+                newRow = out.size
+                if (x >= newCols) { newCol = newCols - 1; newPending = true } else newCol = x
+            }
+            out.add(line)
+            start = end + 1
+        }
+        if (newRow < 0) newRow = (out.size - 1).coerceAtLeast(0)
+        while (out.size - 1 > newRow && out.last().let { !it.wrapped && it.text().isEmpty() }) out.removeAt(out.size - 1)
+        val first = maxOf(0, minOf(out.size - newRows, newRow))
+        val newMain = MutableList(minOf(newRows, out.size - first)) { out[first + it] }
+        while (newMain.size < newRows) newMain.add(Line(newCols))
+        scrollback.clear()
+        for (k in 0 until first) pushScrollback(out[k])
+        if (alt) {
+            savedScreen = newMain; savedRow = newRow - first; savedCol = newCol
+        } else {
+            screen = newMain; cursorRow = newRow - first; cursorCol = newCol; wrapPending = newPending
+        }
     }
 
     fun feed(bytes: ByteArray, length: Int = bytes.size) {
@@ -105,7 +224,7 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
                 0x08 -> { if (cursorCol > 0) cursorCol--; wrapPending = false }
                 0x09 -> cursorCol = minOf(cols - 1, (cursorCol / 8 + 1) * 8)
                 0x07, 0x00, 0x0E, 0x0F -> Unit
-                else -> if (code >= 0x20) put(if (code > 0xFFFF) '�' else code.toChar())
+                else -> if (code >= 0x20 && code != 0x7F) put(code)
             }
             State.ESC -> {
                 state = State.TEXT
@@ -142,12 +261,35 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
         if (s.startsWith("0;") || s.startsWith("2;")) title = s.substring(2)
     }
 
-    private fun put(c: Char) {
-        if (wrapPending) { cursorCol = 0; lineFeed(); wrapPending = false }
+    private fun put(code: Int) {
+        if (isZeroWidth(code)) return // combining marks, joiners, variation selectors: no cell of their own
+        val wide = isWide(code) && cols >= 2
+        val head: Char
+        val tail: Char
+        if (code > 0xFFFF) {
+            val pair = Character.toChars(code)
+            if (wide) { head = pair[0]; tail = pair[1] } else { head = '�'; tail = WIDE_TAIL }
+        } else { head = code.toChar(); tail = WIDE_TAIL }
+        if (wrapPending || (wide && cursorCol == cols - 1)) {
+            // An automatic wrap: remembered on the line, so a resize can join it back up.
+            val full = screen[cursorRow]
+            if (!wrapPending) { full.chars[cursorCol] = WIDE_TAIL; full.attrs[cursorCol] = attr } // the wide one doesn't fit
+            full.wrapped = true
+            cursorCol = 0; lineFeed()
+        }
         val line = screen[cursorRow]
-        line.chars[cursorCol] = c
-        line.attrs[cursorCol] = attr
-        if (cursorCol == cols - 1) wrapPending = true else cursorCol++
+        unsplit(line, cursorCol)
+        if (wide) unsplit(line, cursorCol + 1)
+        line.chars[cursorCol] = head; line.attrs[cursorCol] = attr
+        if (wide) { line.chars[cursorCol + 1] = tail; line.attrs[cursorCol + 1] = attr }
+        val next = cursorCol + if (wide) 2 else 1
+        if (next >= cols) { cursorCol = cols - 1; wrapPending = true } else cursorCol = next
+    }
+
+    /** Before cell [i] is written: the other half of a wide character there is blanked, not left dangling. */
+    private fun unsplit(line: Line, i: Int) {
+        if (i > 0 && isTail(line.chars[i])) line.chars[i - 1] = ' '
+        if (i + 1 < line.cols && isTail(line.chars[i + 1])) line.chars[i + 1] = ' '
     }
 
     private fun lineFeed() {
@@ -187,7 +329,8 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
         val private = raw.startsWith("?")
         val list = raw.removePrefix("?").removePrefix(">").split(';').map { it.toIntOrNull() ?: -1 }
         fun p(i: Int, default: Int) = list.getOrNull(i)?.takeIf { it >= 0 && !(it == 0 && default > 0) } ?: default
-        wrapPending = false
+        // Colours and modes (ConPTY hides the cursor around every repaint) leave a pending wrap alone, as in xterm.
+        if (final != 'm' && final != 'h' && final != 'l') wrapPending = false
         when (final) {
             'A' -> cursorRow = (cursorRow - p(0, 1)).coerceAtLeast(if (cursorRow >= top) top else 0)
             'B' -> cursorRow = (cursorRow + p(0, 1)).coerceAtMost(if (cursorRow <= bottom) bottom else rows - 1)
@@ -312,6 +455,51 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
         const val UNDERLINE = 1L shl 51
         const val INVERSE = 1L shl 52
         const val DEFAULT_ATTR = 0L
+
+        /** The second cell of a wide character (or padding where one didn't fit at the end of a line). */
+        const val WIDE_TAIL = '\uFFFF'
+
+        fun isTail(c: Char): Boolean = c == WIDE_TAIL || c.isLowSurrogate()
+
+        /** [c] followed by [next] is one wide character over two cells. */
+        fun isWideHead(c: Char, next: Char): Boolean =
+            if (c.isHighSurrogate()) next.isLowSurrogate() else next == WIDE_TAIL && isWide(c.code)
+
+        /*
+         * East Asian Wide and Fullwidth, roughly as wcwidth has it: Hangul Jamo, CJK and its
+         * punctuation, kana, Hangul syllables, fullwidth forms, and the emoji blocks. Box drawing
+         * (U+2500–U+257F) and other symbols stay one cell, as Windows' console has them.
+         */
+        private val WIDE = intArrayOf(
+            0x1100, 0x115F, 0x231A, 0x231B, 0x2329, 0x232A, 0x23E9, 0x23EC, 0x23F0, 0x23F0, 0x23F3, 0x23F3,
+            0x25FD, 0x25FE, 0x2614, 0x2615, 0x2648, 0x2653, 0x267F, 0x267F, 0x2693, 0x2693, 0x26A1, 0x26A1,
+            0x26AA, 0x26AB, 0x26BD, 0x26BE, 0x26C4, 0x26C5, 0x26CE, 0x26CE, 0x26D4, 0x26D4, 0x26EA, 0x26EA,
+            0x26F2, 0x26F3, 0x26F5, 0x26F5, 0x26FA, 0x26FA, 0x26FD, 0x26FD, 0x2705, 0x2705, 0x270A, 0x270B,
+            0x2728, 0x2728, 0x274C, 0x274C, 0x274E, 0x274E, 0x2753, 0x2755, 0x2757, 0x2757, 0x2795, 0x2797,
+            0x27B0, 0x27B0, 0x27BF, 0x27BF, 0x2B1B, 0x2B1C, 0x2B50, 0x2B50, 0x2B55, 0x2B55,
+            0x2E80, 0x303E, 0x3041, 0x33FF, 0x3400, 0x4DBF, 0x4E00, 0x9FFF, 0xA000, 0xA4CF, 0xA960, 0xA97F,
+            0xAC00, 0xD7A3, 0xF900, 0xFAFF, 0xFE10, 0xFE19, 0xFE30, 0xFE6F, 0xFF00, 0xFF60, 0xFFE0, 0xFFE6,
+            0x16FE0, 0x18AFF, 0x1B000, 0x1B2FF, 0x1F004, 0x1F004, 0x1F0CF, 0x1F0CF, 0x1F18E, 0x1F18E,
+            0x1F191, 0x1F19A, 0x1F200, 0x1F251, 0x1F300, 0x1F64F, 0x1F680, 0x1F6FF, 0x1F7E0, 0x1F7EB,
+            0x1F900, 0x1F9FF, 0x1FA70, 0x1FAFF, 0x20000, 0x3FFFD,
+        )
+
+        /** Whether [code] takes two cells. */
+        fun isWide(code: Int): Boolean {
+            if (code < 0x1100) return false
+            var i = 0
+            while (i < WIDE.size) {
+                if (code < WIDE[i]) return false
+                if (code <= WIDE[i + 1]) return true
+                i += 2
+            }
+            return false
+        }
+
+        /** Characters that take no cell: combining marks, zero-width spaces and joiners, variation selectors. */
+        fun isZeroWidth(code: Int): Boolean =
+            code in 0x0300..0x036F || code in 0x200B..0x200F || code in 0x2060..0x2064 || code in 0x20D0..0x20FF ||
+                code in 0xFE00..0xFE0F || code in 0xFE20..0xFE2F || code in 0xE0100..0xE01EF
 
         /** Foreground colour of [attr] as 0xRRGGBB, or -1 for the default. */
         fun fg(attr: Long): Int = ((attr and FG_MASK) shr FG_SHIFT).toInt().let { if (it == 0) -1 else it and 0xFFFFFF }

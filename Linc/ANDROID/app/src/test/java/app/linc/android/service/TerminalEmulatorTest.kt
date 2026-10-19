@@ -85,4 +85,93 @@ class TerminalEmulatorTest {
         assertEquals(listOf("c", "d"), screenText(t))
         assertEquals(1, t.cursorRow)
     }
+
+    @Test
+    fun `a wrapped line joins back up when the screen widens, and wraps again when it narrows`() {
+        val t = TerminalEmulator(20, 5)
+        val text = "abcdefghijklmnopqrstuvwxyz0123" // 30 characters
+        t.feed(text)
+        assertEquals(listOf(text.take(20), text.drop(20), "", "", ""), screenText(t))
+        t.resize(40, 5)
+        assertEquals(listOf(text, "", "", "", ""), screenText(t))
+        assertEquals(0, t.cursorRow); assertEquals(30, t.cursorCol)
+        t.resize(20, 5)
+        assertEquals(listOf(text.take(20), text.drop(20), "", "", ""), screenText(t))
+        assertEquals(1, t.cursorRow); assertEquals(10, t.cursorCol)
+        t.feed("!")
+        assertEquals(text.drop(20) + "!", screenText(t)[1])
+    }
+
+    @Test
+    fun `reflow takes in scrollback and keeps line breaks the shell sent`() {
+        val t = TerminalEmulator(10, 2)
+        t.feed("1234567890abcdefghijKLMNO\r\nshort\r\n> ")
+        assertEquals(3, t.scrollbackSize)
+        t.resize(30, 4)
+        assertEquals(0, t.scrollbackSize)
+        assertEquals(listOf("1234567890abcdefghijKLMNO", "short", ">", ""), screenText(t))
+        assertEquals(2, t.cursorRow); assertEquals(2, t.cursorCol) // after the prompt's trailing space
+    }
+
+    @Test
+    fun `a full line keeps its pending wrap through colours and cursor hiding`() {
+        val t = TerminalEmulator(5, 2)
+        t.feed("abcde\u001b[31m\u001b[?25lf")
+        assertEquals(listOf("abcde", "f"), screenText(t))
+    }
+
+    @Test
+    fun `wide characters take two cells, box drawing one`() {
+        val t = TerminalEmulator(10, 2)
+        t.feed("a中b")
+        assertEquals(4, t.cursorCol)
+        assertEquals("a中b", screenText(t)[0])
+        t.feed("\r\n├──x")
+        assertEquals(4, t.cursorCol)
+        assertEquals("├──x", screenText(t)[1])
+        assertTrue(TerminalEmulator.isWide(0x1F600))
+        assertFalse(TerminalEmulator.isWide(0x2500))
+        assertFalse(TerminalEmulator.isWide('✓'.code))
+    }
+
+    @Test
+    fun `emoji past U+FFFF are kept, and take two cells`() {
+        val t = TerminalEmulator(10, 1)
+        t.feed("😀!")
+        assertEquals("😀!", screenText(t)[0])
+        assertEquals(3, t.cursorCol)
+    }
+
+    @Test
+    fun `a wide character that doesn't fit wraps whole, and reflows whole`() {
+        val t = TerminalEmulator(5, 3)
+        t.feed("abcd中")
+        assertEquals(listOf("abcd", "中", ""), screenText(t))
+        assertEquals(1, t.cursorRow); assertEquals(2, t.cursorCol)
+        t.resize(10, 3)
+        assertEquals("abcd中", screenText(t)[0])
+        assertEquals(0, t.cursorRow); assertEquals(6, t.cursorCol)
+        t.resize(5, 3)
+        assertEquals(listOf("abcd", "中", ""), screenText(t))
+    }
+
+    @Test
+    fun `the keyboard changing only the height doesn't re-wrap`() {
+        val t = TerminalEmulator(10, 4)
+        t.feed("1234567890ab")
+        t.resize(10, 2)
+        assertEquals(listOf("1234567890", "ab"), screenText(t))
+        assertEquals(1, t.cursorRow); assertEquals(2, t.cursorCol)
+    }
+
+    @Test
+    fun `resize under the alternate screen re-wraps what comes back`() {
+        val t = TerminalEmulator(10, 3)
+        t.feed("1234567890ab")
+        t.feed("\u001b[?1049h\u001b[Hfull screen")
+        t.resize(20, 3)
+        t.feed("\u001b[?1049l")
+        assertEquals(listOf("1234567890ab", "", ""), screenText(t))
+        assertEquals(0, t.cursorRow); assertEquals(12, t.cursorCol)
+    }
 }
