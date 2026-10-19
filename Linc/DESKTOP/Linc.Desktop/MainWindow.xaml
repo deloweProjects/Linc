@@ -292,6 +292,34 @@
             <Frame x:Name="ContentFrame" />
         </NavigationView>
 
+        <!-- The floating bar (Settings › Appearance › Navigation): the pages as icons in a glass
+             bar at the bottom; hovering one names it, the open page shows its name. Built from
+             Nav's own items in code, so the two can never list different pages. -->
+        <Border
+            x:Name="Dock"
+            Grid.Row="2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Margin="16,0,16,20"
+            Padding="8"
+            CornerRadius="28"
+            Background="{ThemeResource FrostedSurfaceBrush}"
+            BorderBrush="{ThemeResource OutlineVariantBrush}"
+            BorderThickness="1"
+            Translation="0,0,32"
+            Visibility="Collapsed">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+            <ScrollViewer
+                HorizontalScrollMode="Auto"
+                HorizontalScrollBarVisibility="Hidden"
+                VerticalScrollMode="Disabled"
+                VerticalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="DockItems" Orientation="Horizontal" Spacing="4" AutomationProperties.Name="Pages" />
+            </ScrollViewer>
+        </Border>
+
         <views:OnboardingView
             Grid.RowSpan="3"
             Visibility="{x:Bind Shell.IsOnboarding, Mode=OneWay}" />

@@ -138,6 +138,25 @@ public interface IDeviceRegistry
     event Action? ShowExplanationsChanged;
 
     /// <summary>
+    /// Settings → Appearance → Navigation. Default on: the pages are icons in a bar floating at the
+    /// bottom of the window. Off puts them back in the side rail down the left.
+    /// </summary>
+    bool FloatingNav { get; }
+
+    /// <summary>Settings → Appearance → Clock on Home. Default on: the time and date on the phone's wallpaper.</summary>
+    bool HomeClock { get; }
+
+    /// <summary>Settings → Appearance → Wallpaper as background. Default on: the phone's wallpaper, blurred, behind the app.</summary>
+    bool WallpaperBackdrop { get; }
+
+    void SaveFloatingNav(bool floating);
+    void SaveHomeClock(bool show);
+    void SaveWallpaperBackdrop(bool show);
+
+    /// <summary>Raised after any of <see cref="SaveFloatingNav"/>, <see cref="SaveHomeClock"/>, <see cref="SaveWallpaperBackdrop"/>.</summary>
+    event Action? AppearanceChanged;
+
+    /// <summary>
     /// Settings → Mirror PC → Use software encoding (D-087). Default off. Skips the graphics
     /// chip's encoder and uses Windows' own: slower and heavier on the CPU, but it always works.
     /// </summary>
@@ -294,7 +313,12 @@ public sealed class DeviceRegistry : IDeviceRegistry
         int? ClipboardHistorySize = null,
         bool? ShowExplanations = null,
         // D-087: appended at the end like every field above it; missing reads back as off.
-        bool? ForceSoftwareEncoding = null);
+        bool? ForceSoftwareEncoding = null,
+        // The floating bar, Home clock and wallpaper backdrop: appended at the end like every
+        // field above it; missing reads back as on, the look the app ships with.
+        bool? FloatingNav = null,
+        bool? HomeClock = null,
+        bool? WallpaperBackdrop = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -450,6 +474,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 ClipboardHistorySize = ClampHistorySize(settings?.ClipboardHistorySize ?? 500);
                 ShowExplanations = settings?.ShowExplanations ?? true;
                 ForceSoftwareEncoding = settings?.ForceSoftwareEncoding ?? false;
+                FloatingNav = settings?.FloatingNav ?? true;
+                HomeClock = settings?.HomeClock ?? true;
+                WallpaperBackdrop = settings?.WallpaperBackdrop ?? true;
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -675,6 +702,26 @@ public sealed class DeviceRegistry : IDeviceRegistry
 
     private static int ClampHistorySize(int size) => size is 100 or 2000 ? size : 500;
 
+    public bool FloatingNav { get; private set; } = true;
+    public bool HomeClock { get; private set; } = true;
+    public bool WallpaperBackdrop { get; private set; } = true;
+    public event Action? AppearanceChanged;
+
+    public void SaveFloatingNav(bool floating) => SaveAppearance(FloatingNav, floating, v => FloatingNav = v);
+    public void SaveHomeClock(bool show) => SaveAppearance(HomeClock, show, v => HomeClock = v);
+    public void SaveWallpaperBackdrop(bool show) => SaveAppearance(WallpaperBackdrop, show, v => WallpaperBackdrop = v);
+
+    private void SaveAppearance(bool current, bool value, Action<bool> set)
+    {
+        if (current == value)
+        {
+            return;
+        }
+        set(value);
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
+
     public void SaveShowExplanations(bool show)
     {
         if (ShowExplanations == show)
@@ -773,7 +820,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 null, null, _knownDevices,
                 NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
                 null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
-                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding)));
+                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding,
+                FloatingNav, HomeClock, WallpaperBackdrop)));
         }
         catch (IOException)
         {

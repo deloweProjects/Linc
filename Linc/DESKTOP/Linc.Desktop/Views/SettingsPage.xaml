@@ -180,6 +180,40 @@
             <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
                 <StackPanel Spacing="12">
                     <TextBlock Text="Appearance" Style="{StaticResource TitleText}" />
+                    <StackPanel Spacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Navigation" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="Where the pages live: icons in a bar along the bottom (hover one to see its name), or down the left with their names." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <RadioButton GroupName="NavStyle" Content="Floating bar" IsChecked="{x:Bind ViewModel.FloatingNav, Mode=TwoWay}" />
+                            <RadioButton GroupName="NavStyle" Content="Side rail" IsChecked="{x:Bind ViewModel.SideRailNav, Mode=TwoWay}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Wallpaper as background" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="Your phone&apos;s wallpaper, blurred, behind everything. Home shows it sharp, at its real shape." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.WallpaperBackdrop, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Clock on Home" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="The time and date on your phone&apos;s wallpaper, like its lock screen." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.HomeClock, Mode=TwoWay}" />
+                    </Grid>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

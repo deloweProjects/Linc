@@ -264,6 +264,46 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Settings › Appearance › Navigation: the floating bar along the bottom (default) or the side rail.</summary>
+    // bool? because a RadioButton's IsChecked is; x:Bind's TwoWay needs the same type both ways.
+    public bool? FloatingNav
+    {
+        get => _registry.FloatingNav;
+        set => PickNav(floating: true, value);
+    }
+
+    /// <summary>The other radio of the same choice.</summary>
+    public bool? SideRailNav
+    {
+        get => !_registry.FloatingNav;
+        set => PickNav(floating: false, value);
+    }
+
+    private void PickNav(bool floating, bool? isChecked)
+    {
+        if (isChecked != true)
+        {
+            return; // the radio being unchecked is the other one being picked
+        }
+        _registry.SaveFloatingNav(floating);
+        OnPropertyChanged(nameof(FloatingNav));
+        OnPropertyChanged(nameof(SideRailNav));
+    }
+
+    /// <summary>Settings › Appearance › Clock on Home: the time and date on the phone's wallpaper.</summary>
+    public bool HomeClock
+    {
+        get => _registry.HomeClock;
+        set { _registry.SaveHomeClock(value); OnPropertyChanged(); }
+    }
+
+    /// <summary>Settings › Appearance › Wallpaper as background: the phone's wallpaper, blurred, behind the app.</summary>
+    public bool WallpaperBackdrop
+    {
+        get => _registry.WallpaperBackdrop;
+        set { _registry.SaveWallpaperBackdrop(value); OnPropertyChanged(); }
+    }
+
     // ---- M19 C3: auto-update ----
     //
     // There is no address to configure any more: the manifest lives in Linc's own repository at

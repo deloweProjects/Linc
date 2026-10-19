@@ -24,7 +24,7 @@
     <Grid views:PageLayout.Adaptive="True" Padding="24,24,24,24" ColumnSpacing="0">
         <Grid.ColumnDefinitions>
             <!-- Widgets a bit wider by default; both panes user-resizable via the splitter. -->
-            <ColumnDefinition x:Name="LeftColumn" Width="430" MinWidth="320" />
+            <ColumnDefinition x:Name="LeftColumn" Width="720" MinWidth="320" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition x:Name="RightColumn" Width="*" MinWidth="360" />
         </Grid.ColumnDefinitions>
@@ -44,8 +44,6 @@
              removed in M13f §7 — it duplicated the disconnected statement AND rendered behind the
              tab buttons. -->
 
-        <!-- Widgets section: floats on the phone's (pre-blurred) wallpaper with a theme-aware
-             scrim (whitey fog in light, shadow in dark) tinted toward its dominant colour. -->
         <!-- Shown only in a narrow window (HomePage.ApplyWidth): Phone | Activity, one pane at a time. -->
         <StackPanel x:Name="NarrowSwitch" Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="2"
                     HorizontalAlignment="Center" Margin="0,0,0,12" Visibility="Collapsed">
@@ -55,19 +53,105 @@
                           Content="Activity" Click="OnShowPanel" />
         </StackPanel>
 
-        <Border x:Name="WidgetsPane" Grid.Row="2" Grid.Column="0" CornerRadius="28">
-            <Border.Background>
-                <ImageBrush ImageSource="{x:Bind ViewModel.Wallpaper, Mode=OneWay}" Stretch="UniformToFill" />
-            </Border.Background>
-            <Grid>
-                <Border
-                    CornerRadius="28"
-                    Background="{ThemeResource WallpaperScrimBrush}"
-                    Visibility="{x:Bind ViewModel.HasWallpaper, Mode=OneWay}" />
+        <!-- The phone's half of Home: its wallpaper at its real, portrait shape (the "stage", like
+             the phone's lock screen, with the clock and the phone's card on it) and the widgets
+             beside it on the app's blurred-wallpaper background. A narrow pane puts the stage on
+             top as a shorter card (HomePage.ApplyStageLayout). -->
+        <Grid x:Name="WidgetsPane" Grid.Row="2" Grid.Column="0" ColumnSpacing="16" RowSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
+            <Grid x:Name="Stage" Grid.RowSpan="2" Width="340" CornerRadius="40"
+                  Visibility="{x:Bind ViewModel.ShowPhone, Mode=OneWay}">
+                <!-- No wallpaper yet: the palette's own gradient stands in for it. -->
+                <Grid.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop x:Name="GradientTopStop" Offset="0" />
+                        <GradientStop x:Name="GradientBottomStop" Offset="1" />
+                    </LinearGradientBrush>
+                </Grid.Background>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Border Grid.RowSpan="3" CornerRadius="40">
+                    <Border.Background>
+                        <ImageBrush ImageSource="{x:Bind ViewModel.Wallpaper, Mode=OneWay}" Stretch="UniformToFill" />
+                    </Border.Background>
+                </Border>
+                <!-- A soft shade at the top so the clock reads on any wallpaper. -->
+                <Border Grid.RowSpan="3" VerticalAlignment="Top" Height="240" CornerRadius="40,40,0,0" IsHitTestVisible="False">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#66000000" Offset="0" />
+                            <GradientStop Color="#00000000" Offset="1" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+
+                <!-- Clock (Settings › Appearance › Clock on Home), lock-screen style; HomePage ticks it. -->
+                <StackPanel x:Name="Clock" Padding="24,40,24,8" HorizontalAlignment="Center">
+                    <TextBlock x:Name="ClockDate" HorizontalAlignment="Center" FontSize="15" FontWeight="Medium"
+                               Foreground="White" Opacity="0.92" />
+                    <TextBlock x:Name="ClockTime" HorizontalAlignment="Center" FontSize="96" FontWeight="Light"
+                               Foreground="White" CharacterSpacing="-40" />
+                </StackPanel>
+
+                <!-- The phone's card, frosted glass on its own wallpaper. -->
+                <Border Grid.Row="2" Margin="12" Padding="20,18" CornerRadius="30"
+                        Background="{ThemeResource FrostedSurfaceBrush}"
+                        BorderBrush="{ThemeResource OutlineVariantBrush}" BorderThickness="1">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource OnSurfaceBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{x:Bind ViewModel.ConnectionCaption, Mode=OneWay}" FontSize="13"
+                                   Foreground="{ThemeResource OnSurfaceVariantBrush}" TextWrapping="Wrap" />
+                        <TextBlock Text="{x:Bind ViewModel.LinkAddress, Mode=OneWay}" FontSize="11"
+                                   Foreground="{ThemeResource OnSurfaceVariantBrush}" Opacity="0.7"
+                                   Visibility="{x:Bind ViewModel.HasLinkAddress, Mode=OneWay}" />
+                        <!-- Lost connection / "showing what was last synced": part of the phone's own card. -->
+                        <Border Margin="0,8,0,0" Padding="10,6" CornerRadius="12" HorizontalAlignment="Left"
+                                Background="{ThemeResource SecondaryContainerBrush}"
+                                Visibility="{x:Bind ViewModel.ShowOfflineBanner, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE7BA;" FontSize="12" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                <TextBlock Text="{x:Bind ViewModel.OfflineBannerText, Mode=OneWay}" FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Margin="0,10,0,0" Orientation="Horizontal" Spacing="18">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE83F;" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
+                                <TextBlock Text="{x:Bind ViewModel.BatteryText, Mode=OneWay}" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE701;" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
+                                <TextBlock Text="{x:Bind ViewModel.SignalText, Mode=OneWay}" FontSize="13" Foreground="{ThemeResource OnSurfaceBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Button Margin="0,14,0,0" HorizontalAlignment="Stretch" Height="48" CornerRadius="24" BorderThickness="0"
+                                Background="{ThemeResource PrimaryBrush}" Foreground="{ThemeResource OnPrimaryBrush}"
+                                Command="{x:Bind ViewModel.StartMirrorCommand}" IsEnabled="{x:Bind ViewModel.ScreenshotEnabled, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon Glyph="&#xE7F4;" FontSize="16" />
+                                <TextBlock Text="Mirror phone" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid x:Name="WidgetsArea" Grid.Column="1" Grid.RowSpan="2">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
                     <!-- Widgets reflow into columns as the pane widens; they never stretch. -->
-                    <views:WidgetGrid Margin="10">
+                    <views:WidgetGrid>
 
                         <!-- Widget options behind a 3-dots button (M13f §8): the widgets column
                              had a whole row of buttons sitting on top; now one compact entry point.
@@ -112,63 +196,6 @@
                         <TextBlock views:WidgetGrid.FullRow="True" Text="All sections are hidden. Use Sections to bring them back."
                                    FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}"
                                    TextWrapping="Wrap" Visibility="{x:Bind ViewModel.AllSectionsHidden, Mode=OneWay}" />
-
-                        <!-- Phone preview card: gradient from the live Material You palette. -->
-                        <Border views:WidgetGrid.FullRow="True" CornerRadius="28" MinHeight="170" Padding="22,18"
-                                Visibility="{x:Bind ViewModel.ShowPhone, Mode=OneWay}">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop x:Name="GradientTopStop" Offset="0" />
-                                    <GradientStop x:Name="GradientBottomStop" Offset="1" />
-                                </LinearGradientBrush>
-                            </Border.Background>
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <StackPanel Spacing="2">
-                                    <TextBlock
-                                        Text="{x:Bind ViewModel.ModelName, Mode=OneWay}"
-                                        FontSize="18"
-                                        FontWeight="SemiBold"
-                                        Foreground="{ThemeResource OnPrimaryContainerBrush}" />
-                                    <TextBlock
-                                        Text="{x:Bind ViewModel.ConnectionCaption, Mode=OneWay}"
-                                        FontSize="13"
-                                        Foreground="{ThemeResource OnPrimaryContainerBrush}"
-                                        Opacity="0.75" />
-                                    <TextBlock
-                                        Text="{x:Bind ViewModel.LinkAddress, Mode=OneWay}"
-                                        FontSize="11"
-                                        Foreground="{ThemeResource OnPrimaryContainerBrush}"
-                                        Opacity="0.55"
-                                        Visibility="{x:Bind ViewModel.HasLinkAddress, Mode=OneWay}" />
-                                    <!-- Lost connection / "showing what was last synced": part of the phone's own
-                                         card now, not a strip across the top of the page. -->
-                                    <Border Margin="0,8,0,0" Padding="10,6" CornerRadius="12" HorizontalAlignment="Left"
-                                            Background="{ThemeResource SecondaryContainerBrush}"
-                                            Visibility="{x:Bind ViewModel.ShowOfflineBanner, Mode=OneWay}">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <FontIcon Glyph="&#xE7BA;" FontSize="12" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
-                                            <TextBlock Text="{x:Bind ViewModel.OfflineBannerText, Mode=OneWay}" FontSize="12" TextWrapping="Wrap"
-                                                       Foreground="{ThemeResource OnSecondaryContainerBrush}" />
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="18">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <FontIcon Glyph="&#xE83F;" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
-                                        <TextBlock Text="{x:Bind ViewModel.BatteryText, Mode=OneWay}" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <FontIcon Glyph="&#xE701;" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
-                                        <TextBlock Text="{x:Bind ViewModel.SignalText, Mode=OneWay}" FontSize="13" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
 
                         <!-- Quick actions: tonal M3 pills, two rows + sound profile segmented. -->
                         <Border Style="{StaticResource FrostedCard}" Padding="14"
@@ -363,7 +390,7 @@
                     </views:WidgetGrid>
                 </ScrollViewer>
             </Grid>
-        </Border>
+        </Grid>
 
         <!-- Draggable divider between the widgets and notifications panes. -->
         <Border

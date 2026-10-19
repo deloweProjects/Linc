@@ -1,3 +1,4 @@
+using Linc.Desktop.Services;
 using Linc.Desktop.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
@@ -65,6 +66,20 @@ public sealed partial class HomePage : Page
 
         // A small window gets one pane at a time (the owner: "isn't adjusting to small windows").
         SizeChanged += (_, e) => ApplyWidth(e.NewSize.Width);
+        WidgetsPane.SizeChanged += (_, e) => ApplyStageLayout(e.NewSize.Width);
+
+        // The clock on the stage: ticks while Home is on screen, follows Settings › Appearance.
+        _clock.Tick += (_, _) => TickClock();
+        Loaded += (_, _) =>
+        {
+            _registry.AppearanceChanged += OnAppearanceChanged;
+            ApplyClock();
+        };
+        Unloaded += (_, _) =>
+        {
+            _registry.AppearanceChanged -= OnAppearanceChanged;
+            _clock.Stop();
+        };
 
         // The row heights only become meaningful once the page has a size; re-clamp then so a
         // persisted height saved on a bigger window cannot swallow the tabs panel on a smaller one.
@@ -115,6 +130,63 @@ public sealed partial class HomePage : Page
         // The container's DataContext IS the AppVm being recycled (the repeater sets it), which
         // is more reliable than re-reading by index here — items may have moved under it.
         ViewModel.OnAppTileUnrealized((args.Element as FrameworkElement)?.DataContext as AppVm);
+    }
+
+    // ---- The stage: the phone's wallpaper at its own shape, with the clock ----
+
+    private readonly IDeviceRegistry _registry = App.Services.GetRequiredService<IDeviceRegistry>();
+    private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(5) };
+
+    private void OnAppearanceChanged() => DispatcherQueue.TryEnqueue(ApplyClock);
+
+    private void ApplyClock()
+    {
+        bool show = _registry.HomeClock;
+        Clock.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show)
+        {
+            TickClock();
+            _clock.Start();
+        }
+        else
+        {
+            _clock.Stop();
+        }
+    }
+
+    private void TickClock()
+    {
+        var now = DateTime.Now;
+        ClockTime.Text = now.ToString("t");
+        ClockDate.Text = now.ToString("dddd, d MMMM");
+    }
+
+    /// <summary>Below this the pane can't hold the stage AND a widget column beside it.</summary>
+    private const double StageBesideWidth = 660;
+    private bool? _stageBeside;
+
+    /// <summary>
+    /// A phone wallpaper is portrait, so on a wide pane the stage is a tall card down the side
+    /// showing it whole (cropping a portrait picture to a wide card loses most of it). On a narrow
+    /// pane the stage sits on top of the widgets, sized to its clock and card, the wallpaper's
+    /// middle behind them.
+    /// </summary>
+    private void ApplyStageLayout(double width)
+    {
+        bool beside = width >= StageBesideWidth;
+        if (_stageBeside == beside) return;
+        _stageBeside = beside;
+        Grid.SetRow(Stage, 0);
+        Grid.SetColumn(Stage, 0);
+        Grid.SetRowSpan(Stage, beside ? 2 : 1);
+        Grid.SetColumnSpan(Stage, beside ? 1 : 2);
+        Stage.Width = beside ? 340 : double.NaN;
+        Stage.VerticalAlignment = beside ? VerticalAlignment.Stretch : VerticalAlignment.Top;
+        ClockTime.FontSize = beside ? 96 : 64;
+        Grid.SetRow(WidgetsArea, beside ? 0 : 1);
+        Grid.SetColumn(WidgetsArea, beside ? 1 : 0);
+        Grid.SetRowSpan(WidgetsArea, beside ? 2 : 1);
+        Grid.SetColumnSpan(WidgetsArea, beside ? 1 : 2);
     }
 
     private void ApplyGradient()
@@ -226,8 +298,23 @@ public sealed partial class HomePage : Page
     private const double WidgetsMinWidth = 320;
     private const double PanelMinWidth = 360;
 
-    /// <summary>The widgets pane's pixel width, kept across a flip so a dragged size survives it.</summary>
-    private double _widgetsWidth = 430;
+    /// <summary>
+    /// The widgets pane's pixel width, kept across a flip so a dragged size survives it. Null until
+    /// the divider is dragged: then it follows the window, about three fifths of it, so the stage
+    /// and a column of widgets fit beside the activity panel.
+    /// </summary>
+    private double? _widgetsWidth;
+
+    private double WidgetsWidth
+    {
+        get
+        {
+            if (_widgetsWidth is { } dragged) return dragged;
+            var available = ActualWidth - 48 /* page padding */ - 14 /* splitter */;
+            if (available <= 0) return 720;
+            return Math.Clamp(available * 0.6, WidgetsMinWidth, Math.Max(WidgetsMinWidth, available - PanelMinWidth));
+        }
+    }
 
     /// <summary>The column definition currently holding the widgets pane.</summary>
     private ColumnDefinition WidgetsColumn => ViewModel.PanesSwapped ? RightColumn : LeftColumn;
@@ -251,7 +338,11 @@ public sealed partial class HomePage : Page
     private void ApplyWidth(double width)
     {
         bool narrow = width > 0 && width < NarrowWidth;
-        if (narrow == _narrow && !narrow) return;
+        if (narrow == _narrow && !narrow)
+        {
+            if (_widgetsWidth is null) WidgetsColumn.Width = new GridLength(WidgetsWidth, GridUnitType.Pixel);
+            return;
+        }
         _narrow = narrow;
         NarrowSwitch.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
         Splitter.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
@@ -297,7 +388,7 @@ public sealed partial class HomePage : Page
         var widgets = swapped ? RightColumn : LeftColumn;
         var panel = swapped ? LeftColumn : RightColumn;
         widgets.MinWidth = WidgetsMinWidth;
-        widgets.Width = new GridLength(_widgetsWidth, GridUnitType.Pixel);
+        widgets.Width = new GridLength(WidgetsWidth, GridUnitType.Pixel);
         panel.MinWidth = PanelMinWidth;
         panel.Width = new GridLength(1, GridUnitType.Star);
     }
@@ -311,7 +402,8 @@ public sealed partial class HomePage : Page
         var delta = ViewModel.PanesSwapped ? -e.Delta.Translation.X : e.Delta.Translation.X;
         var available = ActualWidth - 48 /* page padding */ - Splitter.ActualWidth;
         var max = Math.Max(WidgetsMinWidth, available - PanelMinWidth);
-        _widgetsWidth = Math.Clamp(column.ActualWidth + delta, WidgetsMinWidth, max);
-        column.Width = new GridLength(_widgetsWidth, GridUnitType.Pixel);
+        var width = Math.Clamp(column.ActualWidth + delta, WidgetsMinWidth, max);
+        _widgetsWidth = width;
+        column.Width = new GridLength(width, GridUnitType.Pixel);
     }
 }

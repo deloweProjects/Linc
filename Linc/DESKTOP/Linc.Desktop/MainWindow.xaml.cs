@@ -80,7 +80,7 @@ public sealed partial class MainWindow : Window
         {
             App.Services.GetRequiredService<ILogService>().Log(LogLevel.Error, $"MainWindow: tray icon setup failed; continuing without a tray icon. ({ex.GetType().Name}: {ex.Message})");
         }
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1100, 760));
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
 
         // Modern title bar: the chrome joins the app's design (M16 polish).
@@ -92,7 +92,7 @@ public sealed partial class MainWindow : Window
         // Live-retint the app to match the phone's Material You palette once connected.
         App.Services.GetRequiredService<IThemeSyncService>().Start((FrameworkElement)Content);
         ApplyBackdrop();
-
+        App.Services.GetRequiredService<IDeviceRegistry>().AppearanceChanged += () => DispatcherQueue.TryEnqueue(ApplyNavStyle);
 
         // Closing the window hides Linc to the tray; it keeps watching for the phone.
         AppWindow.Closing += OnAppWindowClosing;
@@ -120,14 +120,22 @@ public sealed partial class MainWindow : Window
             // ambient glow of the phone, the owner's ask) → the theme's surface, part-transparent
             // → the pages, whose cards are themselves a little see-through.
             var theme = App.Services.GetRequiredService<IThemeSyncService>();
+            var registry = App.Services.GetRequiredService<IDeviceRegistry>();
             var ambient = new Image
             {
                 Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
                 Opacity = 0.9,
-                Source = theme.AmbientWallpaper,
                 IsHitTestVisible = false,
             };
-            var tint = new Microsoft.UI.Xaml.Media.SolidColorBrush(surface.Color) { Opacity = theme.AmbientWallpaper is null ? (mica ? 0.55 : 0.7) : 0.62 };
+            var tint = new Microsoft.UI.Xaml.Media.SolidColorBrush(surface.Color);
+            // Settings › Appearance › Wallpaper as background: off leaves Mica and the tint.
+            void Show()
+            {
+                var wallpaper = registry.WallpaperBackdrop ? theme.AmbientWallpaper : null;
+                ambient.Source = wallpaper;
+                tint.Opacity = wallpaper is null ? (mica ? 0.55 : 0.7) : 0.62;
+            }
+            Show();
             var veil = new Border { Background = tint, IsHitTestVisible = false };
             var backdrop = new Grid { IsHitTestVisible = false };
             backdrop.Children.Add(ambient);
@@ -136,11 +144,8 @@ public sealed partial class MainWindow : Window
             root.Children.Insert(0, backdrop);
             root.Background = null;
             surface.RegisterPropertyChangedCallback(Microsoft.UI.Xaml.Media.SolidColorBrush.ColorProperty, (_, _) => tint.Color = surface.Color);
-            theme.WallpaperChanged += () =>
-            {
-                ambient.Source = theme.AmbientWallpaper;
-                tint.Opacity = theme.AmbientWallpaper is null ? (mica ? 0.55 : 0.7) : 0.62;
-            };
+            theme.WallpaperChanged += Show;
+            registry.AppearanceChanged += () => DispatcherQueue.TryEnqueue(Show);
         }
         catch (Exception ex)
         {
@@ -401,12 +406,90 @@ public sealed partial class MainWindow : Window
 
     private void OnNavLoaded(object sender, RoutedEventArgs e)
     {
+        BuildDock();
+        ApplyNavStyle();
         ContentFrame.Navigate(typeof(HomePage));
         Nav.SelectedItem = Nav.MenuItems[0];
     }
 
+    private readonly List<(Button Button, object Item, TextBlock Label)> _dock = [];
+
+    /// <summary>
+    /// The floating bar's buttons, one per page in Nav (plus Settings after a divider). Clicking
+    /// one selects that page in Nav, so navigation stays in one place: OnNavSelectionChanged.
+    /// </summary>
+    private void BuildDock()
+    {
+        var pages = Nav.MenuItems.OfType<NavigationViewItem>()
+            .Select(i => (Item: (object)i, Name: i.Content as string ?? "", Glyph: (i.Icon as FontIcon)?.Glyph ?? "\uE80F"))
+            .ToList();
+        foreach (var (item, name, glyph) in pages)
+        {
+            AddDockButton(item, name, glyph);
+        }
+        DockItems.Children.Add(new Border
+        {
+            Width = 1,
+            Height = 28,
+            Margin = new Thickness(6, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["OutlineVariantBrush"],
+        });
+        AddDockButton(Nav.SettingsItem, "Settings", "\uE713");
+    }
+
+    private void AddDockButton(object item, string name, string glyph)
+    {
+        var label = new TextBlock { Text = name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        var button = new Button
+        {
+            Height = 52,
+            MinWidth = 52,
+            Padding = new Thickness(15, 0, 15, 0),
+            CornerRadius = new CornerRadius(18),
+            BorderThickness = new Thickness(0),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                Children = { new FontIcon { Glyph = glyph, FontSize = 20 }, label },
+            },
+        };
+        ToolTipService.SetToolTip(button, name);
+        ToolTipService.SetPlacement(button, Microsoft.UI.Xaml.Controls.Primitives.PlacementMode.Top);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
+        button.Click += (_, _) => Nav.SelectedItem = item;
+        DockItems.Children.Add(button);
+        _dock.Add((button, item, label));
+    }
+
+    /// <summary>The open page's button is filled and shows its name; the rest are icons.</summary>
+    private void ShowDockSelection(object? selected)
+    {
+        var res = Application.Current.Resources;
+        foreach (var (button, item, label) in _dock)
+        {
+            bool on = ReferenceEquals(item, selected);
+            button.Background = on ? (Microsoft.UI.Xaml.Media.Brush)res["PrimaryContainerBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            button.Foreground = (Microsoft.UI.Xaml.Media.Brush)res[on ? "OnPrimaryContainerBrush" : "OnSurfaceBrush"];
+            label.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>Settings › Appearance › Navigation: the floating bar (default) or the side rail.</summary>
+    private void ApplyNavStyle()
+    {
+        bool floating = App.Services.GetRequiredService<IDeviceRegistry>().FloatingNav;
+        Nav.IsPaneVisible = !floating;
+        Dock.Visibility = floating ? Visibility.Visible : Visibility.Collapsed;
+        // Room under the pages so the bar never covers the end of one.
+        ContentFrame.Margin = floating ? new Thickness(0, 0, 0, 92) : new Thickness(0);
+    }
+
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs e)
     {
+        ShowDockSelection(sender.SelectedItem);
         if (e.IsSettingsSelected)
         {
             ContentFrame.Navigate(typeof(SettingsPage));
