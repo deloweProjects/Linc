@@ -188,6 +188,21 @@ Also in that screenshot (PC Home, disconnected):
 - The ⋯ button floats alone above the quick-controls card; a big empty area under Clipboard.
 - The phone card shows "—" for battery and Wi-Fi while offline; show the last known values greyed.
 
+## 10. PC Ring / Vibrate / Silent: all three end up selected
+
+> (Device page screenshot, dark) "Look there on ring vibrate etc I managed to click everything"
+
+- Cause: they are three `ToggleButton`s (`Views/DevicePage.xaml` ~line 315, same on
+  `Views/HomePage.xaml` ~245) with `IsChecked="{x:Bind Home.IsSoundX, Mode=OneWay}"`. A
+  ToggleButton checks itself on click; when the phone refuses (here: no Do Not Disturb access)
+  `SoundMode` (`ViewModels/HomeViewModel.cs` ~1650) never changes, nothing re-notifies, and every
+  clicked one stays checked.
+- **Do:** make it a real single choice — a segmented control of RadioButtons (one group), or
+  keep the buttons but always re-raise `IsSoundRing/Vibrate/Silent` after `SetSoundAsync`
+  (success or failure) so they snap back to the phone's real mode. Disable the three (with the
+  "needs Do Not Disturb access" line and a "Fix on phone" action) while the phone lacks access.
+  Check every other ToggleButton group in the app for the same pattern (Home quick controls).
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
