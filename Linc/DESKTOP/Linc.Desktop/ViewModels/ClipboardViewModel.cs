@@ -10,7 +10,9 @@ namespace Linc.Desktop.ViewModels;
 /// <summary>One history row on the Clipboard page.</summary>
 public sealed partial class ClipRowVm(ClipEntry entry, ClipboardViewModel owner)
 {
-    public ClipEntry Entry { get; } = entry;
+    /// <summary>The item, its text repaired if it was once misread as Windows-1252 (TextRepair):
+    /// shown, copied back and sent as the repaired text.</summary>
+    public ClipEntry Entry { get; } = entry with { Text = TextRepair.FixMojibake(entry.Text) };
     public string Text => Entry.Text;
     public string Glyph => Entry.FromPhone ? "" : ""; // phone / PC
     public string SourceName => Entry.FromPhone ? "From the phone" : "From this PC";
@@ -25,11 +27,12 @@ public sealed partial class ClipRowVm(ClipEntry entry, ClipboardViewModel owner)
     [RelayCommand] private void Delete() => owner.DeleteItem(Entry);
 }
 
-/// <summary>A day (or "Pinned") and its rows.</summary>
-public sealed class ClipGroupVm(string header, IReadOnlyList<ClipRowVm> items)
+/// <summary>A day (or "Pinned") and its rows. Observable, so a long day can be filled in after
+/// the first screenful has drawn (ClipboardViewModel.RebuildAsync).</summary>
+public sealed class ClipGroupVm(string header)
 {
     public string Header { get; } = header;
-    public IReadOnlyList<ClipRowVm> Items { get; } = items;
+    public ObservableCollection<ClipRowVm> Items { get; } = [];
 }
 
 /// <summary>
@@ -145,22 +148,100 @@ public sealed partial class ClipboardViewModel : ObservableObject
         HasMessage = message.Length > 0;
     }
 
-    private void Rebuild()
+    // ---- Building the list (owner concerns 2026-10-19 §3: "Clipboard page loads slower") ----
+    //
+    // The history is up to 2000 items, and every row is a card with four buttons, all built at
+    // once on the UI thread (and, before, each animated in by an AddDeleteThemeTransition). Now
+    // the filtering, grouping and row view models are made off the UI thread, the first
+    // screenful goes on screen at once, and the rest follows in batches at low priority, so the
+    // page is usable while the tail is still being added. A newer rebuild (a keystroke in the
+    // search box, a new clip) abandons an older one.
+
+    /// <summary>Rows put on screen straight away; enough to fill a maximised window.</summary>
+    private const int FirstScreenRows = 30;
+
+    /// <summary>Rows added per low-priority pass after that.</summary>
+    private const int BatchRows = 60;
+
+    private int _generation;
+
+    private void Rebuild() => _ = RebuildAsync();
+
+    private async Task RebuildAsync()
     {
+        int generation = ++_generation;
         var q = Query.Trim();
-        var shown = _clipboard.History
-            .Where(c => q.Length == 0 || c.Text.Contains(q, StringComparison.CurrentCultureIgnoreCase))
-            .ToList();
+        var history = _clipboard.History; // an immutable snapshot, safe to read off the UI thread
+        List<(string Header, List<ClipRowVm> Rows)> built;
+        try
+        {
+            built = await Task.Run(() => Build(history, q));
+        }
+        catch (Exception)
+        {
+            return; // cosmetic: the next change rebuilds
+        }
+        if (generation != _generation)
+        {
+            return;
+        }
+
         Groups.Clear();
-        var pinned = shown.Where(c => c.Pinned).ToList();
+        var rest = new List<(ClipGroupVm Group, List<ClipRowVm> Rows, int From)>();
+        int budget = FirstScreenRows;
+        foreach (var (header, rows) in built)
+        {
+            var group = new ClipGroupVm(header);
+            int now = Math.Min(budget, rows.Count);
+            for (int i = 0; i < now; i++) group.Items.Add(rows[i]);
+            budget -= now;
+            if (now < rows.Count) rest.Add((group, rows, now));
+            Groups.Add(group);
+        }
+        RaiseListState();
+
+        foreach (var (group, rows, from) in rest)
+        {
+            for (int i = from; i < rows.Count; i += BatchRows)
+            {
+                await Yield();
+                if (generation != _generation) return;
+                for (int j = i; j < Math.Min(rows.Count, i + BatchRows); j++) group.Items.Add(rows[j]);
+            }
+        }
+    }
+
+    /// <summary>Lets the page draw, then continues at low priority on the UI thread.</summary>
+    private Task Yield()
+    {
+        var done = new TaskCompletionSource();
+        if (!_dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () => done.SetResult()))
+        {
+            done.SetResult();
+        }
+        return done.Task;
+    }
+
+    private List<(string Header, List<ClipRowVm> Rows)> Build(IReadOnlyList<ClipEntry> history, string q)
+    {
+        var shown = history
+            .Where(c => q.Length == 0 || TextRepair.FixMojibake(c.Text).Contains(q, StringComparison.CurrentCultureIgnoreCase))
+            .ToList();
+        var groups = new List<(string, List<ClipRowVm>)>();
+        var pinned = shown.Where(c => c.Pinned).Select(c => new ClipRowVm(c, this)).ToList();
         if (pinned.Count > 0)
         {
-            Groups.Add(new ClipGroupVm("Pinned", pinned.Select(c => new ClipRowVm(c, this)).ToList()));
+            groups.Add(("Pinned", pinned));
         }
         foreach (var day in shown.Where(c => !c.Pinned).GroupBy(c => c.At.LocalDateTime.Date).OrderByDescending(g => g.Key))
         {
-            Groups.Add(new ClipGroupVm(DayLabel(day.Key), day.OrderByDescending(c => c.At).Select(c => new ClipRowVm(c, this)).ToList()));
+            groups.Add((DayLabel(day.Key), day.OrderByDescending(c => c.At).Select(c => new ClipRowVm(c, this)).ToList()));
         }
+        return groups;
+    }
+
+    private void RaiseListState()
+    {
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(HasHistory));
         OnPropertyChanged(nameof(EmptyTitle));

@@ -6,8 +6,9 @@
     xmlns:vm="using:Linc.Desktop.ViewModels"
     xmlns:views="using:Linc.Desktop.Views">
 
-    <ScrollViewer views:PageLayout.Adaptive="True" Padding="32">
-        <StackPanel Spacing="16" MaxWidth="720" HorizontalAlignment="Left">
+    <ScrollViewer>
+        <!-- The page's centred column (PageLayout.Adaptive): the cards run its full width. -->
+        <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
             <TextBlock Text="Settings" Style="{StaticResource HeadlineText}" />
 
             <TextBlock
@@ -86,12 +87,19 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock views:Explain.IsHelp="True"
-                            Text="Save notifications on this PC so you can see them after they are dismissed elsewhere."
-                            Style="{StaticResource BodyText}" />
+                        <!-- The switch's own label always shows; only the explanation follows
+                             Settings › Show explanations (it used to be the label, so hiding
+                             explanations left a switch with no name). -->
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Keep notification history" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True"
+                                Text="Save notifications on this PC so you can see them after they are dismissed elsewhere."
+                                Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
                         <ToggleSwitch
                             Grid.Column="1"
                             OnContent="On" OffContent="Off"
+                            AutomationProperties.Name="Keep notification history"
                             IsOn="{x:Bind ViewModel.NotificationHistoryEnabled, Mode=TwoWay}" />
                     </Grid>
 

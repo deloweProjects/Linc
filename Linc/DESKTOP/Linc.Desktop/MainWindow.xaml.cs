@@ -8,6 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
+using System.Runtime.InteropServices;
 
 namespace Linc.Desktop;
 
@@ -96,7 +99,26 @@ public sealed partial class MainWindow : Window
 
         // Closing the window hides Linc to the tray; it keeps watching for the phone.
         AppWindow.Closing += OnAppWindowClosing;
+
+        // The floating bar steps up out of the way of the Windows taskbar (see UpdateDockLift).
+        AppWindow.Changed += (_, args) =>
+        {
+            if (args.DidPositionChange || args.DidSizeChange || args.DidPresenterChange) UpdateDockLift();
+        };
+        Activated += (_, _) => UpdateDockLift();
+        Dock.SizeChanged += (_, _) => LayoutDock();
+
+        // Add a phone sits over the pages on the app's backdrop: the page under it is hidden
+        // rather than showing through (the owner: "Add a phone: plain white, no app backdrop").
+        Shell.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AppShellViewModel.IsOnboarding)) ShowOnboarding();
+        };
+        ShowOnboarding();
     }
+
+    private void ShowOnboarding() =>
+        ContentFrame.Visibility = Shell.IsOnboarding ? Visibility.Collapsed : Visibility.Visible;
 
     /// <summary>
     /// Transparency (the owner: "the background is just dark, add transparency effects"): Mica —
@@ -105,51 +127,241 @@ public sealed partial class MainWindow : Window
     /// phone's palette, is laid over it part-transparent, so the colours still come from the
     /// phone and the cards stay solid on top. Windows' own "Transparency effects" switch off turns
     /// both backdrops into a plain fill by themselves.
+    /// <para>
+    /// The phone's wallpaper on top of that (Settings › Appearance › Wallpaper as background), only
+    /// lightly blurred (the owner: "the blur [is] too strong"): it is decoded at
+    /// <see cref="SoftWallpaperWidth"/> px, so drawing it larger softens it a little rather than
+    /// smearing it into a wash. A wide or maximised window shows the portrait wallpaper whole in
+    /// the middle, its edges fading into the wallpaper's own colours (sampled from its left and
+    /// right, plus two soft radial glows from its corners) across the sides; a narrower window
+    /// fills with it. The theme's surface, part-transparent, tones all of it light or dark.
+    /// </para>
     /// </summary>
     private void ApplyBackdrop()
     {
         try
         {
             bool mica = Microsoft.UI.Composition.SystemBackdrops.MicaController.IsSupported();
-            if (mica) SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
-            else if (Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported()) SystemBackdrop = new Microsoft.UI.Xaml.Media.DesktopAcrylicBackdrop();
+            if (mica) SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
+            else if (Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported()) SystemBackdrop = new DesktopAcrylicBackdrop();
             else return;
-            if (Application.Current.Resources["SurfaceBrush"] is not Microsoft.UI.Xaml.Media.SolidColorBrush surface || Content is not Grid root) return;
+            if (Application.Current.Resources["SurfaceBrush"] is not SolidColorBrush surface || Content is not Grid root) return;
 
-            // Layers, back to front: Mica (the window) → the phone's wallpaper, blurred (an
-            // ambient glow of the phone, the owner's ask) → the theme's surface, part-transparent
-            // → the pages, whose cards are themselves a little see-through.
             var theme = App.Services.GetRequiredService<IThemeSyncService>();
             var registry = App.Services.GetRequiredService<IDeviceRegistry>();
-            var ambient = new Image
-            {
-                Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
-                Opacity = 0.9,
-                IsHitTestVisible = false,
-            };
-            var tint = new Microsoft.UI.Xaml.Media.SolidColorBrush(surface.Color);
-            // Settings › Appearance › Wallpaper as background: off leaves Mica and the tint.
-            void Show()
-            {
-                var wallpaper = registry.WallpaperBackdrop ? theme.AmbientWallpaper : null;
-                ambient.Source = wallpaper;
-                tint.Opacity = wallpaper is null ? (mica ? 0.55 : 0.7) : 0.62;
-            }
-            Show();
+            var cache = App.Services.GetRequiredService<IDeviceCacheService>();
+
+            // Layers, back to front: Mica (the window) → the wallpaper (full-bleed, or centred with
+            // its colours across the sides) → the theme's surface, part-transparent → the pages.
+            var fill = new Image { Stretch = Stretch.UniformToFill, Opacity = 0.85, IsHitTestVisible = false };
+
+            var leftStop = new GradientStop { Offset = 0 };
+            var midStop = new GradientStop { Offset = 0.5 };
+            var rightStop = new GradientStop { Offset = 1 };
+            var sideWash = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0.5), EndPoint = new Windows.Foundation.Point(1, 0.5) };
+            sideWash.GradientStops.Add(leftStop);
+            sideWash.GradientStops.Add(midStop);
+            sideWash.GradientStops.Add(rightStop);
+            var (glowA, glowAStop) = Glow(new Windows.Foundation.Point(0.12, 0.22));
+            var (glowB, glowBStop) = Glow(new Windows.Foundation.Point(0.88, 0.8));
+
+            var portraitImage = new Image { Stretch = Stretch.UniformToFill, Opacity = 0.92, IsHitTestVisible = false };
+            var (fadeLeft, fadeLeftStop) = Fade(fromLeft: true);
+            var (fadeRight, fadeRightStop) = Fade(fromLeft: false);
+            var portrait = new Grid { HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
+            portrait.Children.Add(portraitImage);
+            portrait.Children.Add(fadeLeft);
+            portrait.Children.Add(fadeRight);
+
+            var sides = new Grid { Background = sideWash, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+            sides.Children.Add(new Border { Background = glowA, Opacity = 0.75, IsHitTestVisible = false });
+            sides.Children.Add(new Border { Background = glowB, Opacity = 0.75, IsHitTestVisible = false });
+            sides.Children.Add(portrait);
+
+            var tint = new SolidColorBrush(surface.Color);
             var veil = new Border { Background = tint, IsHitTestVisible = false };
             var backdrop = new Grid { IsHitTestVisible = false };
-            backdrop.Children.Add(ambient);
+            backdrop.Children.Add(fill);
+            backdrop.Children.Add(sides);
             backdrop.Children.Add(veil);
             Grid.SetRowSpan(backdrop, Math.Max(1, root.RowDefinitions.Count));
             root.Children.Insert(0, backdrop);
             root.Background = null;
-            surface.RegisterPropertyChangedCallback(Microsoft.UI.Xaml.Media.SolidColorBrush.ColorProperty, (_, _) => tint.Color = surface.Color);
-            theme.WallpaperChanged += Show;
-            registry.AppearanceChanged += () => DispatcherQueue.TryEnqueue(Show);
+
+            BitmapImage? soft = null;
+            double aspect = 0; // width / height of the wallpaper; < 1 is portrait
+            int generation = 0;
+
+            // Which of the two arrangements this window size wants, and the portrait's width.
+            void Arrange()
+            {
+                bool maximised = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
+                bool wide = soft is not null && aspect is > 0 and < 0.9 && (maximised || root.ActualWidth >= WideBackdropWidth);
+                fill.Source = wide ? null : soft;
+                fill.Visibility = soft is not null && !wide ? Visibility.Visible : Visibility.Collapsed;
+                portraitImage.Source = wide ? soft : null;
+                sides.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
+                if (wide && root.ActualHeight > 0)
+                {
+                    portrait.Width = Math.Min(root.ActualWidth, root.ActualHeight * aspect);
+                    fadeLeft.Width = fadeRight.Width = portrait.Width * 0.24;
+                }
+                tint.Opacity = soft is null ? (mica ? 0.55 : 0.7) : wide ? 0.5 : 0.58;
+            }
+
+            async Task LoadAsync()
+            {
+                int mine = ++generation;
+                var serial = registry.PairedSerial;
+                byte[]? bytes = null;
+                if (registry.WallpaperBackdrop && serial is not null && theme.Wallpaper is not null)
+                {
+                    bytes = await Task.Run(() => cache.LoadWallpaper(serial));
+                }
+                if (bytes is not { Length: > 0 })
+                {
+                    if (mine != generation) return;
+                    soft = null;
+                    Arrange();
+                    return;
+                }
+                var sample = await SampleWallpaperAsync(bytes);
+                var image = new BitmapImage { DecodePixelWidth = SoftWallpaperWidth };
+                using (var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream())
+                {
+                    await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+                    stream.Seek(0);
+                    await image.SetSourceAsync(stream);
+                }
+                if (mine != generation) return; // a newer wallpaper or setting won
+                soft = image;
+                aspect = sample?.Aspect ?? 0;
+                if (sample is { } colours)
+                {
+                    leftStop.Color = colours.Left;
+                    midStop.Color = colours.Middle;
+                    rightStop.Color = colours.Right;
+                    glowAStop.Color = colours.TopLeft;
+                    glowBStop.Color = colours.BottomRight;
+                    fadeLeftStop.Color = colours.Left;
+                    fadeRightStop.Color = colours.Right;
+                }
+                Arrange();
+            }
+
+            async void Reload()
+            {
+                try
+                {
+                    await LoadAsync();
+                }
+                catch (Exception ex)
+                {
+                    App.Services.GetRequiredService<ILogService>().Log(LogLevel.Info, $"The wallpaper background couldn't be drawn ({ex.GetType().Name}: {ex.Message})");
+                }
+            }
+
+            Reload();
+            root.SizeChanged += (_, _) => Arrange();
+            AppWindow.Changed += (_, args) =>
+            {
+                if (args.DidPresenterChange) Arrange();
+            };
+            surface.RegisterPropertyChangedCallback(SolidColorBrush.ColorProperty, (_, _) => tint.Color = surface.Color);
+            theme.WallpaperChanged += Reload;
+            registry.AppearanceChanged += () => DispatcherQueue.TryEnqueue(Reload);
         }
         catch (Exception ex)
         {
             App.Services.GetRequiredService<ILogService>().Log(LogLevel.Warn, $"Window transparency isn't available ({ex.GetType().Name}: {ex.Message})");
+        }
+    }
+
+    /// <summary>How wide the backdrop's wallpaper is decoded: drawn larger than this, it is softly blurred.</summary>
+    private const int SoftWallpaperWidth = 180;
+
+    /// <summary>From this window width (or maximised) the wallpaper sits whole in the middle.</summary>
+    private const double WideBackdropWidth = 1400;
+
+    /// <summary>A soft round glow of one colour, fading out, for the backdrop's sides.</summary>
+    private static (RadialGradientBrush Brush, GradientStop Inner) Glow(Windows.Foundation.Point centre)
+    {
+        var inner = new GradientStop { Offset = 0 };
+        var brush = new RadialGradientBrush
+        {
+            Center = centre,
+            GradientOrigin = centre,
+            RadiusX = 0.55,
+            RadiusY = 0.7,
+            MappingMode = BrushMappingMode.RelativeToBoundingBox,
+        };
+        brush.GradientStops.Add(inner);
+        brush.GradientStops.Add(new GradientStop { Offset = 1, Color = Microsoft.UI.Colors.Transparent });
+        return (brush, inner);
+    }
+
+    /// <summary>The centred wallpaper's edge, fading into the side colour so it has no hard border.</summary>
+    private static (Border Edge, GradientStop Outer) Fade(bool fromLeft)
+    {
+        var outer = new GradientStop { Offset = 0 };
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(fromLeft ? 0 : 1, 0.5),
+            EndPoint = new Windows.Foundation.Point(fromLeft ? 1 : 0, 0.5),
+        };
+        brush.GradientStops.Add(outer);
+        brush.GradientStops.Add(new GradientStop { Offset = 1, Color = Microsoft.UI.Colors.Transparent });
+        var edge = new Border
+        {
+            HorizontalAlignment = fromLeft ? HorizontalAlignment.Left : HorizontalAlignment.Right,
+            Background = brush,
+            IsHitTestVisible = false,
+        };
+        return (edge, outer);
+    }
+
+    private sealed record WallpaperColours(
+        Windows.UI.Color Left, Windows.UI.Color Middle, Windows.UI.Color Right,
+        Windows.UI.Color TopLeft, Windows.UI.Color BottomRight, double Aspect);
+
+    /// <summary>
+    /// The wallpaper's ambient colours: the decoder shrinks it to 3×3 (averaging as it goes), so
+    /// each cell is the mean colour of a ninth of the picture. Null when it can't be decoded.
+    /// </summary>
+    private static async Task<WallpaperColours?> SampleWallpaperAsync(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+            stream.Seek(0);
+            var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);
+            var transform = new Windows.Graphics.Imaging.BitmapTransform
+            {
+                ScaledWidth = 3,
+                ScaledHeight = 3,
+                InterpolationMode = Windows.Graphics.Imaging.BitmapInterpolationMode.Fant,
+            };
+            var data = await decoder.GetPixelDataAsync(
+                Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,
+                Windows.Graphics.Imaging.BitmapAlphaMode.Ignore,
+                transform,
+                Windows.Graphics.Imaging.ExifOrientationMode.RespectExifOrientation,
+                Windows.Graphics.Imaging.ColorManagementMode.DoNotColorManage);
+            var px = data.DetachPixelData();
+            if (px.Length < 9 * 4) return null;
+            Windows.UI.Color Cell(int i) => Windows.UI.Color.FromArgb(255, px[i * 4 + 2], px[i * 4 + 1], px[i * 4]);
+            Windows.UI.Color Mean(int a, int b, int c)
+            {
+                Windows.UI.Color x = Cell(a), y = Cell(b), z = Cell(c);
+                return Windows.UI.Color.FromArgb(255, (byte)((x.R + y.R + z.R) / 3), (byte)((x.G + y.G + z.G) / 3), (byte)((x.B + y.B + z.B) / 3));
+            }
+            double aspect = decoder.OrientedPixelHeight > 0 ? decoder.OrientedPixelWidth / (double)decoder.OrientedPixelHeight : 0;
+            return new WallpaperColours(Mean(0, 3, 6), Mean(1, 4, 7), Mean(2, 5, 8), Cell(0), Cell(8), aspect);
+        }
+        catch (Exception)
+        {
+            return null; // cosmetic only
         }
     }
 
@@ -443,9 +655,9 @@ public sealed partial class MainWindow : Window
         var label = new TextBlock { Text = name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         var button = new Button
         {
-            Height = 52,
-            MinWidth = 52,
-            Padding = new Thickness(15, 0, 15, 0),
+            Height = 48,
+            MinWidth = 48,
+            Padding = new Thickness(14, 0, 14, 0),
             CornerRadius = new CornerRadius(18),
             BorderThickness = new Thickness(0),
             Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
@@ -459,7 +671,11 @@ public sealed partial class MainWindow : Window
         ToolTipService.SetToolTip(button, name);
         ToolTipService.SetPlacement(button, Microsoft.UI.Xaml.Controls.Primitives.PlacementMode.Top);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
-        button.Click += (_, _) => Nav.SelectedItem = item;
+        button.Click += (_, _) =>
+        {
+            Shell.IsOnboarding = false; // the bar leaves Add a phone, like its Cancel
+            Nav.SelectedItem = item;
+        };
         DockItems.Children.Add(button);
         _dock.Add((button, item, label));
     }
@@ -481,11 +697,143 @@ public sealed partial class MainWindow : Window
     private void ApplyNavStyle()
     {
         bool floating = App.Services.GetRequiredService<IDeviceRegistry>().FloatingNav;
+        // LeftMinimal while the bar is in use: a hidden pane in Left/Auto mode can still keep its
+        // column, which pushes every centred page to the right.
+        Nav.PaneDisplayMode = floating ? NavigationViewPaneDisplayMode.LeftMinimal : NavigationViewPaneDisplayMode.Auto;
+        Nav.IsPaneToggleButtonVisible = !floating;
         Nav.IsPaneVisible = !floating;
         Dock.Visibility = floating ? Visibility.Visible : Visibility.Collapsed;
-        // Room under the pages so the bar never covers the end of one.
-        ContentFrame.Margin = floating ? new Thickness(0, 0, 0, 92) : new Thickness(0);
+        LayoutDock();
+        UpdateDockLift();
     }
+
+    // ---- The floating bar's place: just above the window's bottom, clear of the taskbar ----
+
+    /// <summary>Window bottom (or the taskbar's top) to the bar.</summary>
+    private const double DockGap = 8;
+
+    /// <summary>The bar's top to the end of the page above it.</summary>
+    private const double DockClearance = 4;
+
+    /// <summary>How far an auto-hide taskbar reaches up when it slides in (Windows 11: 48).</summary>
+    private const double AutoHideTaskbarLift = 48;
+
+    /// <summary>How far the bar is raised so the Windows taskbar doesn't cover it, in DIPs.</summary>
+    private double _dockLift;
+
+    /// <summary>
+    /// The band kept free under the pages is the bar's own height plus a small gap (it used to be
+    /// a fixed 92 px, and pages stopped well above the bar: the owner's "far too tall").
+    /// </summary>
+    private void LayoutDock()
+    {
+        bool floating = Dock.Visibility == Visibility.Visible;
+        Dock.Margin = new Thickness(16, 0, 16, DockGap + _dockLift);
+        double height = Dock.ActualHeight > 0 ? Dock.ActualHeight : 62;
+        ContentFrame.Margin = floating
+            ? new Thickness(0, 0, 0, height + DockGap + DockClearance + _dockLift)
+            : new Thickness(0);
+    }
+
+    /// <summary>
+    /// The Windows taskbar sits on top of every window. Where it overlaps this window's bottom —
+    /// the window dragged down under it, or maximised with an auto-hide taskbar that slides in
+    /// over it — the bar is lifted by that much, so the taskbar never covers it. The overlap is
+    /// the window's client bottom against its monitor's work area (the monitor minus the
+    /// taskbar); an auto-hide taskbar leaves the work area whole, so that case asks the shell
+    /// (SHAppBarMessage) whether the taskbar auto-hides along the bottom.
+    /// </summary>
+    private void UpdateDockLift()
+    {
+        double lift = 0;
+        try
+        {
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref info) && GetClientRect(hwnd, out var client))
+            {
+                var corner = new POINT { X = 0, Y = client.Bottom };
+                ClientToScreen(hwnd, ref corner);
+                int bottom = Math.Min(corner.Y, info.rcMonitor.Bottom);
+                double scale = Content?.XamlRoot?.RasterizationScale is { } s and > 0 ? s : 1;
+                bool maximised = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
+                if (info.rcWork.Bottom < info.rcMonitor.Bottom && bottom > info.rcWork.Bottom)
+                {
+                    lift = (bottom - info.rcWork.Bottom) / scale; // a docked taskbar along the bottom
+                }
+                else if (info.rcWork.Bottom >= info.rcMonitor.Bottom
+                         && (maximised || bottom >= info.rcMonitor.Bottom - 2)
+                         && TaskbarAutoHidesAtBottom())
+                {
+                    lift = AutoHideTaskbarLift;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or COMException)
+        {
+            lift = 0; // no shell to ask: leave the bar where it is
+        }
+        if (Math.Abs(lift - _dockLift) < 0.5) return;
+        _dockLift = lift;
+        LayoutDock();
+    }
+
+    private static bool TaskbarAutoHidesAtBottom()
+    {
+        var data = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>() };
+        bool autoHide = ((uint)SHAppBarMessage(AbmGetState, ref data) & AbsAutoHide) != 0;
+        if (!autoHide) return false;
+        data = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>() };
+        return SHAppBarMessage(AbmGetTaskbarPos, ref data) == UIntPtr.Zero || data.uEdge == AbeBottom;
+    }
+
+    private const uint MonitorDefaultToNearest = 2;
+    private const uint AbmGetState = 4, AbmGetTaskbarPos = 5, AbsAutoHide = 1, AbeBottom = 3;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X, Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct APPBARDATA
+    {
+        public int cbSize;
+        public IntPtr hWnd;
+        public uint uCallbackMessage;
+        public uint uEdge;
+        public RECT rc;
+        public IntPtr lParam;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
+
+    [DllImport("shell32.dll")]
+    private static extern UIntPtr SHAppBarMessage(uint message, ref APPBARDATA data);
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs e)
     {

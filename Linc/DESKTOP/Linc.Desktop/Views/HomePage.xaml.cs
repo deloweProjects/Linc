@@ -12,6 +12,9 @@ public sealed partial class HomePage : Page
 {
     public HomeViewModel ViewModel { get; }
 
+    /// <summary>The link notice shown in the phone card (replaces the old red banner).</summary>
+    public AppShellViewModel Shell { get; }
+
     /// <summary>Empty-state CTA (M2b): open the guided wizard — the same door as the tab-strip "+".</summary>
     private void OnPairPhone(object sender, RoutedEventArgs e)
     {
@@ -36,7 +39,9 @@ public sealed partial class HomePage : Page
     public HomePage()
     {
         ViewModel = App.Services.GetRequiredService<HomeViewModel>();
+        Shell = App.Services.GetRequiredService<AppShellViewModel>();
         InitializeComponent();
+        ApplyEmptyState();
 
         // GradientStop.Color can't be a compiled-binding target, so the preview
         // card's palette gradient is wired here instead.
@@ -48,6 +53,10 @@ public sealed partial class HomePage : Page
             if (e.PropertyName is nameof(HomeViewModel.GradientTop) or nameof(HomeViewModel.GradientBottom))
             {
                 ApplyGradient();
+            }
+            else if (e.PropertyName is nameof(HomeViewModel.HasNoVisibleDevice))
+            {
+                ApplyEmptyState();
             }
             else if (e.PropertyName is nameof(HomeViewModel.PanesSwapped))
             {
@@ -161,8 +170,11 @@ public sealed partial class HomePage : Page
         ClockDate.Text = now.ToString("dddd, d MMMM");
     }
 
+    /// <summary>The stage's width beside the widgets (the owner: "a bit bigger"; was 340).</summary>
+    private const double StageWidth = 384;
+
     /// <summary>Below this the pane can't hold the stage AND a widget column beside it.</summary>
-    private const double StageBesideWidth = 660;
+    private const double StageBesideWidth = 700;
     private bool? _stageBeside;
 
     /// <summary>
@@ -180,13 +192,28 @@ public sealed partial class HomePage : Page
         Grid.SetColumn(Stage, 0);
         Grid.SetRowSpan(Stage, beside ? 2 : 1);
         Grid.SetColumnSpan(Stage, beside ? 1 : 2);
-        Stage.Width = beside ? 340 : double.NaN;
+        Stage.Width = beside ? StageWidth : double.NaN;
         Stage.VerticalAlignment = beside ? VerticalAlignment.Stretch : VerticalAlignment.Top;
-        ClockTime.FontSize = beside ? 96 : 64;
+        ClockTime.FontSize = beside ? 104 : 68;
         Grid.SetRow(WidgetsArea, beside ? 0 : 1);
         Grid.SetColumn(WidgetsArea, beside ? 1 : 0);
         Grid.SetRowSpan(WidgetsArea, beside ? 2 : 1);
         Grid.SetColumnSpan(WidgetsArea, beside ? 1 : 2);
+    }
+
+    /// <summary>
+    /// No phone at all: only the "Pair a phone" card shows, on the app's backdrop. The panes are
+    /// made invisible rather than collapsed, because the narrow-window switch owns their
+    /// Visibility (ApplyWidth) and the two must not fight.
+    /// </summary>
+    private void ApplyEmptyState()
+    {
+        bool empty = ViewModel.HasNoVisibleDevice;
+        foreach (var pane in new UIElement[] { WidgetsPane, Splitter, RightPane, NarrowSwitch })
+        {
+            pane.Opacity = empty ? 0 : 1;
+            pane.IsHitTestVisible = !empty;
+        }
     }
 
     private void ApplyGradient()

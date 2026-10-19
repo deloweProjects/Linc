@@ -21,7 +21,9 @@
         <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="OnPrimaryBrush" />
     </Page.Resources>
 
-    <Grid views:PageLayout.Adaptive="True" Padding="24,24,24,24" ColumnSpacing="0">
+    <!-- Home is the one page without the 1200 px column cap (MaxContentWidth 0): a dashboard of
+         two resizable panes that wants the whole window; its widgets centre themselves. -->
+    <Grid views:PageLayout.Adaptive="True" views:PageLayout.MaxContentWidth="0" Padding="24,24,24,24" ColumnSpacing="0">
         <Grid.ColumnDefinitions>
             <!-- Widgets a bit wider by default; both panes user-resizable via the splitter. -->
             <ColumnDefinition x:Name="LeftColumn" Width="720" MinWidth="320" />
@@ -67,7 +69,7 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Grid x:Name="Stage" Grid.RowSpan="2" Width="340" CornerRadius="40"
+            <Grid x:Name="Stage" Grid.RowSpan="2" Width="384" CornerRadius="40"
                   Visibility="{x:Bind ViewModel.ShowPhone, Mode=OneWay}">
                 <!-- No wallpaper yet: the palette's own gradient stands in for it. -->
                 <Grid.Background>
@@ -100,7 +102,7 @@
                 <StackPanel x:Name="Clock" Padding="24,40,24,8" HorizontalAlignment="Center">
                     <TextBlock x:Name="ClockDate" HorizontalAlignment="Center" FontSize="15" FontWeight="Medium"
                                Foreground="White" Opacity="0.92" />
-                    <TextBlock x:Name="ClockTime" HorizontalAlignment="Center" FontSize="96" FontWeight="Light"
+                    <TextBlock x:Name="ClockTime" HorizontalAlignment="Center" FontSize="104" FontWeight="Light"
                                Foreground="White" CharacterSpacing="-40" />
                 </StackPanel>
 
@@ -113,6 +115,16 @@
                                    Foreground="{ThemeResource OnSurfaceBrush}" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{x:Bind ViewModel.ConnectionCaption, Mode=OneWay}" FontSize="13"
                                    Foreground="{ThemeResource OnSurfaceVariantBrush}" TextWrapping="Wrap" />
+                        <!-- The link's own messages (lost, can't reach the Linc app…): one quiet line
+                             here, the full text on hover. This replaced the red banner across the top. -->
+                        <StackPanel Margin="0,4,0,0" Orientation="Horizontal" Spacing="8"
+                                    Visibility="{x:Bind Shell.HasLinkNotice, Mode=OneWay}"
+                                    ToolTipService.ToolTip="{x:Bind Shell.LinkNotice, Mode=OneWay}">
+                            <FontIcon Glyph="{x:Bind Shell.LinkNoticeGlyph, Mode=OneWay}" FontSize="12" VerticalAlignment="Top" Margin="0,2,0,0"
+                                      Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            <TextBlock Text="{x:Bind Shell.LinkNoticeText, Mode=OneWay}" FontSize="12" TextWrapping="Wrap" MaxWidth="290"
+                                       Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                        </StackPanel>
                         <TextBlock Text="{x:Bind ViewModel.LinkAddress, Mode=OneWay}" FontSize="11"
                                    Foreground="{ThemeResource OnSurfaceVariantBrush}" Opacity="0.7"
                                    Visibility="{x:Bind ViewModel.HasLinkAddress, Mode=OneWay}" />
@@ -153,44 +165,43 @@
                     <!-- Widgets reflow into columns as the pane widens; they never stretch. -->
                     <views:WidgetGrid>
 
-                        <!-- Widget options behind a 3-dots button (M13f §8): the widgets column
-                             had a whole row of buttons sitting on top; now one compact entry point.
-                             Same commands, same behaviour. -->
-                        <Grid>
-                            <Button Content="&#xE712;" FontFamily="{ThemeResource SymbolThemeFontFamily}" HorizontalAlignment="Left" Padding="12,8" CornerRadius="16"
-                                    Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
-                                    BorderThickness="0" FontSize="15" ToolTipService.ToolTip="Widget options">
-                                <Button.Flyout>
-                                    <Flyout Placement="BottomEdgeAlignedLeft">
-                                        <StackPanel Spacing="8" Width="220">
-                                            <Button Content="Sections" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
-                                                    Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
-                                                    BorderThickness="0" FontSize="13" FontWeight="SemiBold">
-                                                <Button.Flyout>
-                                                    <Flyout Placement="BottomEdgeAlignedLeft">
-                                                        <StackPanel Spacing="8" Width="220">
-                                                            <ItemsControl ItemsSource="{x:Bind ViewModel.SectionToggles}">
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate x:DataType="vm:HomeSectionToggle">
-                                                                        <ToggleSwitch Header="{x:Bind DisplayName}" IsOn="{x:Bind IsVisible, Mode=TwoWay}"
-                                                                                      OnContent="" OffContent="" MinWidth="0" HorizontalAlignment="Stretch" />
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                        </StackPanel>
-                                                    </Flyout>
-                                                </Button.Flyout>
-                                            </Button>
-                                            <Button Content="Swap sides" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
-                                                    Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
-                                                    BorderThickness="0" FontSize="13" FontWeight="SemiBold"
-                                                    Command="{x:Bind ViewModel.SwapPanesCommand}"
-                                                    ToolTipService.ToolTip="Move the widgets to the other side of the page" />
-                                        </StackPanel>
-                                    </Flyout>
-                                </Button.Flyout>
-                            </Button>
-                        </Grid>
+                        <!-- Widget options (Sections, Swap sides): the ⋯ sits in the quick controls' header;
+                             this lone one stands in only while that card is hidden (same flyout). -->
+                        <Button views:WidgetGrid.FullRow="True" Content="&#xE712;" FontFamily="{ThemeResource SymbolThemeFontFamily}" HorizontalAlignment="Left" Padding="12,8" CornerRadius="16"
+                                Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                BorderThickness="0" FontSize="15" ToolTipService.ToolTip="Widget options"
+                                AutomationProperties.Name="Widget options"
+                                Visibility="{x:Bind ViewModel.ShowWidgetOptionsAlone, Mode=OneWay}">
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                    <StackPanel Spacing="8" Width="220">
+                                        <Button Content="Sections" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
+                                                Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                                BorderThickness="0" FontSize="13" FontWeight="SemiBold">
+                                            <Button.Flyout>
+                                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                                    <StackPanel Spacing="8" Width="220">
+                                                        <ItemsControl ItemsSource="{x:Bind ViewModel.SectionToggles}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:HomeSectionToggle">
+                                                                    <ToggleSwitch Header="{x:Bind DisplayName}" IsOn="{x:Bind IsVisible, Mode=TwoWay}"
+                                                                                  OnContent="" OffContent="" MinWidth="0" HorizontalAlignment="Stretch" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                        <Button Content="Swap sides" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
+                                                Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                                BorderThickness="0" FontSize="13" FontWeight="SemiBold"
+                                                Command="{x:Bind ViewModel.SwapPanesCommand}"
+                                                ToolTipService.ToolTip="Move the widgets to the other side of the page" />
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
 
                         <!-- All sections hidden guidance -->
                         <TextBlock views:WidgetGrid.FullRow="True" Text="All sections are hidden. Use Sections to bring them back."
@@ -201,6 +212,43 @@
                         <Border Style="{StaticResource FrostedCard}" Padding="14"
                                 Visibility="{x:Bind ViewModel.ShowQuickActions, Mode=OneWay}">
                             <StackPanel Spacing="10">
+                                <Grid>
+                                    <TextBlock Text="Quick controls" Style="{StaticResource TitleText}" FontSize="15" VerticalAlignment="Center" Margin="4,0,0,0" />
+                                    <Button Content="&#xE712;" FontFamily="{ThemeResource SymbolThemeFontFamily}" HorizontalAlignment="Right" Padding="10,4" CornerRadius="14"
+                                            Background="Transparent" Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                            BorderThickness="0" FontSize="15" ToolTipService.ToolTip="Widget options"
+                                            AutomationProperties.Name="Widget options">
+                                        <Button.Flyout>
+                                            <Flyout Placement="BottomEdgeAlignedRight">
+                                                <StackPanel Spacing="8" Width="220">
+                                                    <Button Content="Sections" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
+                                                            Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                                            BorderThickness="0" FontSize="13" FontWeight="SemiBold">
+                                                        <Button.Flyout>
+                                                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                                                <StackPanel Spacing="8" Width="220">
+                                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.SectionToggles}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate x:DataType="vm:HomeSectionToggle">
+                                                                                <ToggleSwitch Header="{x:Bind DisplayName}" IsOn="{x:Bind IsVisible, Mode=TwoWay}"
+                                                                                              OnContent="" OffContent="" MinWidth="0" HorizontalAlignment="Stretch" />
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </StackPanel>
+                                                            </Flyout>
+                                                        </Button.Flyout>
+                                                    </Button>
+                                                    <Button Content="Swap sides" HorizontalAlignment="Stretch" Padding="12,8" CornerRadius="16"
+                                                            Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
+                                                            BorderThickness="0" FontSize="13" FontWeight="SemiBold"
+                                                            Command="{x:Bind ViewModel.SwapPanesCommand}"
+                                                            ToolTipService.ToolTip="Move the widgets to the other side of the page" />
+                                                </StackPanel>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -241,9 +289,9 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <ToggleButton HorizontalAlignment="Stretch" CornerRadius="16,4,4,16" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind ViewModel.IsSoundNormal, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="normal" Content="Ring" />
-                                    <ToggleButton Grid.Column="1" HorizontalAlignment="Stretch" CornerRadius="4" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind ViewModel.IsSoundVibrate, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="vibrate" Content="Vibrate" />
-                                    <ToggleButton Grid.Column="2" HorizontalAlignment="Stretch" CornerRadius="4,16,16,4" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind ViewModel.IsSoundSilent, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="silent" Content="Silent" />
+                                    <ToggleButton HorizontalAlignment="Stretch" CornerRadius="16,4,4,16" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsSoundNormal, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="normal" Content="Ring" />
+                                    <ToggleButton Grid.Column="1" HorizontalAlignment="Stretch" CornerRadius="4" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsSoundVibrate, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="vibrate" Content="Vibrate" />
+                                    <ToggleButton Grid.Column="2" HorizontalAlignment="Stretch" CornerRadius="4,16,16,4" BorderThickness="0" FontSize="11" Padding="0,7" IsHitTestVisible="{x:Bind ViewModel.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsSoundSilent, Mode=OneWay}" Command="{x:Bind ViewModel.SetSoundCommand}" CommandParameter="silent" Content="Silent" />
                                 </Grid>
 
                                 <TextBlock Text="{x:Bind ViewModel.QuickActionMessage, Mode=OneWay}" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Visibility="{x:Bind ViewModel.HasQuickActionMessage, Mode=OneWay}" />
@@ -255,7 +303,8 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Media widget. -->
+                        <!-- Media widget: always there while the section is on (the owner: keep the music
+                             widget on Home); with nothing playing it says so and its buttons rest. -->
                         <Border Style="{StaticResource FrostedCard}" Padding="16,14"
                                 Visibility="{x:Bind ViewModel.ShowMediaWidget, Mode=OneWay}">
                             <StackPanel Spacing="10">
@@ -284,13 +333,13 @@
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.PreviousTrackCommand}" ToolTipService.ToolTip="Previous track">
+                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.PreviousTrackCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Previous track">
                                         <FontIcon Glyph="&#xE892;" FontSize="13" />
                                     </Button>
-                                    <Button Width="44" Height="44" Padding="0" CornerRadius="22" Background="{ThemeResource PrimaryBrush}" BorderThickness="0" Command="{x:Bind ViewModel.PlayPauseCommand}" ToolTipService.ToolTip="Play / pause">
+                                    <Button Width="44" Height="44" Padding="0" CornerRadius="22" Background="{ThemeResource PrimaryBrush}" BorderThickness="0" Command="{x:Bind ViewModel.PlayPauseCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Play / pause">
                                         <FontIcon Glyph="{x:Bind ViewModel.PlayPauseGlyph, Mode=OneWay}" FontSize="15" Foreground="{ThemeResource OnPrimaryBrush}" />
                                     </Button>
-                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.NextTrackCommand}" ToolTipService.ToolTip="Next track">
+                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.NextTrackCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Next track">
                                         <FontIcon Glyph="&#xE893;" FontSize="13" />
                                     </Button>
                                 </StackPanel>
@@ -437,11 +486,11 @@
 
                 <!-- Tab bar -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsNotificationsTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="notifications" Content="{x:Bind ViewModel.HeaderText, Mode=OneWay}" />
-                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsPhotosTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="photos" Content="Photos" />
-                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsMessagesTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="messages" Content="Messages" />
-                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsCallsTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="calls" Content="Calls" />
-                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" IsChecked="{x:Bind ViewModel.IsSharedTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="shared" Content="Shared" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsNotificationsTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="notifications" Content="{x:Bind ViewModel.HeaderText, Mode=OneWay}" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsPhotosTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="photos" Content="Photos" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsMessagesTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="messages" Content="Messages" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsCallsTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="calls" Content="Calls" />
+                    <ToggleButton MinWidth="0" Padding="16,8" CornerRadius="20" BorderThickness="0" FontSize="13" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind ViewModel.IsSharedTab, Mode=OneWay}" Command="{x:Bind ViewModel.SelectTabCommand}" CommandParameter="shared" Content="Shared" />
                 </StackPanel>
 
                 <!-- Tab content. Dimmed while showing the remembered copy (M02). -->
@@ -480,7 +529,7 @@
                         <Grid Grid.Row="1">
                             <StackPanel Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{x:Bind ViewModel.HasNoReceivedShares, Mode=OneWay}">
                                 <FontIcon Glyph="&#xE8A5;" FontSize="28" HorizontalAlignment="Center" Foreground="{ThemeResource OutlineBrush}" />
-                                <TextBlock Style="{StaticResource BodyText}" TextAlignment="Center" MaxWidth="380" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Text="Nothing shared from your phone yet. Use the phone's share sheet and pick Linc, or its Share tab." />
+                                <TextBlock Style="{StaticResource BodyText}" TextAlignment="Center" MaxWidth="380" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" Text="Nothing received from your phone yet. Files you share on the phone (its share sheet → Linc, or Linc's Share tab) land here; what you send from this PC is counted above." />
                             </StackPanel>
 
                             <ListView SelectionMode="None" ItemsSource="{x:Bind ViewModel.ReceivedShares}" Visibility="{x:Bind ViewModel.HasReceivedShares, Mode=OneWay}">
@@ -879,12 +928,14 @@
              when no phone has a tab (first run, or every tab closed) so pairing is never a dead end.
              RowSpan="2" added alongside the M9d-1 banner row so this still covers the full grid,
              not just the row the banner introduced. -->
+        <!-- Transparent: the app's own backdrop shows (the page's panes behind it are hidden by
+             HomePage.ApplyEmptyState), instead of the plain white panel the owner saw. -->
         <Border
             Grid.Row="0"
             Grid.RowSpan="3"
             Grid.Column="0"
             Grid.ColumnSpan="3"
-            Background="{ThemeResource SurfaceBrush}"
+            Background="Transparent"
             Visibility="{x:Bind ViewModel.HasNoVisibleDevice, Mode=OneWay}">
             <Border
                 Style="{StaticResource ExpressiveCard}"
@@ -903,13 +954,22 @@
                         TextWrapping="Wrap"
                         Foreground="{ThemeResource OnSurfaceVariantBrush}"
                         Text="Connect your phone to see its notifications, messages, photos and more here. Linc walks you through it — no files to copy, no commands to type." />
+                    <!-- The label and icon say their colour outright, and hover/press keep the filled
+                         look: the default hover state turned it into dark text on the dark fill. -->
                     <Button
                         Style="{StaticResource FilledButton}"
                         HorizontalAlignment="Center"
+                        AutomationProperties.Name="Pair a phone"
                         Click="OnPairPhone">
+                        <Button.Resources>
+                            <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="PrimaryBrush" />
+                            <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="PrimaryBrush" />
+                            <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="OnPrimaryBrush" />
+                            <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="OnPrimaryBrush" />
+                        </Button.Resources>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE710;" FontSize="15" Foreground="{ThemeResource OnPrimaryBrush}" />
-                            <TextBlock Text="Pair a phone" />
+                            <TextBlock Text="Pair a phone" Foreground="{ThemeResource OnPrimaryBrush}" />
                         </StackPanel>
                     </Button>
                 </StackPanel>

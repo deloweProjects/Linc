@@ -7,7 +7,7 @@
     xmlns:views="using:Linc.Desktop.Views">
 
     <ScrollViewer>
-        <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16" MaxWidth="980" HorizontalAlignment="Stretch">
+        <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
 
             <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
@@ -83,11 +83,12 @@
                     <DataTemplate x:DataType="vm:ClipGroupVm">
                         <StackPanel Spacing="2" Margin="0,8,0,0">
                             <TextBlock Text="{x:Bind Header}" Style="{StaticResource LabelText}" Foreground="{ThemeResource PrimaryBrush}" Margin="4,0,0,6" />
+                            <!-- No ItemContainerTransitions: an entrance animation per row made the first
+                                 load of a long history crawl (owner concerns §3). The rows arrive in
+                                 batches instead (ClipboardViewModel.RebuildAsync). -->
                             <ItemsControl ItemsSource="{x:Bind Items}">
                                 <ItemsControl.ItemContainerTransitions>
-                                    <TransitionCollection>
-                                        <AddDeleteThemeTransition />
-                                    </TransitionCollection>
+                                    <TransitionCollection />
                                 </ItemsControl.ItemContainerTransitions>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ClipRowVm">

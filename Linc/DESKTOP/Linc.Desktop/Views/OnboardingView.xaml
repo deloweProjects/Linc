@@ -6,9 +6,12 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:Linc.Desktop.ViewModels">
 
-    <Grid Background="{ThemeResource SurfaceBrush}">
-        <ScrollViewer Padding="32">
-            <StackPanel Spacing="24" MaxWidth="720" HorizontalAlignment="Left">
+    <!-- Transparent on purpose: the window's backdrop (Mica + the phone's wallpaper) shows, and
+         MainWindow hides the page frame while this is open. The card is centred in the page,
+         and the bottom padding keeps the end clear of the floating bar. -->
+    <Grid Background="Transparent">
+        <ScrollViewer Padding="32,32,32,96">
+            <StackPanel Spacing="24" MaxWidth="720" HorizontalAlignment="Stretch">
                 <TextBlock Text="Add a phone" Style="{StaticResource HeadlineText}" />
 
                 <Border Style="{StaticResource ExpressiveCard}" Padding="32">

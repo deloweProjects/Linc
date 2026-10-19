@@ -523,7 +523,7 @@ private fun shareAll(context: Context, files: List<ReceivedFile>) {
     }
 }
 
-/** One type for a mixed selection: all the same, the same family ("image/*"), or anything. */
+/** One type for a mixed selection: all the same, the same family (all images), or anything. */
 private fun commonMime(types: List<String>): String {
     val distinct = types.distinct()
     if (distinct.size == 1) return distinct[0]

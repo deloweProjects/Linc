@@ -8,8 +8,12 @@ namespace Linc.Desktop.Views;
 /// got better on Home, do it for all"). Window size classes as Material 3 uses them: under
 /// 600 px compact, under 840 medium, then expanded.
 /// <list type="bullet">
-/// <item><c>PageLayout.Adaptive</c> on a page's root: its padding tightens with its width
-/// (12 compact, 20 medium, the XAML's own value when there is room).</item>
+/// <item><c>PageLayout.Adaptive</c> on a page's content column: its padding tightens with its
+/// width (12 compact, 20 medium, the XAML's own value when there is room), and it is the page's
+/// one layout rule (the owner: "pages don't line up"): a column centred in the window, at most
+/// <see cref="ContentMaxWidth"/> wide (<c>PageLayout.MaxContentWidth</c> changes that for a page;
+/// 0 = no limit, for Home's dashboard). Pages put Adaptive on the element INSIDE their
+/// ScrollViewer, so the scroll bar stays at the window's edge.</item>
 /// <item><c>PageLayout.StackBelow</c> on a two-column Grid: under that width the second column
 /// moves below the first.</item>
 /// <item><c>PageLayout.HideBelow</c> on any element: collapsed while the window is narrower
@@ -20,7 +24,16 @@ public static class PageLayout
 {
     public const double Compact = 600, Medium = 840;
 
-    // ---- Adaptive padding ------------------------------------------------------------------
+    /// <summary>The widest a page's content column gets; wider windows centre it.</summary>
+    public const double ContentMaxWidth = 1200;
+
+    // ---- Adaptive padding + the centred column ---------------------------------------------
+
+    public static readonly DependencyProperty MaxContentWidthProperty =
+        DependencyProperty.RegisterAttached("MaxContentWidth", typeof(double), typeof(PageLayout), new PropertyMetadata(ContentMaxWidth));
+
+    public static double GetMaxContentWidth(DependencyObject o) => (double)o.GetValue(MaxContentWidthProperty);
+    public static void SetMaxContentWidth(DependencyObject o, double value) => o.SetValue(MaxContentWidthProperty, value);
 
     public static readonly DependencyProperty AdaptiveProperty =
         DependencyProperty.RegisterAttached("Adaptive", typeof(bool), typeof(PageLayout), new PropertyMetadata(false, OnAdaptiveChanged));
@@ -34,7 +47,21 @@ public static class PageLayout
     private static void OnAdaptiveChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not FrameworkElement element || e.NewValue is not true) return;
+        // Loading runs before the first layout pass, after every attribute is set (so the order
+        // of Adaptive and MaxContentWidth in the XAML doesn't matter).
+        element.Loading += (_, _) => ApplyColumn(element);
         element.SizeChanged += (_, args) => ApplyPadding(element, args.NewSize.Width);
+    }
+
+    /// <summary>
+    /// One rule for every page: stretched, but never wider than the column, so a wide window
+    /// centres it (a Stretch element held back by MaxWidth is centred in its slot).
+    /// </summary>
+    private static void ApplyColumn(FrameworkElement element)
+    {
+        var max = GetMaxContentWidth(element);
+        element.MaxWidth = max > 0 ? max : double.PositiveInfinity;
+        element.HorizontalAlignment = HorizontalAlignment.Stretch;
     }
 
     private static void ApplyPadding(FrameworkElement element, double width)

@@ -8,8 +8,8 @@ using Microsoft.UI.Dispatching;
 namespace Linc.Desktop.ViewModels;
 
 /// <summary>
-/// Cross-cutting shell state: tray text and the global error banner shown above
-/// whichever page is active. Also responsible for eagerly starting the background
+/// Cross-cutting shell state: tray text and the link notice (<see cref="LinkNotice"/>) that Home's
+/// phone card and the Device page's header show. Also responsible for eagerly starting the background
 /// sync services (clipboard, notifications) at app launch — these must run
 /// regardless of which page the user has open, so they can't wait for their
 /// page to be navigated to.
@@ -103,7 +103,13 @@ public partial class AppShellViewModel : ObservableObject
         _ = home;
 
         _supervisor.StateChanged += () => _dispatcher.TryEnqueue(OnLinkStateChanged);
-        _supervisor.ErrorRaised += message => _dispatcher.TryEnqueue(() => ErrorMessage = message);
+        _supervisor.ErrorRaised += message => _dispatcher.TryEnqueue(() => OnLinkMessage(message));
+        // A status snapshot is the link proving it works: an older complaint is spent.
+        _supervisor.StatusUpdated += _ => _dispatcher.TryEnqueue(OnHealthyStatus);
+        _lostTimer = _dispatcher.CreateTimer();
+        _lostTimer.Interval = LostGrace;
+        _lostTimer.IsRepeating = false;
+        _lostTimer.Tick += (_, _) => ShowPendingLost();
 
         // M12c-amend Part C: relay the non-wizard install-confirmation request to the UI thread —
         // it fires from PhoneSetupService's connect path (a background task), never the UI thread
@@ -235,9 +241,102 @@ public partial class AppShellViewModel : ObservableObject
         _dispatcher.TryEnqueue(() => UpdateProblem = "The update is downloaded. Close Linc, unzip it over this folder, and start it again.");
     }
 
+    /// <summary>The last link message as the supervisor said it. Nothing shows this as a banner
+    /// any more; <see cref="LinkNotice"/> is what the pages show.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
     public partial string? ErrorMessage { get; set; }
+
+    // ---- The link notice (owner concerns 2026-10-19, items 7 and 9) ----
+    //
+    // The full-width red banner is gone: every link message (lost, can't reach the companion app,
+    // the transport changed…) is one quiet line in the phone's own card on Home and under the
+    // phone's name on the Device page, with the full text as a tooltip. Two rules keep it honest:
+    // a lost connection is only said once the link has stayed down for LostGrace (most drops
+    // heal within a couple of seconds), and anything said is cleared the moment the link is
+    // Connected, or by the next status snapshot once it has been up for NoticeMinimum (the owner
+    // saw "Linc can't reach the companion app…" while connected for 5 m 32 s).
+
+    /// <summary>How long a drop must last before "Lost the connection" is shown.</summary>
+    private static readonly TimeSpan LostGrace = TimeSpan.FromSeconds(5);
+
+    /// <summary>A notice raised on a live link stays at least this long before a status clears it.</summary>
+    private static readonly TimeSpan NoticeMinimum = TimeSpan.FromSeconds(8);
+
+    private readonly DispatcherQueueTimer _lostTimer;
+    private string? _pendingLost;
+    private DateTimeOffset _noticeAtUtc;
+
+    /// <summary>The full link message, or null when there is nothing to say.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLinkNotice), nameof(LinkNoticeText), nameof(LinkNoticeGlyph))]
+    public partial string? LinkNotice { get; set; }
+
+    public bool HasLinkNotice => LinkNotice is not null;
+
+    /// <summary>The notice as one short line; the full text is the tooltip.</summary>
+    public string LinkNoticeText => Shorten(LinkNotice);
+
+    /// <summary>Warning for a lost link, info for the rest.</summary>
+    public string LinkNoticeGlyph => LinkNotice is { } m && IsLostMessage(m) ? "\uE7BA" : "\uE946";
+
+    private static bool IsLostMessage(string message) =>
+        message.StartsWith("Lost the connection", StringComparison.OrdinalIgnoreCase);
+
+    private void OnLinkMessage(string message)
+    {
+        ErrorMessage = message;
+        if (IsLostMessage(message))
+        {
+            // Said only if the link is still down LostGrace from now.
+            _pendingLost = message;
+            _lostTimer.Stop();
+            _lostTimer.Start();
+            return;
+        }
+        LinkNotice = message;
+        _noticeAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    private void ShowPendingLost()
+    {
+        if (_pendingLost is { } message && !IsConnected)
+        {
+            LinkNotice = message;
+            _noticeAtUtc = DateTimeOffset.UtcNow;
+        }
+        _pendingLost = null;
+    }
+
+    private void OnHealthyStatus()
+    {
+        if (IsConnected && LinkNotice is not null && DateTimeOffset.UtcNow - _noticeAtUtc >= NoticeMinimum)
+        {
+            ClearLinkNotice();
+        }
+    }
+
+    private void ClearLinkNotice()
+    {
+        _pendingLost = null;
+        _lostTimer.Stop();
+        LinkNotice = null;
+        ErrorMessage = null;
+    }
+
+    private static string Shorten(string? message)
+    {
+        if (message is null) return "";
+        if (IsLostMessage(message)) return "Connection lost — Linc reconnects by itself";
+        if (message.Contains("reach the companion app", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Can't reach the Linc app on the phone — open Linc there";
+        }
+        // Otherwise the first sentence, kept to one line's worth.
+        var cut = message.IndexOf(". ", StringComparison.Ordinal);
+        var line = cut > 0 ? message[..(cut + 1)] : message;
+        return line.Length > 96 ? line[..95].TrimEnd() + "…" : line;
+    }
 
     [ObservableProperty]
     public partial bool IsOnboarding { get; set; }
@@ -300,7 +399,7 @@ public partial class AppShellViewModel : ObservableObject
         TrayStateChanged?.Invoke(IsConnected);
         if (IsConnected)
         {
-            ErrorMessage = null;
+            ClearLinkNotice(); // back within the grace: the drop is never mentioned
         }
     }
 }

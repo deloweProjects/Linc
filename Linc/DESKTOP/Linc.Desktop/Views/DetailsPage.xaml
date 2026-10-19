@@ -6,13 +6,25 @@
     xmlns:views="using:Linc.Desktop.Views">
 
     <Grid views:PageLayout.Adaptive="True" Padding="32">
-        <StackPanel Spacing="16" MaxWidth="640" HorizontalAlignment="Left" VerticalAlignment="Top">
+        <StackPanel Spacing="16" VerticalAlignment="Top">
             <TextBlock Text="Details" Style="{StaticResource HeadlineText}" />
             <TextBlock views:Explain.IsHelp="True"
                 Style="{StaticResource BodyText}"
                 Text="A few fun (and occasionally useful) facts about your phone, live from the connection." />
 
-            <Border Style="{StaticResource ExpressiveCard}" Padding="20">
+            <!-- No phone yet (or nothing heard from it this run): say so, instead of rows of "—". -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20" Visibility="{x:Bind ViewModel.HasNoStats, Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                    <FontIcon Glyph="&#xE8EA;" FontSize="22" VerticalAlignment="Top" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Connect your phone to see these" Style="{StaticResource TitleText}" />
+                        <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                                   Text="CPU, memory, Wi-Fi and uptime come live from the phone once it's connected, and keep updating while it is." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20" Visibility="{x:Bind ViewModel.HasStats, Mode=OneWay}">
                 <Grid RowSpacing="16" ColumnSpacing="24">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />

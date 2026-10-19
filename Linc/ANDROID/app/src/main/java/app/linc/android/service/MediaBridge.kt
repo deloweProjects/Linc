@@ -108,6 +108,8 @@ class MediaBridge(private val context: Context) {
     }
 
     companion object {
+        private const val ART_SIZE_PX = 256
+
         /** The running bridge, so the notification listener can wake it when access arrives. */
         @Volatile var current: MediaBridge? = null
             private set
@@ -193,7 +195,4 @@ class MediaBridge(private val context: Context) {
         return id
     }
 
-    private companion object {
-        const val ART_SIZE_PX = 256
-    }
 }

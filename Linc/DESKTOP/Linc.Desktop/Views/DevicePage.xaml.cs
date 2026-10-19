@@ -18,6 +18,8 @@ public sealed partial class DevicePage : Page
     public HomeViewModel Home { get; }
     /// <summary>Screen time, wallpaper, colours and the phone's sound here (v28).</summary>
     public PhoneExtrasViewModel Extras { get; }
+    /// <summary>The link notice under the phone's name (replaces the red error line).</summary>
+    public AppShellViewModel Shell { get; }
 
     public DevicePage()
     {
@@ -29,7 +31,11 @@ public sealed partial class DevicePage : Page
         DisplayControl = App.Services.GetRequiredService<DisplayControlViewModel>();
         Home = App.Services.GetRequiredService<HomeViewModel>();
         Extras = App.Services.GetRequiredService<PhoneExtrasViewModel>();
+        Shell = App.Services.GetRequiredService<AppShellViewModel>();
         InitializeComponent();
+        // At least a screen tall, so "Link your phone" / "Looking for…" sit in the middle of the
+        // page instead of at its top (the content still scrolls when it is taller).
+        PageScroller.SizeChanged += (_, e) => Root.MinHeight = e.NewSize.Height;
         Loaded += (_, _) =>
         {
             if (!Extras.Supported) return;

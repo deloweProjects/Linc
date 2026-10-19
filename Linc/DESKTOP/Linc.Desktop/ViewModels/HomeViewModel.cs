@@ -511,6 +511,7 @@ RefreshGradient();
         }
         OnPropertyChanged(nameof(ShowPhone));
         OnPropertyChanged(nameof(ShowQuickActions));
+        OnPropertyChanged(nameof(ShowWidgetOptionsAlone));
         OnPropertyChanged(nameof(ShowApps));
         OnPropertyChanged(nameof(ShowMedia));
         OnPropertyChanged(nameof(ShowPhotos));
@@ -527,17 +528,24 @@ RefreshGradient();
     // Visibility properties bound by the cards in HomePage.xaml
     public bool ShowPhone => _registry.Home.IsVisible("phone");
     public bool ShowQuickActions => _registry.Home.IsVisible("quickactions");
+
+    /// <summary>The widget options (⋯) live in the quick controls' header; with that card hidden a
+    /// lone ⋯ stands in, so Sections is always reachable.</summary>
+    public bool ShowWidgetOptionsAlone => !ShowQuickActions;
     public bool ShowApps => _registry.Home.IsVisible("apps");
     public bool ShowMedia => _registry.Home.IsVisible("media");
     public bool ShowPhotos => _registry.Home.IsVisible("photos");
     public bool ShowShared => _registry.Home.IsVisible("shared");
     public bool ShowClipboard => _registry.Home.IsVisible("clipboard");
 
-    // Combined visibility: section enabled AND data available (for Media, Photos, Shared).
+    // Combined visibility: section enabled AND data available (for Photos, Shared).
     // Each is composed of two independent sources, so EVERY site that raises either half must
     // also raise the combined name — RefreshSections covers the layout half, and the data half is
     // raised alongside HasMedia / HasPhotos / HasReceivedShares (M6a regression, fixed in M6b).
-    public bool ShowMediaWidget => ShowMedia && HasMedia;
+    // Media is the exception since 2026-10-19 (the owner: keep the music widget on Home even when
+    // nothing plays): it shows whenever its section is on, saying "Nothing playing" with its
+    // buttons disabled (HasMedia) until something does.
+    public bool ShowMediaWidget => ShowMedia;
     public bool ShowPhotosWidget => ShowPhotos && HasPhotos;
     public bool ShowSharedWidget => ShowShared && HasReceivedShares;
 
@@ -1657,6 +1665,12 @@ RefreshGradient();
         OnPropertyChanged(nameof(IsSoundSilent));
     }
 
+    /// <summary>
+    /// Ring / Vibrate / Silent is one choice that always shows the phone's real mode. The buttons
+    /// never keep the state a click gave them (views:ChoiceButton reverts it); this re-raises all
+    /// three afterwards, success or not, so a refusal (no Do Not Disturb access on the phone)
+    /// leaves the mode the phone is really in selected — not every button that was clicked.
+    /// </summary>
     [RelayCommand]
     private async Task SetSoundAsync(string mode)
     {
@@ -1674,6 +1688,10 @@ RefreshGradient();
         catch (LincException ex)
         {
             QuickActionMessage = ex.Message;
+        }
+        finally
+        {
+            OnSoundModeChanged(SoundMode);
         }
     }
 
@@ -1925,7 +1943,7 @@ RefreshGradient();
         // Home shows the newest few; the Clipboard page has the whole history (D-083).
         foreach (var entry in _clipboard.History.Where(c => !c.Pinned).Take(5))
         {
-            Clips.Add(new ClipVm(entry, _clipboard, _connection));
+            Clips.Add(new ClipVm(entry with { Text = TextRepair.FixMojibake(entry.Text) }, _clipboard, _connection));
         }
         OnPropertyChanged(nameof(HasClips));
         OnPropertyChanged(nameof(HasNoClips));

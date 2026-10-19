@@ -15,6 +15,7 @@
     xmlns:vm="using:Linc.Desktop.ViewModels">
 
     <ScrollViewer
+        x:Name="PageScroller"
         VerticalScrollMode="Auto"
         VerticalScrollBarVisibility="Auto"
         HorizontalScrollMode="Disabled"
@@ -40,7 +41,7 @@
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
-        <Grid x:Name="Root" views:PageLayout.Adaptive="True" Padding="32" RowSpacing="20" MaxWidth="1280">
+        <Grid x:Name="Root" views:PageLayout.Adaptive="True" Padding="32" RowSpacing="20">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -67,12 +68,14 @@
             </Border>
 
             <!-- ================= Not connected ================= -->
+            <!-- Centred in the page both ways (DevicePage keeps Root at least the viewport's height),
+                 not stuck to the top of an empty page. -->
             <StackPanel
                 Grid.Row="1"
                 Spacing="16"
                 MaxWidth="560"
                 HorizontalAlignment="Center"
-                VerticalAlignment="Top"
+                VerticalAlignment="Center"
                 Visibility="{x:Bind ViewModel.ShowDisconnectedArea, Mode=OneWay}">
 
                 <!-- Searching for the paired phone -->
@@ -81,6 +84,13 @@
                         <StackPanel Orientation="Horizontal" Spacing="14">
                             <ProgressRing IsActive="True" Width="28" Height="28" />
                             <TextBlock Text="{x:Bind ViewModel.SearchingText, Mode=OneWay}" Style="{StaticResource TitleText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <!-- What the link last said (lost, can't reach the Linc app…), quietly. -->
+                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind Shell.HasLinkNotice, Mode=OneWay}"
+                                    ToolTipService.ToolTip="{x:Bind Shell.LinkNotice, Mode=OneWay}">
+                            <FontIcon Glyph="{x:Bind Shell.LinkNoticeGlyph, Mode=OneWay}" FontSize="13" VerticalAlignment="Top" Margin="0,2,0,0"
+                                      Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            <TextBlock Text="{x:Bind Shell.LinkNoticeText, Mode=OneWay}" Style="{StaticResource CaptionText}" MaxWidth="440" />
                         </StackPanel>
                         <TextBlock views:Explain.IsHelp="True" Style="{StaticResource BodyText}"
                                    Text="Linc connects by itself when the phone is on the same Wi-Fi with Wireless debugging on, or plugged in over USB." />
@@ -122,6 +132,7 @@
                         <TextBlock Style="{StaticResource BodyText}"
                                    Text="Or choose “Pair device with pairing code” on the phone and type the 6-digit code here:" />
                         <TextBlock Style="{StaticResource BodyText}" Text="{x:Bind ViewModel.PairingPhoneText, Mode=OneWay}" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasError, Mode=OneWay}" />
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <TextBox Style="{StaticResource ExpressiveTextBox}" Width="160" PlaceholderText="6-digit code" Text="{x:Bind ViewModel.PairingCode, Mode=TwoWay}" />
                             <Button Style="{StaticResource FilledButton}" Content="Pair" Command="{x:Bind ViewModel.PairWithCodeCommand}" IsEnabled="{x:Bind ViewModel.CanPairWithCode, Mode=OneWay}" />
@@ -175,6 +186,18 @@
                                     <Run Text=" · connected for " />
                                     <Run Text="{x:Bind ViewModel.ConnectedDurationText, Mode=OneWay}" />
                                 </TextBlock>
+                                <!-- The link's last message, small and not red; cleared once the link is
+                                     healthy (AppShellViewModel.LinkNotice). This replaced the red line
+                                     under the stat tiles, which kept a stale "can't reach the companion
+                                     app" for the whole session. -->
+                                <StackPanel Margin="0,4,0,0" Orientation="Horizontal" Spacing="8"
+                                            Visibility="{x:Bind Shell.HasLinkNotice, Mode=OneWay}"
+                                            ToolTipService.ToolTip="{x:Bind Shell.LinkNotice, Mode=OneWay}">
+                                    <FontIcon Glyph="{x:Bind Shell.LinkNoticeGlyph, Mode=OneWay}" FontSize="12" VerticalAlignment="Top" Margin="0,2,0,0"
+                                              Foreground="{ThemeResource OnPrimaryContainerBrush}" Opacity="0.8" />
+                                    <TextBlock Text="{x:Bind Shell.LinkNoticeText, Mode=OneWay}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{ThemeResource OnPrimaryContainerBrush}" Opacity="0.8" />
+                                </StackPanel>
                             </StackPanel>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <Button Style="{StaticResource FilledButton}" Command="{x:Bind Mirror.ToggleCommand}" IsEnabled="{x:Bind Mirror.CanMirror, Mode=OneWay}">
@@ -220,8 +243,6 @@
                                 </StackPanel>
                             </Border>
                         </Grid>
-                        <TextBlock Text="{x:Bind ViewModel.LastErrorMessage, Mode=OneWay}" Style="{StaticResource BodyText}" Foreground="{ThemeResource ErrorBrush}"
-                                   Visibility="{x:Bind ViewModel.HasLastError, Mode=OneWay}" />
                     </StackPanel>
                 </Border>
 
@@ -315,13 +336,13 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <ToggleButton HorizontalAlignment="Stretch" CornerRadius="20,6,6,20" BorderThickness="0" Padding="0,10"
-                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind Home.IsSoundNormal, Mode=OneWay}"
+                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundNormal, Mode=OneWay}"
                                                   Command="{x:Bind Home.SetSoundCommand}" CommandParameter="normal" Content="Ring" />
                                     <ToggleButton Grid.Column="1" HorizontalAlignment="Stretch" CornerRadius="6" BorderThickness="0" Padding="0,10"
-                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind Home.IsSoundVibrate, Mode=OneWay}"
+                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundVibrate, Mode=OneWay}"
                                                   Command="{x:Bind Home.SetSoundCommand}" CommandParameter="vibrate" Content="Vibrate" />
                                     <ToggleButton Grid.Column="2" HorizontalAlignment="Stretch" CornerRadius="6,20,20,6" BorderThickness="0" Padding="0,10"
-                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" IsChecked="{x:Bind Home.IsSoundSilent, Mode=OneWay}"
+                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundSilent, Mode=OneWay}"
                                                   Command="{x:Bind Home.SetSoundCommand}" CommandParameter="silent" Content="Silent" />
                                 </Grid>
                                 <TextBlock Text="{x:Bind Home.QuickActionMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Visibility="{x:Bind Home.HasQuickActionMessage, Mode=OneWay}" />
