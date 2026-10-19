@@ -503,11 +503,16 @@ class SocketServer(
                             )
                         })
                     }
-                    MessageType.CHANNEL_OPEN -> if (negotiated >= 9) {
+                    // Off this loop: dialling back can take seconds over Wi-Fi (a probe race,
+                    // then TLS), and while it ran here nothing else was read — the PC's status
+                    // probes went unanswered and it dropped the whole link ("keeps
+                    // disconnecting"). The reply still carries replyTo, so order doesn't matter.
+                    MessageType.CHANNEL_OPEN -> if (negotiated >= 9) scope.launch(Dispatchers.IO) {
                         val channel = (message.payload["channel"] as? JsonPrimitive)?.intOrNull
                         val opened = channel != null && sessionToken != null &&
-                            onChannelOpen(channel, sessionToken)
-                        send(if (opened) {
+                            runCatching { onChannelOpen(channel, sessionToken) }.getOrDefault(false)
+                        if (!opened) LogStore.log(LogLevel.WARN, "Channel $channel: couldn't dial back to the PC on any route")
+                        runCatching { send(if (opened) {
                             Envelope(type = MessageType.OK, replyTo = message.id)
                         } else {
                             Envelope(
@@ -518,7 +523,7 @@ class SocketServer(
                                     put("message", "The phone couldn't open that channel back to the PC.")
                                 },
                             )
-                        })
+                        }) }
                     }
                     MessageType.PHOTOS_RECENT -> if (negotiated >= 10) {
                         val limit = (message.payload["limit"] as? JsonPrimitive)?.intOrNull ?: 20
