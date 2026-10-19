@@ -162,6 +162,32 @@ Also seen in the same screenshots (fix with the above):
     on the right edge. Also a small grab handle on the right screen edge, and swipe-from-right to
     open. Keep the UI test's "Control menu" label (android.py taps it) or update the test.
 
+## 9. PC Home: no red bar; phone app gets an optional frosted-wallpaper background
+
+> "I said remove that red bar and put that error showing whatever on the section with mirror
+> phone, also phone app too dark or white to me, add blurred frosted wallpaper as its background
+> but as a setting that is normally off"
+
+- **The owner already asked for this once** — the full-width red banner ("Lost the connection to
+  your phone…") across the top of PC Home must go. Every link message (lost, connecting, can't
+  reach the companion app, last synced at …) shows inside the frosted phone card, next to
+  "Connecting…" and the Mirror phone button, with an icon and a short line; the details go in a
+  tooltip / the connection details. Find every place that sets that banner (Home and Device) and
+  route it to the card. Same for the Device page's red line (item 7).
+- **Phone app background**: a Settings switch, **off by default**, "Wallpaper background": the
+  phone's own wallpaper, blurred and frosted (scrim toned for light/dark), behind every screen;
+  cards become slightly translucent over it. Off = today's plain surface. Needs the wallpaper
+  read on the phone (`WallpaperProvider.kt` already reads it for the PC) and `RenderEffect` blur
+  (Android 12+; on older, a pre-blurred downscaled bitmap).
+
+Also in that screenshot (PC Home, disconnected):
+- Clipboard rows show mojibake: "Linc PC log â€" 2026-…" — an em dash decoded as Windows-1252
+  somewhere (phone → PC clipboard or the history store). Find it and read/write UTF-8.
+- The Shared tab says "Nothing shared from your phone yet" right under "Sent 9 of 9 to your
+  phone" — the empty text should be about what was received, and say both directions plainly.
+- The ⋯ button floats alone above the quick-controls card; a big empty area under Clipboard.
+- The phone card shows "—" for battery and Wi-Fi while offline; show the last known values greyed.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
