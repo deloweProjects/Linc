@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI screenshots of the real PC app with a fake phone (ui-test.yml). Not a harness the
+       build runs: it needs the published app and a desktop session to draw on. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-uishots</AssemblyName>
+    <RootNamespace>Linc.UiShots</RootNamespace>
+    <!-- System.Drawing for the screenshots, UIAutomationClient (WPF's) to press the app's buttons. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>
