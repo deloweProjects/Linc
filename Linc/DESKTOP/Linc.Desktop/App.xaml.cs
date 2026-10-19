@@ -128,6 +128,7 @@ public partial class App : Application
             .AddSingleton<IHotspotLinkService, HotspotLinkService>()
             .AddSingleton<IShareService, ShareService>()
             .AddSingleton<PcBluetoothAudio>()
+            .AddSingleton<PhoneSoundOnPc>()
             .AddSingleton<SyncRemote>()
             .AddSingleton<PcToolsService>()
             .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()

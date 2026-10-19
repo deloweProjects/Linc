@@ -89,7 +89,11 @@ object SyncedAudio {
         streaming = true
         runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
         LogStore.log(LogLevel.INFO, "Play everywhere: the PC's sound is arriving (${sampleRate} Hz, in step)")
-        AudioEverywhere.context()?.let { PcPlaybackSession.start(it) }
+        // Showing Linc as a media player is a courtesy: if it fails, the sound must still play.
+        AudioEverywhere.context()?.let { context ->
+            runCatching { PcPlaybackSession.start(context) }
+                .onFailure { LogStore.log(LogLevel.WARN, "Play everywhere: couldn't show the PC's sound in the media controls (${it.javaClass.simpleName}: ${it.message})") }
+        }
         AudioEverywhere.onStreamChanged()
 
         val prober = thread(name = "linc-everywhere-clock", isDaemon = true) { probe(output) }
@@ -135,7 +139,7 @@ object SyncedAudio {
             runCatching { codec.release() }
             synchronized(outputs) { outputs.values.toList().also { outputs.clear() } }.forEach { it.close() }
             LogStore.log(LogLevel.INFO, "Play everywhere: the PC's sound stopped")
-            AudioEverywhere.context()?.let { PcPlaybackSession.stop(it) }
+            AudioEverywhere.context()?.let { context -> runCatching { PcPlaybackSession.stop(context) } }
             AudioEverywhere.onStreamChanged()
         }
     }

@@ -208,8 +208,8 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                                 Text(if (on) "Playing everywhere" else "Every speaker at once", style = MaterialTheme.typography.titleMedium)
                                 Text(
                                     when {
-                                        bt.on -> "This phone's sound plays on the PC, with the PC as its Bluetooth speaker. Nothing is recorded."
-                                        bt.busy -> "Connecting to the PC over Bluetooth…"
+                                        bt.on -> "This phone's sound plays on the PC too, the way the mirror carries it. Nothing is recorded."
+                                        bt.busy -> "Bringing this phone's sound to the PC…"
                                         phone.on -> "This phone's sound, on the speakers below, in step with ${phone.nativeName}."
                                         state.on -> "The PC's sound, on the speakers below, together."
                                         else -> "PC speakers, Bluetooth and this phone play the same sound at the same moment."
@@ -330,10 +330,10 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                         SettingsRow(
                             title = "This phone's sound on the PC", segment = seg, icon = LincSymbols.Speaker,
                             supporting = when {
-                                bt.busy -> "Connecting over Bluetooth…"
-                                bt.on -> "On: the PC is this phone's Bluetooth speaker${bt.device?.let { " ($it)" } ?: ""}. Pick another output here to move the sound back."
+                                bt.busy -> "Starting…"
+                                bt.on -> "On: this phone's sound plays on the PC and here too."
                                 !bt.supported -> "This PC's Windows can't be a Bluetooth speaker (it needs Windows 10 version 2004 or later)."
-                                else -> "Music and videos play on the PC's speakers, the way a Bluetooth speaker does it. Nothing is recorded."
+                                else -> "Music and videos play on the PC's speakers as well, the way Mirror screen carries the sound. Nothing is recorded."
                             },
                             supportingKind = if (!bt.supported) Explanations.Kind.Blocked else Explanations.Kind.Helper,
                             enabled = bt.supported && !bt.busy,
@@ -387,7 +387,9 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                         }) { Text("Open Bluetooth") }
                     }
                     "unsupported" -> {}
-                    else -> HelperText("The PC couldn't connect to this phone over Bluetooth (${bt.error}). Check Bluetooth is on on both, then try again.",
+                    "needs-android-13" -> HelperText("Playing on the PC and the phone at once needs Android 13 or later.",
+                        kind = Explanations.Kind.Error, modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 4.dp))
+                    else -> HelperText("The PC couldn't play this phone's sound (${bt.error}). Plug in the cable or turn on Wireless debugging, then try again.",
                         kind = Explanations.Kind.Error, modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 4.dp))
                 }
             }

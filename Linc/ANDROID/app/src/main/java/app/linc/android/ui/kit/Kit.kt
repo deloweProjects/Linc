@@ -162,8 +162,8 @@ fun LincScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    // Inside Control, the ⋮ that opens its menu: last at the top right, on the side the menu
-    // slides in from.
+    // Inside Control, the "Pages" button that opens its side panel: last at the top right, on
+    // the side the panel slides in from.
     val toolsMenu = app.linc.android.ui.LocalToolsMenu.current
     val navigation: @Composable () -> Unit = {
         if (onBack != null) {
@@ -180,7 +180,20 @@ fun LincScaffold(
             }
         }
         if (toolsMenu != null) {
-            IconButton(onClick = toolsMenu) { Icon(LincSymbols.MoreVert, contentDescription = "Control menu") }
+            // Says what it opens: "☰ Pages", not a ⋮ that reads as "more options" (the owner:
+            // "3 dot doesn't let user know there's a side panel").
+            Surface(
+                onClick = toolsMenu,
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "Control menu" },
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(LincSymbols.MenuOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Pages", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 6.dp))
+                }
+            }
         }
     }
     Scaffold(

@@ -91,6 +91,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
     val sms = remember(tick) { SmsProvider.canRead(context) }
     val calls = remember(tick) { CallProvider.canReadLog(context) }
     val allFiles = remember(tick) { Environment.isExternalStorageManager() }
+    val wallpaperBackground by app.linc.android.ui.theme.WallpaperBackground.flow(context).collectAsState()
 
     LincScaffold(title = "Settings", onBack = onBack) { inner ->
         val notify = rememberNotify()
@@ -189,6 +190,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                     { s -> SettingsRow("Show explanations", s, LincSymbols.Info,
                         supporting = "The short lines that explain each setting. Warnings and errors always show.",
                         trailing = { Switch(explanations, { Explanations.set(context, it) }) }) },
+                    { s -> SettingsRow("Wallpaper background", s, LincSymbols.Wallpaper,
+                        supporting = if (allFiles) "Your wallpaper, blurred and frosted, behind every screen."
+                            else "Your wallpaper, blurred, behind every screen. Needs All files access (above) to read it.",
+                        trailing = { Switch(wallpaperBackground == true, { app.linc.android.ui.theme.WallpaperBackground.set(context, it) }) }) },
                 ))
             }
 

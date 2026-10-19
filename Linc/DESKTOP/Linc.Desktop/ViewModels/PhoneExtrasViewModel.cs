@@ -39,9 +39,9 @@ public sealed partial class PhoneExtrasViewModel : ObservableObject
     private readonly ILogService _log;
     private readonly DispatcherQueue _dispatcher;
     private readonly AdbClient _adb = new();
-    private readonly PcBluetoothAudio _bluetooth;
+    private readonly PhoneSoundOnPc _bluetooth;
 
-    public PhoneExtrasViewModel(IConnectionManager connection, ILogService log, PcBluetoothAudio bluetooth)
+    public PhoneExtrasViewModel(IConnectionManager connection, ILogService log, PhoneSoundOnPc bluetooth)
     {
         _connection = connection;
         _log = log;
@@ -231,13 +231,13 @@ public sealed partial class PhoneExtrasViewModel : ObservableObject
 
     // ---- the phone's sound here ----------------------------------------------------------------
 
-    // Over Bluetooth, with this PC as the phone's Bluetooth speaker: nothing is recorded on the
-    // phone and nothing asks there (the recording route this replaced did, every time).
+    // The mirror's own sound with no picture (scrcpy --audio-dup): the phone keeps playing and
+    // this PC plays along; Bluetooth only when there's no USB or wireless-debugging link.
 
     [RelayCommand]
     private async Task PhoneSoundStartAsync()
     {
-        Message = "Connecting to the phone over Bluetooth…";
+        Message = "Bringing the phone's sound to this PC…";
         var names = new List<string>();
         if (_connection.Current?.Model is { } model) names.Add(model);
         await _bluetooth.SetAsync(true, names);
@@ -253,7 +253,8 @@ public sealed partial class PhoneExtrasViewModel : ObservableObject
 
     private string BluetoothMessage() => _bluetooth.Error switch
     {
-        null when _bluetooth.IsOn => $"{_bluetooth.Device} plays on this PC now, as on a Bluetooth speaker. On the phone, \"{Environment.MachineName}\" is its sound output; pick another there to move the sound back.",
+        null when _bluetooth.IsOn => $"{_bluetooth.Device}'s sound plays on this PC now, and on the phone too.",
+        "needs-android-13" => "Playing the phone's sound here and on the phone at once needs Android 13 or later.",
         "not-paired" => "Pair the phone with this PC over Bluetooth once first: Windows Settings › Bluetooth & devices › Add device, with the phone's Bluetooth settings open. Then press Play here again.",
         "unsupported" => "This version of Windows can't be a Bluetooth speaker (it needs Windows 10 version 2004 or later).",
         { } error => $"Windows couldn't connect to the phone over Bluetooth ({error}). Check Bluetooth is on on both, then try again.",

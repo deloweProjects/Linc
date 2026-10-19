@@ -51,10 +51,14 @@ fun LincTheme(
 ) {
     val context = LocalContext.current
     val showExplanations by Explanations.flow(context).collectAsState(initial = Explanations.get(context))
+    val wallpaper by WallpaperBackground.flow(context).collectAsState()
+    val scheme = lincColorScheme(darkTheme)
     MaterialExpressiveTheme(
-        colorScheme = lincColorScheme(darkTheme),
+        colorScheme = if (wallpaper == true) scheme.frosted(darkTheme) else scheme,
         motionScheme = MotionScheme.expressive(),
     ) {
-        CompositionLocalProvider(LocalShowExplanations provides showExplanations, content = content)
+        CompositionLocalProvider(LocalShowExplanations provides showExplanations) {
+            if (wallpaper == true) WallpaperBackdrop(darkTheme, scheme.surface, content) else content()
+        }
     }
 }

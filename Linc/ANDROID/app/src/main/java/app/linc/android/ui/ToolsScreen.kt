@@ -77,8 +77,8 @@ object ToolsNav {
 }
 
 /**
- * Tools: each page — Remote, Sound, PC, Files, Terminal — fills the screen, and a side bar of
- * them slides in from the left when the ⋮ at the top of the page is tapped.
+ * Tools: each page — Remote, Sound, PC, Files, Sync, Terminal — fills the screen, and a side
+ * panel of them slides in from the right from the "Pages" button at the top or the edge handle.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -108,7 +108,18 @@ fun ToolsScreen(onSettings: (() -> Unit)?, onBack: (() -> Unit)? = null, onMirro
                 }
             }
         }
-        // The menu, over the page from the right (where its ⋮ is), with a scrim that closes it.
+        // A grab handle on the right edge says the pages panel is there; tap it to open.
+        if (!open) {
+            Box(
+                Modifier.align(Alignment.CenterEnd).size(width = 20.dp, height = 72.dp)
+                    .clickable(onClickLabel = "Open the pages panel") { open = true },
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Box(Modifier.padding(end = 3.dp).size(width = 5.dp, height = 44.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.outlineVariant))
+            }
+        }
+        // The panel, over the page from the right (where its "Pages" button is), with a scrim that closes it.
         AnimatedVisibility(visible = open, enter = fadeIn(), exit = fadeOut()) {
             Box(
                 Modifier.fillMaxSize()
@@ -167,14 +178,14 @@ private fun ToolsRail(
                 onClick = onMirror,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(start = if (expanded) 16.dp else 0.dp, top = 4.dp, bottom = 12.dp)
-                    .then(if (expanded) Modifier.height(56.dp) else Modifier.size(56.dp)),
+                modifier = Modifier.padding(start = if (expanded) 12.dp else 0.dp, top = 4.dp, bottom = 8.dp)
+                    .then(if (expanded) Modifier.height(48.dp) else Modifier.size(56.dp)),
                 shape = RoundedCornerShape(16.dp),
             ) {
-                Row(Modifier.padding(horizontal = if (expanded) 16.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = if (expanded) 14.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(LincSymbols.ScreenShare, contentDescription = "Mirror the PC")
                     if (expanded) {
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(10.dp))
                         Text("Mirror PC", style = MaterialTheme.typography.labelLarge)
                     }
                 }
@@ -191,9 +202,9 @@ private fun RailItem(page: ToolPage, selected: Boolean, expanded: Boolean, onCli
     val content = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     if (expanded) {
         Row(
-            Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(56.dp).clip(CircleShape).background(indicator)
+            Modifier.padding(horizontal = 8.dp).fillMaxWidth().height(48.dp).clip(CircleShape).background(indicator)
                 .clickable(role = Role.Tab, onClick = onClick).semantics { this.selected = selected }
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(page.icon, contentDescription = null, tint = content)
@@ -220,4 +231,4 @@ private fun RailItem(page: ToolPage, selected: Boolean, expanded: Boolean, onCli
 }
 
 private val RAIL_COLLAPSED: Dp = 80.dp
-private val RAIL_EXPANDED: Dp = 240.dp
+private val RAIL_EXPANDED: Dp = 184.dp

@@ -253,8 +253,8 @@ object PcTools {
             error = p.str("error"),
         )
         LogStore.log(LogLevel.INFO, when {
-            p.bool("on") -> "Phone sound: plays on the PC over Bluetooth"
-            p.str("error") != null -> "Phone sound: the PC couldn't connect over Bluetooth (${p.str("error")})"
+            p.bool("on") -> "Phone sound: plays on the PC too"
+            p.str("error") != null -> "Phone sound: the PC couldn't play it (${p.str("error")})"
             else -> "Phone sound: not playing on the PC"
         })
     }

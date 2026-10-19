@@ -58,12 +58,15 @@ object PcPlaybackSession {
             .also { audio?.requestAudioFocus(it) }
 
         session = MediaSession(app, "LincPc").apply {
+            // On the main looper: start() runs on the sound channel's thread, which has none, and
+            // setCallback without a handler threw there — before the sound loop, so the channel
+            // closed ~100 ms in with nothing logged and the page said "Aligning…" for ever.
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() = PcMediaControl.send("play")
                 override fun onPause() = PcMediaControl.send("pause")
                 override fun onSkipToNext() = PcMediaControl.send("next")
                 override fun onSkipToPrevious() = PcMediaControl.send("prev")
-            })
+            }, android.os.Handler(android.os.Looper.getMainLooper()))
             isActive = true
         }
         // Follow what the PC says it is playing.

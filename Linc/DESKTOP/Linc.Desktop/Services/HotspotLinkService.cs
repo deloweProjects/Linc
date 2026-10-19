@@ -440,7 +440,15 @@ public sealed class HotspotLinkService(
         {
             return; // nothing paired: there would be no way to recognise what answered
         }
-        var guess = HotspotAddress.SelectEndpoint(peer, null, HotspotInterfaces.Enumerate());
+        // Only a guess when the phone really is this PC's gateway (the PC on the phone's hotspot).
+        // On a USB or home Wi-Fi link the only candidate left was the PC's own default gateway
+        // — the home router — and every connect went to 192.168.2.1:5555 and was refused.
+        var interfaces = HotspotInterfaces.Enumerate();
+        if (peer is null || !HotspotAddress.IsHotspotShaped(peer, interfaces))
+        {
+            return;
+        }
+        var guess = HotspotAddress.SelectEndpoint(peer, null, interfaces);
         if (guess is null || _race.IsSettled)
         {
             return;

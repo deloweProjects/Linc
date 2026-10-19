@@ -15,7 +15,7 @@ namespace Linc.Desktop.Services;
 /// <para>The phone is the PC's own paired, trusted device — it already drives the mouse and
 /// keyboard — so these act as the signed-in user, with nothing elevated. Every action is logged.</para>
 /// </summary>
-public sealed class PcToolsService(IConnectionManager connection, ILogService log, PcBluetoothAudio bluetooth)
+public sealed class PcToolsService(IConnectionManager connection, ILogService log, PhoneSoundOnPc bluetooth)
 {
     public const int TerminalChannel = 9;
     public const int FilesChannel = 10;

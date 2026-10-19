@@ -59,6 +59,7 @@ public sealed class PcSpeakerMode(ILogService log)
                 }
             }
             _restoreRenderId = current;
+            PcControlService.HeardOutputId = current == cable ? null : current;
             log.Log(LogLevel.Info, "Speaker mode: this PC's sound now plays on the phone");
             return null;
         }
@@ -72,6 +73,7 @@ public sealed class PcSpeakerMode(ILogService log)
         {
             restore = _restoreRenderId;
             _restoreRenderId = null;
+            PcControlService.HeardOutputId = null;
         }
         if (restore is null) return;
         if (!PcVoiceAccess.SetDefaultEndpoint(restore))
