@@ -59,6 +59,27 @@ The owner's words, then what is known and what to do. Do not start new features 
   show the first screenful then the rest, and drop the per-row entrance transition on first load.
   Compare with the UI test's `04-page-clipboard.png` timing.
 
+## 4. Phone Terminal: long output breaks up; make it read like Termux
+
+> (screenshot of `tree` in cmd, lines split across rows) "this screen should make sure it doesn't
+> break like this n user can see properly like how termux does"
+
+- How it works now (v27, channel 9): `ui/TerminalScreen.kt` measures cols/rows from the screen and
+  the cell size, opens with `PcTools.openTerminal(shell, cols, rows)` and sends a resize (frame
+  type 2, two big-endian int16) when they change; desktop `Services/PcTerminal.cs` runs a real
+  ConPTY at that size (`CreatePseudoConsole` / `ResizePseudoConsole`); the phone parses the
+  output in `service/TerminalEmulator.kt`.
+- So the PC already wraps at the phone's width; what breaks is the rest:
+  - **No reflow on resize**: `TerminalEmulator.Line.resize` only cuts or pads, so lines drawn
+    before the keyboard or rotation changed the size stay broken. Termux re-wraps (reflows)
+    wrapped lines. Track "this row continues the next" (soft wrap) and reflow scrollback.
+  - **Keyboard open/close shouldn't change cols**: only rows; check nothing else nudges width.
+  - **Too few columns for real output** (~40 on a phone): add pinch-to-zoom font size like Termux,
+    which changes cols and resizes the ConPTY; remember the size.
+  - Check box-drawing and wide (CJK/emoji) characters take the right number of cells.
+- **Do:** reproduce with the UI test's fake PC (send a `tree`-like long-line output on channel 9),
+  then fix reflow, then pinch-zoom. Write the channel-9 frame format into PROTOCOL.md if missing.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
