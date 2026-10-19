@@ -124,8 +124,10 @@ object SyncedAudio {
                     codec.releaseOutputBuffer(out, false)
                 }
             }
-        } catch (_: Exception) {
-            // The channel closed or the decoder faulted: the sound has ended either way.
+        } catch (e: Exception) {
+            // The channel closed or the decoder faulted: the sound has ended either way. Which
+            // one goes in the log: the PC sees its end cut ~1 s in and needs the phone's side.
+            LogStore.log(LogLevel.INFO, "Play everywhere: the PC's sound channel ended (${e.javaClass.simpleName}: ${e.message})")
         } finally {
             streaming = false
             prober.interrupt()

@@ -59,6 +59,7 @@ public sealed class PcAudioStreamer : IDisposable
     private readonly Thread? _clockReader;
     private readonly object _writeLock = new();
     private readonly AudioStreamOptions _options;
+    private readonly DateTime _startedUtc = DateTime.UtcNow;
     private readonly Queue<long> _blockTimes = new(); // capture time of each block handed to the encoder, oldest first
     private bool _disposed;
 
@@ -267,7 +268,10 @@ public sealed class PcAudioStreamer : IDisposable
         catch (ObjectDisposedException) { }
         catch (Exception ex)
         {
-            if (!token.IsCancellationRequested) Ended?.Invoke(ex.Message);
+            // Which socket error, and how long in: "aborted by the software in your host
+            // machine" a second after every start is the field report this has to explain.
+            var code = (ex.InnerException as System.Net.Sockets.SocketException)?.SocketErrorCode.ToString() ?? ex.GetType().Name;
+            if (!token.IsCancellationRequested) Ended?.Invoke($"{ex.Message} [{code}, writing, {(DateTime.UtcNow - _startedUtc).TotalMilliseconds:0} ms in]");
         }
     }
 
@@ -289,7 +293,11 @@ public sealed class PcAudioStreamer : IDisposable
                 while (read < probe.Length)
                 {
                     int n = _channel.Read(probe, read, probe.Length - read);
-                    if (n == 0) return; // the phone closed its side
+                    if (n == 0)
+                    {
+                        _log.Log(LogLevel.Info, $"Play everywhere: the phone closed the sound channel ({(DateTime.UtcNow - _startedUtc).TotalMilliseconds:0} ms in)");
+                        return; // the phone closed its side
+                    }
                     read += n;
                 }
                 long arrived = PcClock.NowUs();
@@ -312,7 +320,7 @@ public sealed class PcAudioStreamer : IDisposable
         catch (Exception ex)
         {
             // The writer notices a dead channel too; this only says why the clock stopped.
-            _log.Log(LogLevel.Info, $"Play everywhere: the phone's clock probes stopped ({ex.Message})");
+            _log.Log(LogLevel.Info, $"Play everywhere: the phone's clock probes stopped ({ex.GetType().Name}: {ex.Message}, {(DateTime.UtcNow - _startedUtc).TotalMilliseconds:0} ms in)");
         }
     }
 

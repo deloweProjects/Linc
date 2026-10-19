@@ -30,8 +30,36 @@ public partial class LogsViewModel : ObservableObject
         Rebuild();
     }
 
+    /// <summary>
+    /// Clear empties the list AND what Copy log copies: Copy reads the files on disk, so it used to
+    /// hand over two days of everything right after a Clear (the owner: "clear log clears
+    /// nothing"). The moment is kept in a small file next to the logs, so it outlives a restart;
+    /// the log files themselves are left alone.
+    /// </summary>
     [RelayCommand]
-    private void Clear() => _log.Clear();
+    private void Clear()
+    {
+        _log.Clear();
+        try
+        {
+            Directory.CreateDirectory(_log.LogFolderPath);
+            File.WriteAllText(ClearedMarkerPath, DateTimeOffset.Now.ToString("O"));
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private string ClearedMarkerPath => Path.Combine(_log.LogFolderPath, "cleared-at.txt");
+
+    private DateTimeOffset? ClearedAt()
+    {
+        try
+        {
+            return File.Exists(ClearedMarkerPath) && DateTimeOffset.TryParse(File.ReadAllText(ClearedMarkerPath).Trim(), out var at) ? at : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
 
     /// <summary>
     /// A plain-text report someone else can read: this PC and Linc's version, then the last two
@@ -48,6 +76,7 @@ public partial class LogsViewModel : ObservableObject
         foreach (var line in PcVideoEncoder.Describe()) text.AppendLine(line);
         text.AppendLine();
         bool fromDisk = false;
+        var clearedAt = ClearedAt();
         foreach (var day in new[] { DateTime.Now.AddDays(-1), DateTime.Now })
         {
             var path = Path.Combine(_log.LogFolderPath, $"linc-{day:yyyy-MM-dd}.ndjson");
@@ -59,6 +88,7 @@ public partial class LogsViewModel : ObservableObject
                 try
                 {
                     var node = System.Text.Json.Nodes.JsonNode.Parse(line);
+                    if (clearedAt is { } since && DateTimeOffset.TryParse((string?)node?["Timestamp"], out var at) && at < since) continue;
                     var level = (int?)node?["Level"] ?? 0;
                     text.AppendLine($"{(string?)node?["Timestamp"]} {((LogLevel)level).ToString().ToUpperInvariant(),-5} {(string?)node?["Message"]}");
                 }
