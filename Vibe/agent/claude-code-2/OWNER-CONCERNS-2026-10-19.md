@@ -113,6 +113,40 @@ The owner's words, then what is known and what to do. Do not start new features 
     **Delete**.
   - Ask the owner if "send" means back to the PC, to another app, or both — default to both.
 
+## 7. PC app look and behaviour (owner's 8 screenshots, maximised 1920×1080, light theme)
+
+The owner asked for (their words, then the ask):
+- "changed to dark n bro the blur to strong" — the backdrop blur is far too strong (and check
+  whether the theme switches to dark by itself; ask if unclear).
+- **Maximised background**: the phone's portrait wallpaper in the centre, a *light* blur, and
+  ambient colours from the wallpaper (its dynamic palette) filling the sides, semi-colourful,
+  toned for light or dark theme. Not a flat wash.
+- **Now playing**: the phone plays music and the PC Device page says "Nothing playing". Wait for
+  the owner's logs; check `media.state` reaches the PC and the Device page's binding.
+- **Floating dock**: the band of page cut off above the dock is far too tall (pages stop ~100 px
+  above it). Shrink it to the dock's height plus a small gap. Make the dock aware of the Windows
+  taskbar: when an auto-hide taskbar shows (or the window is under it), lift the dock so nothing
+  is covered (`SHAppBarMessage(ABM_GETTASKBARPOS / ABM_GETSTATE)` + the window's work area).
+- **Device page red error stays too long**: "Linc can't reach the companion app…" was still shown
+  while connected 5m32s. Clear it on the next good message/reconnect, or time it out.
+- **Home stage** (clock + wallpaper) a bit bigger.
+- **Music widget always on Home**, even when nothing plays (fills the empty space; shows the last
+  track or "Nothing playing" with play controls).
+
+Also seen in the same screenshots (fix with the above):
+- **Pages don't line up**: Settings and Details hug the left, Share is centred, Clipboard and
+  Device are pushed right with an empty ~380–700 px column on the left. One layout rule for all
+  pages (centred column with a max width, or full width), checked at 1920 and 1280.
+- **Home with no phone**: a plain white panel fills the page (no backdrop) and the "Pair a phone"
+  button's text is dark on black — unreadable.
+- **Add a phone**: plain white, no app backdrop, card stuck to the left, no dock.
+- **Device with no phone**: "Link your phone" card floats at the top right over an empty page.
+- **Details**: two small cards on the left, values "—" with no hint why; the rest empty.
+- **Settings**: cards stop at half width with the switches mid-card; "Notification history" has
+  a switch with no label.
+- Add these states to the UI test (no phone; maximised 1920×1080; Add a phone; dark theme) so
+  they're checked before every build.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
