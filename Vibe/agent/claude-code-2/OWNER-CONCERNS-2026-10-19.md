@@ -228,6 +228,23 @@ Timeline in PC time:
   dial-back. Reproduce in the UI test: fake PC with two links. Log the channel's token + link on
   both sides.
 
+**Second run (phone log 22:10–22:11, PC log not yet sent)** — owner: "sometimes play everywhere
+starts looking fine, keeps saying aligning, then I touch maybe volume it stops working n turns off".
+- 22:11:03.8 turning on → 04.2 channel 6 dialled back → 04.25 sound arriving → 04.28 "audio
+  focus taken by another player (still playing)".
+- **No "PC clock to within … ms" line ever** (it logs every 30 s once the clock is ready), so the
+  clock sync never became ready → the page says "Aligning…" for ever. Clock probes go out on the
+  channel's back direction (`SyncedAudio.probe`) and the PC answers in `PcAudioStreamer.ClockLoop`;
+  if the PC is reading a different socket (the two-link race above) the answers never come.
+  Log probes sent / answers received every few seconds until ready, and time out "Aligning" with
+  a message instead of spinning.
+- 22:11:11–20, five times: "PC control request failed: denied — Windows refused that request"
+  = the owner pressing volume. While Play everywhere is on, Speaker mode has made the **virtual
+  cable** the Windows default output (`PcSpeakerMode.Enable`), so PC volume goes to the cable
+  endpoint, which refuses. Volume during Play everywhere must set the *owner's own* output
+  (`PcSpeakerMode.OwnOutputId`) / Play everywhere's master gain, never the cable.
+- Then it turned off — need the PC log of 22:10–22:12 (PC time ≈ phone − 11 s) to see why.
+
 **"Nothing playing"**: neither log has a single media line (no `media.state` sent or received)
 while the owner played music. Check the phone's media session listener is running (notification
 access / `MediaBridge.kt`) and that it sends on connect and on change; add a log line for each
