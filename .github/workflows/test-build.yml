@@ -83,7 +83,10 @@ jobs:
           path: Linc/ANDROID/app/build/outputs/apk/debug
 
       # As build.yml: Beta.pubxml wants exactly one VC++ redist under a VS Community path.
-      - name: Publish desktop app (Beta, self-contained)
+      # Framework-dependent: the PC needs the .NET 8 Desktop Runtime installed once (a branch
+      # whose name contains "runtime" also posts Microsoft's installer), and every test build
+      # after that is a fraction of the size. Windows App SDK stays bundled.
+      - name: Publish desktop app (Beta, uses the installed .NET 8)
         shell: pwsh
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
@@ -92,7 +95,7 @@ jobs:
           $redist = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC'
           New-Item -ItemType Directory -Force $redist | Out-Null
           New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
-          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
+          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:Configuration=Release -p:Platform=x64 -v:m
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # One file for both apps, squeezed hard (the owner: "put in 1 file then compress bro like a
@@ -149,7 +152,12 @@ jobs:
           name: test-bundle
           path: dist
 
-      - name: The file
+      - name: The .NET 8 Desktop Runtime installer, when asked for
+        if: contains(github.ref_name, 'runtime')
+        run: |
+          curl -fsSL -o "dist/windowsdesktop-runtime-8-win-x64.exe" "https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe"
+
+      - name: The files
         run: ls -la dist
 
       - name: Connect bot to the local server
@@ -184,7 +192,14 @@ jobs:
             [ -n "$notes" ] || notes=$(git log -1 --format=%s)
           fi
           msg="🧪 Linc test release: $name"$'\n'"A preview for testing, not the next update. Your installed Linc won't offer it, and it installs over the one you have (no need to uninstall)."$'\n\n'"What's new:"$'\n'"$notes"$'\n\n'"One file for both apps, packed small. Open it on the PC (Windows 11 opens .7z; else 7-Zip)."$'\n'"💻 PC: close Linc, then run Linc.Desktop.exe in the Linc PC folder."$'\n'"📱 Phone: install \"Linc phone app.apk\" (copy it to the phone, or Device → More: install an app on the PC)."$'\n'"Found a problem? Send the logs from Settings → Logs."
-          ./telegram-uploader/send.sh -m "$msg" dist/*.7z
+          runtime=""
+          if [ -f dist/windowsdesktop-runtime-8-win-x64.exe ]; then
+            runtime="dist/windowsdesktop-runtime-8-win-x64.exe"
+            msg="$msg"$'\n\n'"⚙️ The PC app now needs Microsoft's .NET 8 Desktop Runtime, installed once: run windowsdesktop-runtime-8-win-x64.exe (skip it if you already have it)."
+          else
+            msg="$msg"$'\n'"⚙️ Needs the .NET 8 Desktop Runtime on the PC (installed once; it was posted with an earlier test release)."
+          fi
+          ./telegram-uploader/send.sh -m "$msg" dist/*.7z $runtime
 
       - name: Release the bot from the local server
         if: always()
