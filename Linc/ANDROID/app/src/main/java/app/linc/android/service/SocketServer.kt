@@ -626,6 +626,7 @@ class SocketServer(
                     // v28: the PC's outputs, its screen curtain, and the Device page reaching in.
                     MessageType.PC_AUDIO_OUTPUTS -> if (negotiated >= 28) PcTools.onOutputs(message.payload)
                     MessageType.PC_CURTAIN_STATE -> if (negotiated >= 28) PcTools.onCurtain(message.payload)
+                    MessageType.PC_BTAUDIO_STATE -> if (negotiated >= 29) PcTools.onBtAudio(message.payload)
                     MessageType.PHONE_SOUND_ASK -> if (negotiated >= 28) PhoneReach.soundAsk(message.payload)
                     MessageType.PHONE_USAGE_GET -> if (negotiated >= 28) PhoneReach.usage()
                     MessageType.PHONE_WALLPAPER_SET -> if (negotiated >= 28) PhoneReach.wallpaper(message.payload)

@@ -39,11 +39,13 @@ public sealed partial class PhoneExtrasViewModel : ObservableObject
     private readonly ILogService _log;
     private readonly DispatcherQueue _dispatcher;
     private readonly AdbClient _adb = new();
+    private readonly PcBluetoothAudio _bluetooth;
 
-    public PhoneExtrasViewModel(IConnectionManager connection, ILogService log)
+    public PhoneExtrasViewModel(IConnectionManager connection, ILogService log, PcBluetoothAudio bluetooth)
     {
         _connection = connection;
         _log = log;
+        _bluetooth = bluetooth;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         connection.CompanionMessageReceived += envelope =>
         {
@@ -229,20 +231,34 @@ public sealed partial class PhoneExtrasViewModel : ObservableObject
 
     // ---- the phone's sound here ----------------------------------------------------------------
 
+    // Over Bluetooth, with this PC as the phone's Bluetooth speaker: nothing is recorded on the
+    // phone and nothing asks there (the recording route this replaced did, every time).
+
     [RelayCommand]
     private async Task PhoneSoundStartAsync()
     {
-        if (!Supported) { Message = "Update Linc on the phone to play its sound here."; return; }
-        await SendAsync(MessageType.PhoneSoundAsk, new JsonObject { ["on"] = true });
-        Message = "Check the phone: allow Android's recording prompt (Linc takes the sound only), and its sound plays on this PC.";
+        Message = "Connecting to the phone over Bluetooth…";
+        var names = new List<string>();
+        if (_connection.Current?.Model is { } model) names.Add(model);
+        await _bluetooth.SetAsync(true, names);
+        Message = BluetoothMessage();
     }
 
     [RelayCommand]
     private async Task PhoneSoundStopAsync()
     {
-        await SendAsync(MessageType.PhoneSoundAsk, new JsonObject { ["on"] = false });
+        await _bluetooth.SetAsync(false, []);
         Message = "The phone's sound plays on the phone again.";
     }
+
+    private string BluetoothMessage() => _bluetooth.Error switch
+    {
+        null when _bluetooth.IsOn => $"{_bluetooth.Device} plays on this PC now, as on a Bluetooth speaker. On the phone, \"{Environment.MachineName}\" is its sound output; pick another there to move the sound back.",
+        "not-paired" => "Pair the phone with this PC over Bluetooth once first: Windows Settings › Bluetooth & devices › Add device, with the phone's Bluetooth settings open. Then press Play here again.",
+        "unsupported" => "This version of Windows can't be a Bluetooth speaker (it needs Windows 10 version 2004 or later).",
+        { } error => $"Windows couldn't connect to the phone over Bluetooth ({error}). Check Bluetooth is on on both, then try again.",
+        _ => "",
+    };
 
     // ---- plumbing ------------------------------------------------------------------------------
 

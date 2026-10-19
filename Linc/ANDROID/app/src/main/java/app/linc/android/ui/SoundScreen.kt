@@ -24,6 +24,7 @@ import app.linc.android.service.PcMediaStore
 import app.linc.android.service.PcTools
 import app.linc.android.ui.kit.SettingsGroup
 import app.linc.android.ui.kit.SettingsRow
+import app.linc.android.ui.kit.Segment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -151,8 +152,11 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
         if (ready) AudioEverywhere.refresh(context)
         PcControl.requestState()
         PcTools.refreshOutputs()
+        PcTools.refreshBtAudio()
         PcVoiceAccess.refresh(context)
     }
+    val bt by PcTools.btAudio.collectAsState()
+    val btReady = PcTools.btAudioAvailable()
 
     // Recording what apps play needs the microphone permission, then Android's own consent.
     val startPhone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -168,8 +172,8 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
         if (PcVoiceAccess.hasMicPermission(context)) context.startActivity(Intent(context, CaptureConsentActivity::class.java))
         else startPhone.launch(Manifest.permission.RECORD_AUDIO)
     }
-    val source = if (phone.on) "phone" else "pc"
-    val on = state.on || phone.on
+    val source = if (phone.on || bt.on || bt.busy) "phone" else "pc"
+    val on = state.on || phone.on || bt.on
 
     // A speaker that has sat on "starting" for a while says so, rather than spinning for ever.
     var startedAt by remember { mutableStateOf(0L) }
@@ -204,6 +208,8 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                                 Text(if (on) "Playing everywhere" else "Every speaker at once", style = MaterialTheme.typography.titleMedium)
                                 Text(
                                     when {
+                                        bt.on -> "This phone's sound plays on the PC, with the PC as its Bluetooth speaker. Nothing is recorded."
+                                        bt.busy -> "Connecting to the PC over Bluetooth…"
                                         phone.on -> "This phone's sound, on the speakers below, in step with ${phone.nativeName}."
                                         state.on -> "The PC's sound, on the speakers below, together."
                                         else -> "PC speakers, Bluetooth and this phone play the same sound at the same moment."
@@ -214,6 +220,7 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                             Switch(checked = on, enabled = source == "phone" || ready, onCheckedChange = {
                                 when {
                                     it && source == "pc" -> AudioEverywhere.set(context, true)
+                                    !it && bt.on -> PcTools.setBtAudio(context, false)
                                     !it && phone.on -> PhoneSource.stop(context, "turned off")
                                     !it -> AudioEverywhere.set(context, false)
                                 }
@@ -224,7 +231,13 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                             options = listOf("pc" to "The PC's", "phone" to "This phone's"),
                             selected = source,
                             onSelect = { chosen ->
-                                if (chosen == "phone" && !phone.on) explainPhone = true
+                                // A v29 PC plays this phone over Bluetooth: nothing to record, no prompt.
+                                if (chosen == "phone" && btReady) {
+                                    if (state.on) AudioEverywhere.set(context, false)
+                                    PcTools.setBtAudio(context, true)
+                                }
+                                else if (chosen == "phone" && !phone.on) explainPhone = true
+                                else if (chosen == "pc" && (bt.on || bt.busy)) PcTools.setBtAudio(context, false)
                                 else if (chosen == "pc" && phone.on) {
                                     PhoneSource.stop(context, "switched to the PC's sound")
                                     if (ready) AudioEverywhere.set(context, true)
@@ -243,7 +256,8 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                     }
                 }
             }
-            if (on) {
+            // Over Bluetooth, Android and Windows keep it together: no speakers to line up here.
+            if (on && !bt.on) {
                 item { SectionHeader("Speakers") }
                 if (phone.on) {
                     item { NativeRow(phone.nativeName) }
@@ -311,7 +325,23 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
             item {
                 val speaker by PcSpeaker.state.collectAsState()
                 val playing by AudioReceiver.playing.collectAsState()
-                SettingsGroup(rows = listOf(
+                // The phone's sound on the PC, with the PC as its Bluetooth speaker (v29).
+                val btRow: (@Composable (Segment) -> Unit)? = if (btReady) ({ seg ->
+                        SettingsRow(
+                            title = "This phone's sound on the PC", segment = seg, icon = LincSymbols.Speaker,
+                            supporting = when {
+                                bt.busy -> "Connecting over Bluetooth…"
+                                bt.on -> "On: the PC is this phone's Bluetooth speaker${bt.device?.let { " ($it)" } ?: ""}. Pick another output here to move the sound back."
+                                !bt.supported -> "This PC's Windows can't be a Bluetooth speaker (it needs Windows 10 version 2004 or later)."
+                                else -> "Music and videos play on the PC's speakers, the way a Bluetooth speaker does it. Nothing is recorded."
+                            },
+                            supportingKind = if (!bt.supported) Explanations.Kind.Blocked else Explanations.Kind.Helper,
+                            enabled = bt.supported && !bt.busy,
+                            trailing = { Switch(checked = bt.on || bt.busy, enabled = bt.supported && !bt.busy, onCheckedChange = { PcTools.setBtAudio(context, it) }) },
+                        )
+                    }) else null
+                SettingsGroup(rows = listOfNotNull<@Composable (Segment) -> Unit>(
+                    btRow,
                     { seg ->
                         SettingsRow(
                             title = "Phone as the PC's speaker", segment = seg, icon = LincSymbols.Smartphone,
@@ -346,6 +376,19 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                 ))
                 PcSpeaker.explain(speaker.error)?.let {
                     HelperText(it, kind = Explanations.Kind.Error, modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 4.dp))
+                }
+                when (bt.error) {
+                    null -> {}
+                    "not-paired" -> Column(Modifier.padding(horizontal = Kit.gutter, vertical = 4.dp)) {
+                        HelperText("Pair this phone with the PC over Bluetooth once: open Bluetooth here, then on the PC Settings › Bluetooth & devices › Add device. Then turn this on again.",
+                            kind = Explanations.Kind.Warning)
+                        TextButton(onClick = {
+                            runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }) { Text("Open Bluetooth") }
+                    }
+                    "unsupported" -> {}
+                    else -> HelperText("The PC couldn't connect to this phone over Bluetooth (${bt.error}). Check Bluetooth is on on both, then try again.",
+                        kind = Explanations.Kind.Error, modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 4.dp))
                 }
             }
         }

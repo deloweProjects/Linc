@@ -67,6 +67,18 @@ data class PcAudioOutput(val id: String, val name: String, val bluetooth: Boolea
 /** The curtain over the PC's screen while it is used from the phone (v28). */
 data class PcCurtainState(val on: Boolean = false, val available: Boolean = false, val error: String? = null)
 
+/**
+ * This phone's sound on the PC over Bluetooth (v29): the PC is the phone's Bluetooth speaker.
+ * [error] is not-paired, unsupported or Windows' own status; [busy] while the PC connects.
+ */
+data class PcBtAudioState(
+    val on: Boolean = false,
+    val supported: Boolean = true,
+    val device: String? = null,
+    val error: String? = null,
+    val busy: Boolean = false,
+)
+
 data class PcApp(val pid: Int, val name: String, val title: String, val memMb: Long)
 
 data class PcFileEntry(val name: String, val path: String, val dir: Boolean, val size: Long, val modified: Long, val drive: Boolean, val place: Boolean, val freeGb: Double?, val totalGb: Double? = null)
@@ -204,6 +216,47 @@ object PcTools {
 
     fun onCurtain(p: JsonObject) {
         _curtain.value = PcCurtainState(p.bool("on"), p.bool("available"), p.str("error"))
+    }
+
+    private val _btAudio = MutableStateFlow(PcBtAudioState())
+    val btAudio: StateFlow<PcBtAudioState> = _btAudio
+
+    /** A v29 PC can be this phone's Bluetooth speaker: no recording on the phone. */
+    fun btAudioAvailable(): Boolean = CompanionOutbox.canSend(29)
+
+    fun refreshBtAudio() {
+        if (btAudioAvailable()) CompanionOutbox.trySend(Envelope(type = MessageType.PC_BTAUDIO_GET, payload = buildJsonObject { }), requiredVersion = 29)
+    }
+
+    /**
+     * Ask the PC to connect to this phone as its Bluetooth speaker (or let go). The names are
+     * what the phone is called in Bluetooth, so the PC picks this phone among those paired.
+     */
+    fun setBtAudio(context: Context, on: Boolean) {
+        val names = buildList {
+            runCatching { android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME) }
+                .getOrNull()?.takeIf { it.isNotBlank() }?.let { add(it) }
+            add(android.os.Build.MODEL)
+        }
+        CompanionOutbox.trySend(Envelope(type = MessageType.PC_BTAUDIO_SET, payload = buildJsonObject {
+            put("on", on)
+            put("names", JsonArray(names.map { JsonPrimitive(it) }))
+        }), requiredVersion = 29)
+        _btAudio.value = _btAudio.value.copy(busy = on, error = null, on = if (on) _btAudio.value.on else false)
+    }
+
+    fun onBtAudio(p: JsonObject) {
+        _btAudio.value = PcBtAudioState(
+            on = p.bool("on"),
+            supported = (p["supported"] as? JsonPrimitive)?.booleanOrNull ?: true,
+            device = p.str("device"),
+            error = p.str("error"),
+        )
+        LogStore.log(LogLevel.INFO, when {
+            p.bool("on") -> "Phone sound: plays on the PC over Bluetooth"
+            p.str("error") != null -> "Phone sound: the PC couldn't connect over Bluetooth (${p.str("error")})"
+            else -> "Phone sound: not playing on the PC"
+        })
     }
 
     fun onApps(p: JsonObject) {

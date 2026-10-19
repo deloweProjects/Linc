@@ -15,7 +15,7 @@ namespace Linc.Desktop.Services;
 /// <para>The phone is the PC's own paired, trusted device — it already drives the mouse and
 /// keyboard — so these act as the signed-in user, with nothing elevated. Every action is logged.</para>
 /// </summary>
-public sealed class PcToolsService(IConnectionManager connection, ILogService log)
+public sealed class PcToolsService(IConnectionManager connection, ILogService log, PcBluetoothAudio bluetooth)
 {
     public const int TerminalChannel = 9;
     public const int FilesChannel = 10;
@@ -34,6 +34,9 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
         if (_attached) return;
         _attached = true;
         connection.CompanionMessageReceived += OnMessage;
+        // The phone's sound over Bluetooth opens and closes on its own too (Bluetooth off, out of
+        // range, the PC's Device page): the phone's Sound page follows.
+        bluetooth.Changed += () => { if (connection.Current is { Companion.V: >= 29 }) _ = Reply(MessageType.PcBtAudioState, bluetooth.State()); };
     }
 
     private static readonly HashSet<string> Handled =
@@ -41,6 +44,7 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
         MessageType.PcLookGet, MessageType.PcLookSet, MessageType.PcWallpaperSet, MessageType.PcInfoGet, MessageType.PcAppsGet,
         MessageType.PcAppsEnd, MessageType.PcOpen, MessageType.PcFilesList, MessageType.PcFilesOp, MessageType.PcTermGet, MessageType.PcTermOpen,
         MessageType.PcAudioOutputsGet, MessageType.PcAudioOutputSet, MessageType.PcCurtainSet,
+        MessageType.PcBtAudioSet, MessageType.PcBtAudioGet,
     ];
 
     private void OnMessage(Envelope envelope)
@@ -64,6 +68,13 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
             case MessageType.PcTermOpen: _ = Task.Run(() => OpenTerminalAsync(p)); break;
             case MessageType.PcAudioOutputsGet: _ = Task.Run(() => Reply(MessageType.PcAudioOutputs, Outputs())); break;
             case MessageType.PcAudioOutputSet: _ = Task.Run(() => SetOutputAsync(p)); break;
+            case MessageType.PcBtAudioGet: _ = Reply(MessageType.PcBtAudioState, bluetooth.State()); break;
+            case MessageType.PcBtAudioSet:
+                // Changed sends the state back once it settles.
+                var names = (p["names"] as JsonArray)?.Select(n => (string?)n ?? "").ToList() ?? [];
+                if (connection.Current?.Model is { } model) names.Add(model);
+                _ = Task.Run(() => bluetooth.SetAsync((bool?)p["on"] ?? false, names));
+                break;
             case MessageType.PcCurtainSet:
                 _ = Task.Run(() =>
                 {

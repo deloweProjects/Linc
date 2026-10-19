@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 28
+const val PROTOCOL_VERSION = 29
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -135,6 +135,11 @@ object MessageType {
     const val PHONE_USAGE_GET = "phone.usage.get"             // desktop → phone: {}
     const val PHONE_USAGE = "phone.usage"                     // phone → desktop: {allowed, totalMin, unlocks?, apps: [{package, name, minutes}]}
     const val PHONE_WALLPAPER_SET = "phone.wallpaper.set"     // desktop → phone: {jpeg (base64), target: home|lock|both}
+    // v29: this phone's sound on the PC over Bluetooth — Windows becomes the phone's Bluetooth
+    // speaker (AudioPlaybackConnection), so nothing is recorded here.
+    const val PC_BTAUDIO_SET = "pc.btaudio.set"               // phone → desktop: {on, names: [this phone's Bluetooth names]}
+    const val PC_BTAUDIO_GET = "pc.btaudio.get"               // phone → desktop: {}
+    const val PC_BTAUDIO_STATE = "pc.btaudio.state"           // desktop → phone: {on, supported, device?, error?}
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

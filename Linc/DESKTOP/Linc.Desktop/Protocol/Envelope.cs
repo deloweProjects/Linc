@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 28;
+    public const int Version = 29;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -145,6 +145,12 @@ public static class MessageType
     public const string PhoneUsageGet = "phone.usage.get";          // desktop → phone: {}
     public const string PhoneUsage = "phone.usage";                 // phone → desktop: {allowed, totalMin, unlocks?, apps}
     public const string PhoneWallpaperSet = "phone.wallpaper.set";  // desktop → phone: {jpeg (base64), target}
+
+    // v29 — the phone's sound on the PC over Bluetooth: Windows becomes the phone's Bluetooth
+    // speaker (AudioPlaybackConnection), so nothing is recorded on the phone.
+    public const string PcBtAudioSet = "pc.btaudio.set";            // phone → desktop: {on, names: [the phone's Bluetooth names]}
+    public const string PcBtAudioGet = "pc.btaudio.get";            // phone → desktop: {}
+    public const string PcBtAudioState = "pc.btaudio.state";        // desktop → phone: {on, supported, device?, error?}
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies

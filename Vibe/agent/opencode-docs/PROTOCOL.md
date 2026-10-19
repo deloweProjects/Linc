@@ -702,3 +702,19 @@ diskReadKBps, diskWriteKBps, netSendKbps, netRecvKbps, netName, gpuPct, gpuName,
 output reports may carry status `clock` (waiting for the PC's clock). Phone colours and dark theme are set by
 the desktop over adb (`settings put secure theme_customization_overlay_packages …`, `cmd uimode night`), not
 by protocol.
+
+## v29 — the phone's sound on the PC over Bluetooth
+
+Additive; gated on a negotiated version of 29 on both sides. Windows becomes the phone's Bluetooth
+speaker (A2DP sink, `Windows.Media.Audio.AudioPlaybackConnection`, Windows 10 2004+), so the phone
+plays to the PC like to any Bluetooth speaker: nothing is recorded on the phone and Android shows no
+capture prompt. The phone must be paired with the PC over Bluetooth once.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `pc.btaudio.set` | phone → desktop | `{on, names: [the phone's Bluetooth/device names]}`: the desktop picks the paired phone matching a name (else the only one, else the first) and opens or closes the connection |
+| `pc.btaudio.get` | phone → desktop | `{}` |
+| `pc.btaudio.state` | desktop → phone | `{on, supported, device?, error?}`; `error` is `not-paired`, `unsupported`, or Windows' own open status. Also sent unprompted when the connection closes (Bluetooth off, out of range) |
+
+The PC's Device page opens the same connection itself, without the phone. `phone.sound.ask` (the
+recording route) stays for v28 phones.

@@ -449,7 +449,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- The phone's sound on this PC (v28): the phone records what its apps play and sends it here. -->
+                        <!-- The phone's sound on this PC: Windows as the phone's Bluetooth speaker, nothing recorded. -->
                         <Border Style="{StaticResource ExpressiveCard}">
                             <StackPanel Spacing="12">
                                 <TextBlock Text="PHONE SOUND ON THIS PC" Style="{StaticResource SectionLabel}" />
@@ -463,7 +463,7 @@
                                     <Button Style="{StaticResource QuietButton}" Content="Stop" Command="{x:Bind Extras.PhoneSoundStopCommand}" />
                                 </StackPanel>
                                 <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
-                                           Text="Music and videos on the phone play on this PC's speakers, in step with the phone. The phone asks once to allow it." />
+                                           Text="Music and videos on the phone play on this PC's speakers, the way a Bluetooth speaker does it. Pair the phone with this PC over Bluetooth once." />
                             </StackPanel>
                         </Border>
                         <TextBlock Text="{x:Bind Extras.Message, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
