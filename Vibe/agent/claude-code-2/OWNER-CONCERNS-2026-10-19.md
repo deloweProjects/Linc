@@ -95,6 +95,24 @@ The owner's words, then what is known and what to do. Do not start new features 
   `PcTools.kt` already does for Downloads with `RELATIVE_PATH` + `IS_PENDING`), so they appear at
   once in their own album. Same check for Control → Files downloads and for Sync's pulled files.
 
+## 6. Phone Share page: open the received folder, select several, send
+
+> "In shared add jump to received folder on phone n allow multi select n send"
+
+- How it works now: `ui/ShareScreen.kt`, section "Received from your PC", lists the newest 20 of
+  `ShareStore.received` (files in `Download/Linc`); each row opens one file or shares one file
+  (`open()`, `shareOn()`). No way to open the folder, nothing selectable.
+- **Do:**
+  - A "Open folder" action on that header: open `Download/Linc` in the phone's Files app
+    (`DocumentsContract` folder URI via `ACTION_VIEW`, fall back to the system Files app on
+    Downloads); also "Show all" past 20.
+  - Long-press a row to start selecting (checkboxes, a select-all, a count in the bar), like
+    Gallery.
+  - With a selection: **Send to PC** (the existing Linc share path, several files at once),
+    **Share** (one `ACTION_SEND_MULTIPLE` with all the URIs, so Quick Share / any app), and
+    **Delete**.
+  - Ask the owner if "send" means back to the PC, to another app, or both — default to both.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
