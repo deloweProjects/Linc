@@ -6,6 +6,14 @@
     xmlns:views="using:Linc.Desktop.Views"
     xmlns:vm="using:Linc.Desktop.ViewModels">
 
+    <Page.Resources>
+        <Style x:Key="LaneTile" TargetType="Border">
+            <Setter Property="CornerRadius" Value="20" />
+            <Setter Property="Padding" Value="14,12" />
+            <Setter Property="Background" Value="{ThemeResource SurfaceContainerHighBrush}" />
+        </Style>
+    </Page.Resources>
+
     <Grid views:PageLayout.Adaptive="True" Padding="24" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -25,95 +33,243 @@
             </StackPanel>
         </Border>
 
-        <!-- Lane toggles. Folders/Photos/Calls persist config now; engines land in M18b/c. -->
-        <Border Grid.Row="1" Style="{StaticResource ExpressiveCard}" Padding="20,16">
-            <StackPanel Spacing="10">
-                <TextBlock Text="Sync" Style="{StaticResource HeadlineText}" />
-                <StackPanel Orientation="Horizontal" Spacing="28">
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Folders" Style="{StaticResource BodyText}" />
-                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.FoldersOn, Mode=TwoWay}" />
-                    </StackPanel>
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Photos" Style="{StaticResource BodyText}" />
-                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.PhotosOn, Mode=TwoWay}" />
-                    </StackPanel>
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Messages" Style="{StaticResource BodyText}" />
-                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.MessagesOn, Mode=TwoWay}" />
-                    </StackPanel>
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Calls" Style="{StaticResource BodyText}" />
-                        <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.CallsOn, Mode=TwoWay}" />
-                    </StackPanel>
+        <!-- What syncs (lanes), then the Folders lane's pairs: each a PC folder and a phone
+             folder kept the same, both ways or one way. The phone's Sync page (v30) shows and
+             edits the same setup. -->
+        <ScrollViewer Grid.Row="1" MaxHeight="560" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+        <StackPanel Spacing="16">
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Sync" Style="{StaticResource HeadlineText}" />
+                    <Grid x:Name="LaneTiles" ColumnSpacing="12" RowSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                    <Border Style="{StaticResource LaneTile}" Grid.Row="0" Grid.Column="0">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="40" Height="40" CornerRadius="20" Background="{ThemeResource SecondaryContainerBrush}" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE8B7;" FontSize="18" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                <TextBlock Text="Folders" Style="{StaticResource TitleText}" FontSize="16" />
+                                <TextBlock Text="Folders you choose, kept the same" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2" MinWidth="0" OnContent="" OffContent="" VerticalAlignment="Center"
+                                          AutomationProperties.Name="Folders"
+                                          IsOn="{x:Bind ViewModel.FoldersOn, Mode=TwoWay}" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource LaneTile}" Grid.Row="0" Grid.Column="1">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="40" Height="40" CornerRadius="20" Background="{ThemeResource SecondaryContainerBrush}" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xEB9F;" FontSize="18" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                <TextBlock Text="Photos" Style="{StaticResource TitleText}" FontSize="16" />
+                                <TextBlock Text="New camera photos copy to this PC" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2" MinWidth="0" OnContent="" OffContent="" VerticalAlignment="Center"
+                                          AutomationProperties.Name="Photos"
+                                          IsOn="{x:Bind ViewModel.PhotosOn, Mode=TwoWay}" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource LaneTile}" Grid.Row="1" Grid.Column="0">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="40" Height="40" CornerRadius="20" Background="{ThemeResource SecondaryContainerBrush}" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE8BD;" FontSize="18" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                <TextBlock Text="Messages" Style="{StaticResource TitleText}" FontSize="16" />
+                                <TextBlock Text="Read and reply to texts here" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2" MinWidth="0" OnContent="" OffContent="" VerticalAlignment="Center"
+                                          AutomationProperties.Name="Messages"
+                                          IsOn="{x:Bind ViewModel.MessagesOn, Mode=TwoWay}" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource LaneTile}" Grid.Row="1" Grid.Column="1">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="40" Height="40" CornerRadius="20" Background="{ThemeResource SecondaryContainerBrush}" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE717;" FontSize="18" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                <TextBlock Text="Calls" Style="{StaticResource TitleText}" FontSize="16" />
+                                <TextBlock Text="Call log and dialling" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2" MinWidth="0" OnContent="" OffContent="" VerticalAlignment="Center"
+                                          AutomationProperties.Name="Calls"
+                                          IsOn="{x:Bind ViewModel.CallsOn, Mode=TwoWay}" />
+                        </Grid>
+                    </Border>
+                    </Grid>
+                    <TextBlock
+                        Text="{x:Bind ViewModel.LaneMessage, Mode=OneWay}"
+                        FontSize="13"
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource OnSurfaceVariantBrush}" />
                 </StackPanel>
-                <TextBlock
-                    Text="{x:Bind ViewModel.LaneMessage, Mode=OneWay}"
-                    FontSize="13"
-                    TextWrapping="Wrap"
-                    Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+            </Border>
 
-                <!-- Folders lane config: PC folder ↔ phone folder, bidirectional (M18c). -->
-                <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.ShowFolderConfig, Mode=OneWay}">
-                    <Grid ColumnSpacing="8">
+            <!-- Folders lane: one card per pair (M18c, v30 pairs). -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16" Visibility="{x:Bind ViewModel.ShowFolderConfig, Mode=OneWay}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBox
-                            Style="{StaticResource ExpressiveTextBox}"
-                            Header="PC folder"
-                            IsReadOnly="True"
-                            PlaceholderText="Pick a folder on this PC…"
-                            Text="{x:Bind ViewModel.FolderPcPath, Mode=OneWay}" />
-                        <Button
-                            Grid.Column="1"
-                            Style="{StaticResource FilledButton}"
-                            VerticalAlignment="Bottom"
-                            Padding="18,10"
-                            Content="Choose…"
-                            Click="OnPickFolder" />
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Folders" Style="{StaticResource TitleText}" />
+                            <TextBlock FontSize="13" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                       Text="Pick a folder on this PC and one on the phone; Linc keeps them the same." />
+                        </StackPanel>
+                        <Button Grid.Column="1" Style="{StaticResource FilledButton}" Padding="16,10" Click="OnAddPair"
+                                AutomationProperties.Name="Add folder pair">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE710;" FontSize="14" />
+                                <TextBlock Text="Add folder" />
+                            </StackPanel>
+                        </Button>
                     </Grid>
-                    <TextBox
-                        Style="{StaticResource ExpressiveTextBox}"
-                        Header="Phone folder"
-                        PlaceholderText="/sdcard/Download"
-                        Text="{x:Bind ViewModel.FolderPhonePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                    <TextBlock views:Explain.IsHelp="True"
-                        FontSize="13"
-                        TextWrapping="Wrap"
-                        Foreground="{ThemeResource OnSurfaceVariantBrush}"
-                        Text="New files copy both ways and the newer copy wins. Deletes are never propagated. Top-level files only." />
-                </StackPanel>
 
-                <!-- Photos lane info: pull-only from the phone camera roll (M18c). -->
+                    <Border CornerRadius="20" Padding="18,16" Background="{ThemeResource SurfaceContainerHighBrush}"
+                            Visibility="{x:Bind ViewModel.HasNoPairs, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE8F4;" FontSize="22" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" FontSize="13" Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                       Text="No folders yet. Add one: Documents, Music, a work folder — anything that should be the same on both." />
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Pairs}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Spacing="10" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:FolderPairVm">
+                                <Border CornerRadius="20" Padding="16,14" Background="{ThemeResource SurfaceContainerHighBrush}"
+                                        Opacity="{x:Bind CardOpacity, Mode=OneWay}">
+                                    <Grid RowSpacing="12">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Width="36" Height="36" CornerRadius="12" Background="{ThemeResource PrimaryContainerBrush}">
+                                                <FontIcon Glyph="&#xE8B7;" FontSize="16" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind Name, Mode=OneWay}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{x:Bind DirectionText, Mode=OneWay}" FontSize="12" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                            </StackPanel>
+                                            <ToggleSwitch Grid.Column="2" MinWidth="0" OnContent="" OffContent="" VerticalAlignment="Center"
+                                                          AutomationProperties.Name="Sync this folder"
+                                                          IsOn="{x:Bind Enabled, Mode=TwoWay}" />
+                                            <Button Grid.Column="3" Style="{StaticResource QuietButton}" Padding="10" BorderThickness="0"
+                                                    ToolTipService.ToolTip="Edit" AutomationProperties.Name="Edit folder pair" Click="OnEditPair">
+                                                <FontIcon Glyph="&#xE70F;" FontSize="14" />
+                                            </Button>
+                                            <Button Grid.Column="4" Style="{StaticResource QuietButton}" Padding="10" BorderThickness="0"
+                                                    ToolTipService.ToolTip="Stop syncing this folder" AutomationProperties.Name="Remove folder pair" Click="OnRemovePair">
+                                                <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                            </Button>
+                                        </Grid>
+                                        <Grid Grid.Row="1" ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border CornerRadius="14" Padding="12,8" Background="{ThemeResource SurfaceContainerBrush}">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <FontIcon Glyph="&#xE7F4;" FontSize="14" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                                    <TextBlock Text="{x:Bind PcPath, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                               ToolTipService.ToolTip="{x:Bind PcPath, Mode=OneWay}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <FontIcon Grid.Column="1" Glyph="{x:Bind ArrowGlyph, Mode=OneWay}" FontSize="16" Foreground="{ThemeResource PrimaryBrush}" />
+                                            <Border Grid.Column="2" CornerRadius="14" Padding="12,8" Background="{ThemeResource SurfaceContainerBrush}">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <FontIcon Glyph="&#xE8EA;" FontSize="14" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                                    <TextBlock Text="{x:Bind PhonePath, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                               ToolTipService.ToolTip="{x:Bind PhonePath, Mode=OneWay}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock views:Explain.IsHelp="True" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                               Text="Deletes are never copied, so nothing is lost by accident. Top-level files only." />
+                </StackPanel>
+            </Border>
+
+            <!-- Photos lane info: pull-only from the phone camera roll (M18c). -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,14" Visibility="{x:Bind ViewModel.ShowPhotosInfo, Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <FontIcon Glyph="&#xEB9F;" FontSize="18" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                    <TextBlock VerticalAlignment="Center" FontSize="13" TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                               Text="{x:Bind ViewModel.PhotosInfo, Mode=OneWay}" />
+                </StackPanel>
+            </Border>
+
+            <Grid ColumnSpacing="12" Padding="4,0" Visibility="{x:Bind ViewModel.ShowSyncBar, Mode=OneWay}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <TextBlock
-                    Visibility="{x:Bind ViewModel.ShowPhotosInfo, Mode=OneWay}"
+                    VerticalAlignment="Center"
                     FontSize="13"
                     TextWrapping="Wrap"
                     Foreground="{ThemeResource OnSurfaceVariantBrush}"
-                    Text="{x:Bind ViewModel.PhotosInfo, Mode=OneWay}" />
-
-                <Grid ColumnSpacing="12" Visibility="{x:Bind ViewModel.ShowSyncBar, Mode=OneWay}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="13"
-                        TextWrapping="Wrap"
-                        Foreground="{ThemeResource OnSurfaceVariantBrush}"
-                        Text="{x:Bind ViewModel.SyncStatus, Mode=OneWay}" />
-                    <Button
-                        Grid.Column="1"
-                        Style="{StaticResource TonalButton}"
-                        Padding="16,8"
-                        Content="Sync now"
-                        Command="{x:Bind ViewModel.SyncNowCommand}" />
-                </Grid>
-            </StackPanel>
-        </Border>
+                    Text="{x:Bind ViewModel.SyncStatus, Mode=OneWay}" />
+                <Button
+                    Grid.Column="1"
+                    Style="{StaticResource TonalButton}"
+                    Padding="16,8"
+                    Content="Sync now"
+                    Command="{x:Bind ViewModel.SyncNowCommand}" />
+            </Grid>
+        </StackPanel>
+        </ScrollViewer>
 
         <!-- Messages & Calls sit side by side; a solo lane spans both columns
              (SyncPage code-behind manages the span). M07 polish. -->

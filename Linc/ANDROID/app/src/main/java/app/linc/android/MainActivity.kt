@@ -226,6 +226,7 @@ fun LincApp() {
                                                 HomeDestination.Sound -> ToolPage.Sound
                                                 HomeDestination.Pc -> ToolPage.Pc
                                                 HomeDestination.Files -> ToolPage.Files
+                                                HomeDestination.Sync -> ToolPage.Sync
                                                 HomeDestination.Terminal -> ToolPage.Terminal
                                                 else -> ToolPage.Remote
                                             })

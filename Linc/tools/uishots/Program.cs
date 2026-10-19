@@ -135,7 +135,13 @@ void WriteSummary()
 static void WriteSettings(string root, string certBase64)
 {
     // DeviceRegistry reads these exact PascalCase names (System.Text.Json defaults); a phone with
-    // its certificate pinned, DirectOnly (Preference 3), Messages and Calls lanes on.
+    // its certificate pinned, DirectOnly (Preference 3), every lane on, and three folder pairs
+    // (one each way) for the Sync page.
+    string Folder(string name) => Directory.CreateDirectory(Path.Combine(root, "SyncDemo", name)).FullName;
+    JsonObject Pair(string id, string name, string pc, string phone, string direction, bool enabled = true) => new()
+    {
+        ["Id"] = id, ["Name"] = name, ["PcPath"] = pc, ["PhonePath"] = phone, ["Direction"] = direction, ["Enabled"] = enabled,
+    };
     var settings = new JsonObject
     {
         ["PairedSerial"] = FakePhone.Serial,
@@ -150,7 +156,11 @@ static void WriteSettings(string root, string certBase64)
             ["Model"] = FakePhone.Model,
             ["FirstPairedUtc"] = "2026-10-01T00:00:00+00:00",
             ["PhoneCertBase64"] = certBase64,
-            ["SyncLanes"] = new JsonObject { ["messages"] = true, ["calls"] = true },
+            ["SyncLanes"] = new JsonObject { ["folders"] = true, ["photos"] = true, ["messages"] = true, ["calls"] = true },
+            ["FolderPairs"] = new JsonArray(
+                Pair("pair-docs", "Documents", Folder("Documents"), "/sdcard/Documents", "both"),
+                Pair("pair-music", "Music", Folder("Music"), "/sdcard/Music", "toPhone"),
+                Pair("pair-shots", "Screenshots", Folder("Screenshots"), "/sdcard/Pictures/Screenshots", "toPc", enabled: false)),
             ["Hidden"] = false,
             ["Preference"] = 3,
         }),

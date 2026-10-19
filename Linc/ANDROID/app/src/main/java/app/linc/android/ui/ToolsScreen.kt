@@ -65,6 +65,7 @@ enum class ToolPage(val label: String, val icon: ImageVector) {
     Sound("Sound", LincSymbols.GraphicEq),
     Pc("PC", LincSymbols.DesktopWindows),
     Files("Files", LincSymbols.Folder),
+    Sync("Sync", LincSymbols.Sync),
     Terminal("Terminal", LincSymbols.Terminal),
 }
 
@@ -102,6 +103,7 @@ fun ToolsScreen(onSettings: (() -> Unit)?, onBack: (() -> Unit)? = null, onMirro
                     ToolPage.Sound -> SoundScreen(onBack = onBack, onSettings = onSettings)
                     ToolPage.Pc -> PcScreen(onBack = onBack, onSettings = onSettings)
                     ToolPage.Files -> PcFilesScreen(onBack = onBack, onSettings = onSettings)
+                    ToolPage.Sync -> SyncScreen(onBack = onBack, onSettings = onSettings)
                     ToolPage.Terminal -> TerminalHome(onBack = onBack, onSettings = onSettings)
                 }
             }

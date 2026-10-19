@@ -718,3 +718,26 @@ capture prompt. The phone must be paired with the PC over Bluetooth once.
 
 The PC's Device page opens the same connection itself, without the phone. `phone.sound.ask` (the
 recording route) stays for v28 phones.
+
+## v30 — the phone's Sync page and folder pairs
+
+Additive; gated on a negotiated version of 30 on both sides. The Folders lane now keeps several
+folders the same, each a **pair**: a PC folder and a phone folder, with a direction. The PC runs
+the engine and keeps the setup (per phone, `KnownDevice.FolderPairs`); the phone's Sync page reads
+and edits it. Older settings with one folder (`FolderSyncPcPath`/`FolderSyncPhonePath`) read as a
+single pair with id `folders`, so its sync history carries over.
+
+A pair is `{id, name, pcPath, phonePath, direction, enabled}`. `direction` is `both` (new and
+changed files go both ways, the newer copy wins), `toPhone` (the PC's folder is copied to the
+phone) or `toPc` (the phone's folder is copied to the PC). `id` never changes once made; the
+engine files its per-file bookkeeping under it.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `sync.state.get` | phone → desktop | `{}` |
+| `sync.state` | desktop → phone | `{lanes: {folders, photos, messages, calls}, pairs: [pair], status, photosPcPath}`. Also sent unprompted whenever the setup changes (from either side) or a sync pass finishes |
+| `sync.pairs.set` | phone → desktop | `{pairs: [pair]}`, the whole list; a pair with no `pcPath` or `phonePath` is dropped, one with no `id` gets a new one |
+| `sync.lane.set` | phone → desktop | `{lane, on}` |
+| `sync.now` | phone → desktop | `{}`: run a sync pass now |
+
+`sync.config` (v11) still tells the phone which lanes are on; the PC sends it after a lane changes.

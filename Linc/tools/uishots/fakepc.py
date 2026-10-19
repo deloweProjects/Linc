@@ -28,6 +28,18 @@ class FakePc:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
+    # The PC's sync setup (v30), as the phone's Sync page shows it.
+    sync = {
+        "lanes": {"folders": True, "photos": True, "messages": False, "calls": False},
+        "pairs": [
+            {"id": "pair-docs", "name": "Documents", "pcPath": "C:\\Users\\Sam\\Documents", "phonePath": "/sdcard/Documents", "direction": "both", "enabled": True},
+            {"id": "pair-music", "name": "Music", "pcPath": "C:\\Users\\Sam\\Music", "phonePath": "/sdcard/Music", "direction": "toPhone", "enabled": True},
+            {"id": "pair-shots", "name": "Screenshots", "pcPath": "D:\\Phone shots", "phonePath": "/sdcard/Pictures/Screenshots", "direction": "toPc", "enabled": False},
+        ],
+        "status": "Synced 3 folders · 2 min ago",
+        "photosPcPath": "C:\\Users\\Sam\\Pictures\\Linc\\Photos",
+    }
+
     def start(self) -> None:
         self._thread.start()
 
@@ -64,7 +76,7 @@ class FakePc:
     def _serve(self, sock: socket.socket) -> None:
         hello_id = self._send(sock, "hello", None, {
             "app": "linc-desktop", "appVersion": "1.0.0", "host": HOST,
-            "pcId": "0123456789abcdef", "minV": 0, "maxV": 29,
+            "pcId": "0123456789abcdef", "minV": 0, "maxV": 30,
         })
         reply = self._read(sock)
         if reply is None or reply.get("type") != "hello" or reply.get("replyTo") != hello_id:
@@ -128,7 +140,15 @@ class FakePc:
             }),
             "pc.curtain.set": ("pc.curtain.state", {"on": bool(p.get("on")), "available": True}),
         }
-        if t == "pc.files.list":
+        if t == "sync.state.get":
+            self._send(sock, "sync.state", rid, self.sync)
+        elif t == "sync.pairs.set":
+            self.sync["pairs"] = p.get("pairs") or []
+            self._send(sock, "sync.state", None, self.sync)
+        elif t == "sync.lane.set":
+            self.sync["lanes"][p.get("lane", "")] = bool(p.get("on"))
+            self._send(sock, "sync.state", None, self.sync)
+        elif t == "pc.files.list":
             self._send(sock, "pc.files.listing", rid, self._listing(p.get("path") or ""))
         elif t == "pc.btaudio.set":
             on = bool(p.get("on"))
@@ -164,7 +184,7 @@ class FakePc:
 
     def _send(self, sock: socket.socket, type_: str, reply_to, payload: dict) -> str:
         mid = str(uuid.uuid4())
-        body = json.dumps({"v": 29, "type": type_, "id": mid, "replyTo": reply_to, "payload": payload}).encode()
+        body = json.dumps({"v": 30, "type": type_, "id": mid, "replyTo": reply_to, "payload": payload}).encode()
         with self._lock:
             sock.sendall(struct.pack(">i", len(body)) + body)
         return mid

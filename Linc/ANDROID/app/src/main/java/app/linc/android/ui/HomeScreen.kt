@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
@@ -32,7 +31,6 @@ import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,11 +72,11 @@ import app.linc.android.ui.kit.pagePadding
 import app.linc.android.ui.theme.LincTheme
 
 /** Where Home's tiles lead; the host switches tabs (and, for a Tools page, picks it). */
-enum class HomeDestination { Remote, Sound, Pc, Files, Terminal, Share, Clipboard }
+enum class HomeDestination { Remote, Sound, Pc, Files, Sync, Terminal, Share, Clipboard }
 
 /**
  * Home (1.0.0.11, D-082): the connection hero (tap for the Connection sheet), the tools as live
- * tiles, what the PC is playing, and Mirror PC as the extended FAB.
+ * tiles and what the PC is playing. Mirror PC sits in the Your PC card.
  */
 @Composable
 fun HomeScreen(
@@ -142,7 +140,6 @@ private fun HomeContent(
 ) {
     val context = LocalContext.current
     val list = rememberLazyListState()
-    val fabExpanded by remember { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 40 } }
     var connectionSheet by remember { mutableStateOf(false) }
     var voiceSheet by remember { mutableStateOf(false) }
     var powerSheet by remember { mutableStateOf(false) }
@@ -152,14 +149,6 @@ private fun HomeContent(
     LincScaffold(
         title = "Linc",
         onSettings = onSettings,
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                text = { Text("Mirror PC") },
-                icon = { Icon(LincSymbols.ScreenShare, contentDescription = null) },
-                onClick = onMirror,
-                expanded = fabExpanded,
-            )
-        },
     ) { inner ->
         LazyColumn(state = list, contentPadding = pagePadding(inner), verticalArrangement = Arrangement.spacedBy(Kit.groupGap)) {
             if (update != null) {
@@ -189,7 +178,7 @@ private fun HomeContent(
                 }
             }
             item("hero") {
-                ConnectionHero(connection, transport, onClick = { connectionSheet = true })
+                ConnectionHero(connection, transport, onClick = { connectionSheet = true }, onMirror = onMirror)
             }
             if (connected != null) {
                 item("pc-stats") { PcStatsRow(onOpen = { onNavigate(HomeDestination.Pc) }) }
@@ -206,6 +195,7 @@ private fun HomeContent(
                     HomeTool("Sound", LincSymbols.GraphicEq, MaterialShapes.Clover4Leaf) { onNavigate(HomeDestination.Sound) },
                     HomeTool("PC", LincSymbols.DesktopWindows, MaterialShapes.Square) { onNavigate(HomeDestination.Pc) },
                     HomeTool("Files", LincSymbols.Folder, MaterialShapes.Sunny) { onNavigate(HomeDestination.Files) },
+                    HomeTool("Sync", LincSymbols.Sync, MaterialShapes.Cookie4Sided) { onNavigate(HomeDestination.Sync) },
                     HomeTool("Terminal", LincSymbols.Terminal, MaterialShapes.Pill) { onNavigate(HomeDestination.Terminal) },
                     HomeTool("Send", LincSymbols.Send, MaterialShapes.Gem) { onNavigate(HomeDestination.Share) },
                     HomeTool("Clipboard", LincSymbols.Clipboard, MaterialShapes.SoftBurst) { onNavigate(HomeDestination.Clipboard) },
@@ -278,7 +268,7 @@ private fun HomeContent(
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ConnectionHero(connection: ServiceState, transport: String?, onClick: () -> Unit) {
+private fun ConnectionHero(connection: ServiceState, transport: String?, onClick: () -> Unit, onMirror: () -> Unit) {
     val connected = connection as? ServiceState.Connected
     val (label, quality) = when (connection) {
         is ServiceState.Connected -> "Connected" to Quality.Good
@@ -334,6 +324,16 @@ private fun ConnectionHero(connection: ServiceState, transport: String?, onClick
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
+        // Mirror PC lives with the PC it mirrors (it was the page's floating button).
+        if (connected != null) {
+            androidx.compose.material3.Button(
+                onClick = onMirror,
+                modifier = Modifier.fillMaxWidth().heightIn(min = Kit.touch),
+            ) {
+                Icon(LincSymbols.ScreenShare, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text("Mirror PC", modifier = Modifier.padding(start = 8.dp))
+            }
+        }
     }
 }
 

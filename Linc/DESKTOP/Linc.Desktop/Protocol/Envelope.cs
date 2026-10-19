@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 29;
+    public const int Version = 30;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -151,6 +151,13 @@ public static class MessageType
     public const string PcBtAudioSet = "pc.btaudio.set";            // phone → desktop: {on, names: [the phone's Bluetooth names]}
     public const string PcBtAudioGet = "pc.btaudio.get";            // phone → desktop: {}
     public const string PcBtAudioState = "pc.btaudio.state";        // desktop → phone: {on, supported, device?, error?}
+
+    // v30 — the phone's Sync page: the same lanes and folder pairs as the PC's, either side edits.
+    public const string SyncStateGet = "sync.state.get";            // phone → desktop: {}
+    public const string SyncState = "sync.state";                   // desktop → phone: {lanes, pairs: [{id, name, pcPath, phonePath, direction, enabled}], status, photosPcPath}
+    public const string SyncPairsSet = "sync.pairs.set";            // phone → desktop: {pairs}
+    public const string SyncLaneSet = "sync.lane.set";              // phone → desktop: {lane, on}
+    public const string SyncNow = "sync.now";                       // phone → desktop: {}
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies

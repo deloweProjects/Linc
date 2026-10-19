@@ -186,15 +186,18 @@ def walk(theme: str) -> None:
     shot(f"{theme}-home-scrolled")
     if tap("Control", lowest=True):
         shot(f"{theme}-control-remote")
-        for page in ("Sound", "PC", "Files", "Terminal"):
+        for page in ("Sound", "PC", "Files", "Sync", "Terminal"):
             if tap("Control menu"):
                 if page == "Sound":
                     shot(f"{theme}-control-menu")
                 if tap(page):
                     shot(f"{theme}-control-{page.lower()}")
-                    if page == "Sound":
+                    if page in ("Sound", "Sync"):
                         scroll()
-                        shot(f"{theme}-control-sound-scrolled")
+                        shot(f"{theme}-control-{page.lower()}-scrolled")
+                    if page == "Sync" and tap("Documents"):
+                        shot(f"{theme}-control-sync-edit")
+                        back()
             else:
                 break
     if tap("Clipboard", lowest=True):

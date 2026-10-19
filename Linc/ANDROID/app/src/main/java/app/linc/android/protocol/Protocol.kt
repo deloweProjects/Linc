@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 29
+const val PROTOCOL_VERSION = 30
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -140,6 +140,13 @@ object MessageType {
     const val PC_BTAUDIO_SET = "pc.btaudio.set"               // phone → desktop: {on, names: [this phone's Bluetooth names]}
     const val PC_BTAUDIO_GET = "pc.btaudio.get"               // phone → desktop: {}
     const val PC_BTAUDIO_STATE = "pc.btaudio.state"           // desktop → phone: {on, supported, device?, error?}
+    // v30: the phone's Sync page — the PC's lanes and folder pairs, read and changed from here.
+    // The PC owns the setup (it runs the engine) and sends sync.state whenever it changes.
+    const val SYNC_STATE_GET = "sync.state.get"               // phone → desktop: {}
+    const val SYNC_STATE = "sync.state"                       // desktop → phone: {lanes: {folders, photos, messages, calls}, pairs: [{id, name, pcPath, phonePath, direction: both|toPhone|toPc, enabled}], status, photosPcPath}
+    const val SYNC_PAIRS_SET = "sync.pairs.set"               // phone → desktop: {pairs: [...]} (the whole list)
+    const val SYNC_LANE_SET = "sync.lane.set"                 // phone → desktop: {lane, on}
+    const val SYNC_NOW = "sync.now"                           // phone → desktop: {}
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

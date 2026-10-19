@@ -627,6 +627,7 @@ class SocketServer(
                     MessageType.PC_AUDIO_OUTPUTS -> if (negotiated >= 28) PcTools.onOutputs(message.payload)
                     MessageType.PC_CURTAIN_STATE -> if (negotiated >= 28) PcTools.onCurtain(message.payload)
                     MessageType.PC_BTAUDIO_STATE -> if (negotiated >= 29) PcTools.onBtAudio(message.payload)
+                    MessageType.SYNC_STATE -> if (negotiated >= 30) SyncRemote.onState(message.payload)
                     MessageType.PHONE_SOUND_ASK -> if (negotiated >= 28) PhoneReach.soundAsk(message.payload)
                     MessageType.PHONE_USAGE_GET -> if (negotiated >= 28) PhoneReach.usage()
                     MessageType.PHONE_WALLPAPER_SET -> if (negotiated >= 28) PhoneReach.wallpaper(message.payload)

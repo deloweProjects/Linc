@@ -116,6 +116,17 @@ public interface IDeviceRegistry
 
     void SaveFolderSyncPaths(string? pcPath, string phonePath);
 
+    /// <summary>
+    /// The Folders lane's pairs for the active phone: each a PC folder kept the same as a phone
+    /// folder, in its own direction. A phone set up before pairs gets its one folder as the first.
+    /// </summary>
+    IReadOnlyList<FolderPair> FolderPairs { get; }
+
+    void SaveFolderPairs(IReadOnlyList<FolderPair> pairs);
+
+    /// <summary>Raised after <see cref="SaveFolderPairs"/> or a lane toggle: the sync setup changed.</summary>
+    event Action? SyncSetupChanged;
+
     /// <summary>Remember (or, with null, forget — D-081) the active phone's last wireless host:port.</summary>
     void SaveLastHostPort(string? hostPort);
     void SavePairedDevice(string serial, string model);
@@ -263,7 +274,10 @@ public sealed record KnownDevice(
     // D-094: Wi-Fi hardware addresses this phone has used, learned when it connects over the LAN.
     // Android randomises the MAC per network but keeps it stable on each, so there is one per
     // Wi-Fi it has joined. Newest first, at most WifiMacLimit.
-    List<string>? WifiMacs = null);
+    List<string>? WifiMacs = null,
+    // The Folders lane's pairs (v30). Null on a phone set up before pairs: its single
+    // FolderSyncPcPath/FolderSyncPhonePath is read as the first pair (FolderPair.LegacyId).
+    List<FolderPair>? FolderPairs = null);
 
 /// <summary>Persists known-device data under %LOCALAPPDATA%\Linc.</summary>
 public sealed class DeviceRegistry : IDeviceRegistry
@@ -391,6 +405,19 @@ public sealed class DeviceRegistry : IDeviceRegistry
 
     public string FolderSyncPhonePath =>
         string.IsNullOrWhiteSpace(Active?.FolderSyncPhonePath) ? "/sdcard/Download" : Active.FolderSyncPhonePath;
+
+    public IReadOnlyList<FolderPair> FolderPairs =>
+        Active?.FolderPairs is { } pairs ? pairs
+        : string.IsNullOrWhiteSpace(Active?.FolderSyncPcPath) ? []
+        : [new FolderPair(FolderPair.LegacyId, FolderPair.NameFor(Active!.FolderSyncPcPath!), Active.FolderSyncPcPath!, FolderSyncPhonePath)];
+
+    public event Action? SyncSetupChanged;
+
+    public void SaveFolderPairs(IReadOnlyList<FolderPair> pairs)
+    {
+        UpdateActive(d => d with { FolderPairs = pairs.ToList() });
+        SyncSetupChanged?.Invoke();
+    }
 
     public ConnectionPreference ConnectionPreference => Active?.Preference ?? ConnectionPreference.Auto;
     public event Action? ConnectionPreferenceChanged;
@@ -588,6 +615,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
         Persist();
         ActiveDeviceChanged?.Invoke();
         SyncLanesChanged?.Invoke(); // the new device's lanes are (probably) different ones
+        SyncSetupChanged?.Invoke();
     }
 
     public void ClearActiveDevice()
@@ -788,6 +816,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
             return d with { SyncLanes = lanes };
         });
         SyncLanesChanged?.Invoke();
+        SyncSetupChanged?.Invoke();
     }
 
     public void SaveFolderSyncPaths(string? pcPath, string phonePath) =>
