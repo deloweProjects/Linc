@@ -161,6 +161,42 @@ public partial class App : Application
     // silently disabled direct connections when a stray instance held :46001).
     private static System.Threading.Mutex? _singleInstance;
 
+    /// <summary>
+    /// A copy of Linc from another folder is already running (the installed one, started with
+    /// Windows): ask it to quit and take over, instead of exiting and leaving it in charge. Before
+    /// this, running a test build's Linc.Desktop.exe silently handed over to the old copy, and the
+    /// owner tested the old app for a whole round without knowing. Same folder: leave it be.
+    /// </summary>
+    private static bool TakeOverFromOtherCopy()
+    {
+        try
+        {
+            var me = Environment.ProcessPath;
+            using var current = System.Diagnostics.Process.GetCurrentProcess();
+            var other = System.Diagnostics.Process.GetProcessesByName(current.ProcessName)
+                .Where(p => p.Id != current.Id)
+                .Select(p => { try { return p.MainModule?.FileName; } catch { return null; } })
+                .FirstOrDefault(path => path is not null);
+            if (other is null || me is null || string.Equals(Path.GetFullPath(other), Path.GetFullPath(me), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            QuickShare.QsShellIntegration.TryForwardQuit();
+            try
+            {
+                return _singleInstance!.WaitOne(TimeSpan.FromSeconds(10));
+            }
+            catch (System.Threading.AbandonedMutexException)
+            {
+                return true; // it went without releasing: the mutex is ours now
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public const string RestoreAndExitArgument = "--restore-and-exit";
 
     private void RestoreAndExit()
@@ -211,6 +247,10 @@ public partial class App : Application
             var quickSharePaths = QuickShare.QsShellIntegration.PathsFrom(Environment.GetCommandLineArgs());
             var phonePaths = QuickShare.QsShellIntegration.PathsFrom(
                 Environment.GetCommandLineArgs(), QuickShare.QsShellIntegration.PhoneArgument);
+            if (!isFirst && quickSharePaths.Count == 0 && phonePaths.Count == 0 && TakeOverFromOtherCopy())
+            {
+                isFirst = true;
+            }
             if (!isFirst)
             {
                 // Explorer's "Send with Quick Share" / "Send to phone (Linc)" start a second copy;

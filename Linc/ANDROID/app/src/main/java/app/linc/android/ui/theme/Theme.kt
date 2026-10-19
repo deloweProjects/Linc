@@ -57,7 +57,12 @@ fun LincTheme(
         colorScheme = if (wallpaper == true) scheme.frosted(darkTheme) else scheme,
         motionScheme = MotionScheme.expressive(),
     ) {
-        CompositionLocalProvider(LocalShowExplanations provides showExplanations) {
+        // See-through surfaces no longer match a scheme colour, so contentColorFor falls back to
+        // LocalContentColor (black by default): say what text on them is.
+        CompositionLocalProvider(
+            LocalShowExplanations provides showExplanations,
+            androidx.compose.material3.LocalContentColor provides scheme.onSurface,
+        ) {
             if (wallpaper == true) WallpaperBackdrop(darkTheme, scheme.surface, content) else content()
         }
     }

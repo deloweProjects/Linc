@@ -62,17 +62,21 @@ object WallpaperBackground {
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
 
-/** Surfaces see-through enough for the wallpaper to show, opaque enough to read on. */
+/**
+ * Surfaces see-through enough for the wallpaper to show, opaque enough to read on. The page's own
+ * background is fully clear (screens stack a Scaffold on a Scaffold, and two 70 % layers left the
+ * wallpaper at a few per cent — the owner saw no wallpaper at all); cards stay frosted.
+ */
 internal fun ColorScheme.frosted(dark: Boolean): ColorScheme {
-    val a = if (dark) 0.70f else 0.74f
+    val a = if (dark) 0.30f else 0.34f
     return copy(
-        background = background.copy(alpha = a),
-        surface = surface.copy(alpha = a),
-        surfaceContainerLowest = surfaceContainerLowest.copy(alpha = a + 0.06f),
+        background = Color.Transparent,
+        surface = Color.Transparent,
+        surfaceContainerLowest = surfaceContainerLowest.copy(alpha = a),
         surfaceContainerLow = surfaceContainerLow.copy(alpha = a + 0.08f),
-        surfaceContainer = surfaceContainer.copy(alpha = a + 0.10f),
-        surfaceContainerHigh = surfaceContainerHigh.copy(alpha = a + 0.14f),
-        surfaceContainerHighest = surfaceContainerHighest.copy(alpha = a + 0.16f),
+        surfaceContainer = surfaceContainer.copy(alpha = a + 0.16f),
+        surfaceContainerHigh = surfaceContainerHigh.copy(alpha = a + 0.24f),
+        surfaceContainerHighest = surfaceContainerHighest.copy(alpha = a + 0.30f),
     )
 }
 
@@ -87,9 +91,10 @@ internal fun WallpaperBackdrop(dark: Boolean, scrim: Color, content: @Composable
             Image(
                 it, contentDescription = null, contentScale = ContentScale.Crop,
                 // Android 12+ blurs here; older ones get the 480-px copy, which is soft already.
-                modifier = Modifier.fillMaxSize().then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(36.dp) else Modifier),
+                modifier = Modifier.fillMaxSize().then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(20.dp) else Modifier),
             )
-            Box(Modifier.fillMaxSize().background(scrim.copy(alpha = if (dark) 0.45f else 0.35f)))
+            // A light frost toned for the theme: the wallpaper's colours stay, text stays readable.
+            Box(Modifier.fillMaxSize().background(scrim.copy(alpha = if (dark) 0.40f else 0.30f)))
         }
         content()
     }
