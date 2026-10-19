@@ -116,8 +116,13 @@ def shot(name: str) -> None:
     shell("uiautomator dump /sdcard/ui.xml >/dev/null 2>&1")
     with open(base + ".xml", "w", encoding="utf-8") as f:
         f.write(shell("cat /sdcard/ui.xml"))
-    if not alive():
+    pid = shell(f"pidof {PKG}").strip()
+    if not pid:
         notes.append(f"- **Linc was not running** at {name}")
+    else:
+        # The app's own last lines at this screen: logcat's buffer rolls over long before the end.
+        with open(base + ".log", "w", encoding="utf-8") as f:
+            f.write(shell(f"logcat -d -t 300 --pid={pid}"))
 
 
 def alive() -> bool:

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -139,24 +140,27 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
     ) { inner ->
         LazyVerticalGrid(
             columns = if (grid) GridCells.Adaptive(104.dp) else GridCells.Fixed(1),
+            // Full rows span maxLineSpan, the grid's own width in columns; Int.MAX_VALUE left the
+            // page blank under its title (UI test, emulator). And the grid fills the page rather
+            // than measuring to its content.
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = Kit.gutter, end = Kit.gutter, top = inner.calculateTopPadding() + 4.dp, bottom = 120.dp),
             horizontalArrangement = Arrangement.spacedBy(if (grid) 10.dp else 0.dp),
             verticalArrangement = Arrangement.spacedBy(if (grid) 10.dp else 2.dp),
         ) {
-            val full = GridItemSpan(Int.MAX_VALUE)
-            item(span = { full }) { Breadcrumbs(listing.path, enabled = ready) { PcTools.list(it) } }
-            if (!ready) item(span = { full }) {
+            item(span = { GridItemSpan(maxLineSpan) }) { Breadcrumbs(listing.path, enabled = ready) { PcTools.list(it) } }
+            if (!ready) item(span = { GridItemSpan(maxLineSpan) }) {
                 HelperText("Connect the PC, and update Linc on it, to see its files.", kind = Explanations.Kind.Blocked)
             }
-            listing.error?.let { item(span = { full }) { HelperText(it, kind = Explanations.Kind.Error) } }
-            if (slow && ready) item(span = { full }) {
+            listing.error?.let { item(span = { GridItemSpan(maxLineSpan) }) { HelperText(it, kind = Explanations.Kind.Error) } }
+            if (slow && ready) item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     HelperText("The PC hasn't answered yet.", kind = Explanations.Kind.Warning, modifier = Modifier.weight(1f))
                     TextButton(onClick = { PcTools.list(listing.path) }) { Text("Try again") }
                 }
             }
-            if (listing.loading) item(span = { full }) { LinearWavyProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 4.dp)) }
-            for (t in transfers.filter { !it.done || it.error != null }.take(4)) item(t.id, span = { full }) {
+            if (listing.loading) item(span = { GridItemSpan(maxLineSpan) }) { LinearWavyProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 4.dp)) }
+            for (t in transfers.filter { !it.done || it.error != null }.take(4)) item(t.id, span = { GridItemSpan(maxLineSpan) }) {
                 Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
                         Text((if (t.upload) "Sending " else "Downloading ") + t.name + (t.error?.let { " — $it" } ?: ""),
@@ -166,7 +170,7 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
                     }
                 }
             }
-            if (!listing.loading && listing.entries.isEmpty() && listing.error == null && ready) item(span = { full }) {
+            if (!listing.loading && listing.entries.isEmpty() && listing.error == null && ready) item(span = { GridItemSpan(maxLineSpan) }) {
                 HelperText(if (atRoots) "Nothing to show yet." else "This folder is empty.", modifier = Modifier.padding(vertical = 24.dp),
                     textAlign = TextAlign.Center)
             }
@@ -175,12 +179,12 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
                 val places = listing.entries.filter { it.place }
                 val drives = listing.entries.filter { it.drive }
                 if (places.isNotEmpty()) {
-                    item(span = { full }) { SectionHeader("Places", Modifier.padding(start = 0.dp)) }
+                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("Places", Modifier.padding(start = 0.dp)) }
                     items(places, key = { it.path }) { e -> PlaceTile(e) { open(e) } }
                 }
                 if (drives.isNotEmpty()) {
-                    item(span = { full }) { SectionHeader("Drives") }
-                    items(drives, key = { it.path }, span = { full }) { e -> DriveCard(e) { open(e) } }
+                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("Drives") }
+                    items(drives, key = { it.path }, span = { GridItemSpan(maxLineSpan) }) { e -> DriveCard(e) { open(e) } }
                 }
             } else {
                 val entries = listing.entries
