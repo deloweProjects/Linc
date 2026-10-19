@@ -6,7 +6,7 @@
     xmlns:views="using:Linc.Desktop.Views"
     xmlns:vm="using:Linc.Desktop.ViewModels">
 
-    <Grid Padding="24" RowSpacing="16">
+    <Grid views:PageLayout.Adaptive="True" Padding="24" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -117,7 +117,7 @@
 
         <!-- Messages & Calls sit side by side; a solo lane spans both columns
              (SyncPage code-behind manages the span). M07 polish. -->
-        <Grid Grid.Row="2" x:Name="LaneArea" ColumnSpacing="16">
+        <Grid Grid.Row="2" x:Name="LaneArea" ColumnSpacing="16" views:PageLayout.StackBelow="900">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
@@ -128,7 +128,7 @@
                     Visibility="{x:Bind ViewModel.ShowMessagesPanel, Mode=OneWay}">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="260" />
+                    <ColumnDefinition Width="Auto" MinWidth="180" MaxWidth="260" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 

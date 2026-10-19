@@ -455,6 +455,10 @@ class MirrorActivity : ComponentActivity() {
     }
 
     private fun observe() {
+        // The PC's screen can be turned back on at the PC (its ✕): keep the panel's button true.
+        lifecycleScope.launch {
+            PcTools.curtain.collect { if (PcTools.v28()) ui.curtainOn = it.on }
+        }
         // Reflect stream state. A drop after the picture has been up keeps the last frame on
         // screen under a "Reconnecting…" veil instead of cutting to black — what Windows App
         // does — and the retry loop below heals it.

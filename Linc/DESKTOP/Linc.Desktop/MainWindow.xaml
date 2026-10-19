@@ -241,6 +241,12 @@
             IsSettingsVisible="True"
             SelectionChanged="OnNavSelectionChanged"
             Loaded="OnNavLoaded">
+            <!-- The window's backdrop (Mica + the phone's blurred wallpaper) shows through. -->
+            <NavigationView.Resources>
+                <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+                <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
+                <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="Transparent" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Home" Tag="Home">
                     <NavigationViewItem.Icon>

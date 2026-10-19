@@ -25,7 +25,9 @@ public sealed class PcToolsService(IConnectionManager connection, ILogService lo
     private PcCurtain? _curtain;
 
     /// <summary>PC Remote's "PC screen off" (v28); lifts by itself when the phone goes away.</summary>
-    private PcCurtain Curtain => _curtain ??= new PcCurtain(() => connection.Current is not null, log);
+    private PcCurtain Curtain => _curtain ??= new PcCurtain(() => connection.Current is not null, log,
+        // Turned back on with the ✕ at the PC: tell the phone, so PC Remote's button follows.
+        liftedAtPc: () => _ = Reply(MessageType.PcCurtainState, _curtain!.State()));
 
     public void Attach()
     {

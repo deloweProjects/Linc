@@ -11,11 +11,14 @@ namespace Linc.Desktop.Services;
 /// under it. The monitors themselves stay on — turning them off really would stop the picture.
 ///
 /// <para>Clicks and keys go straight through it (it is transparent to input and never takes
-/// focus), and it lifts by itself when the phone goes away. A PC that can't exclude a window from
+/// focus), except for one button in each monitor's corner: "✕ Turn the screen back on", for
+/// whoever is at the PC. It lifts by itself when the phone goes away too. A PC that can't exclude a window from
 /// capture never shows it: a black screen on the phone too would be worse than none.</para>
 /// </summary>
-public sealed class PcCurtain(Func<bool> stillWanted, ILogService log)
+public sealed class PcCurtain(Func<bool> stillWanted, ILogService log, Action? liftedAtPc = null)
 {
+    private static volatile bool _userLifted;
+    private static readonly List<IntPtr> Buttons = [];
     private readonly object _lock = new();
     private Thread? _thread;
     private uint _threadId;
@@ -100,6 +103,23 @@ public sealed class PcCurtain(Func<bool> stillWanted, ILogService log)
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 windows.Add(hwnd);
             }
+            // The way back for whoever is at the PC: a small solid button in each monitor's
+            // top-right corner (also left out of the capture, so the phone never sees it).
+            _userLifted = false;
+            lock (Buttons) Buttons.Clear();
+            if (windows.Count > 0)
+            {
+                foreach (var r in monitors)
+                {
+                    var button = CreateWindowEx(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, "LincCurtain", "Turn the screen back on",
+                        WS_POPUP, r.Right - ButtonWidth - 24, r.Top + 24, ButtonWidth, ButtonHeight, IntPtr.Zero, IntPtr.Zero, cls.hInstance, IntPtr.Zero);
+                    if (button == IntPtr.Zero) continue;
+                    if (!SetWindowDisplayAffinity(button, WDA_EXCLUDEFROMCAPTURE)) { DestroyWindow(button); continue; }
+                    lock (Buttons) Buttons.Add(button);
+                    ShowWindow(button, SW_SHOWNOACTIVATE);
+                    windows.Add(button);
+                }
+            }
             _on = windows.Count > 0;
             if (_on) log.Log(LogLevel.Info, $"PC tools: the PC's screen is dark while the phone uses it ({windows.Count} monitor{(windows.Count == 1 ? "" : "s")}); the phone still sees it");
             ready.Set();
@@ -109,6 +129,11 @@ public sealed class PcCurtain(Func<bool> stillWanted, ILogService log)
             SetTimer(IntPtr.Zero, IntPtr.Zero, 2000, IntPtr.Zero);
             while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
             {
+                if (_userLifted)
+                {
+                    log.Log(LogLevel.Info, "PC tools: the screen was turned back on at the PC");
+                    break;
+                }
                 if (msg.message == WM_TIMER && !stillWanted())
                 {
                     log.Log(LogLevel.Info, "PC tools: the phone went away; the PC's screen is back");
@@ -130,28 +155,60 @@ public sealed class PcCurtain(Func<bool> stillWanted, ILogService log)
         finally
         {
             foreach (var w in windows) DestroyWindow(w);
+            lock (Buttons) Buttons.Clear();
             _on = false;
             ready.Set();
+            if (_userLifted) liftedAtPc?.Invoke();
         }
     }
 
-    /// <summary>Paints a single quiet line, so someone at the desk knows why it is dark.</summary>
+    /// <summary>
+    /// Paints the curtain (black, one quiet line saying why) and the corner button, and turns a
+    /// click on the button into "back on".
+    /// </summary>
     private static IntPtr Proc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        bool isButton;
+        lock (Buttons) isButton = Buttons.Contains(hwnd);
+        if (msg == WM_LBUTTONUP && isButton)
+        {
+            _userLifted = true;
+            PostMessage(hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero); // wake the loop so it sees it
+            return IntPtr.Zero;
+        }
+        if (msg == WM_SETCURSOR && isButton)
+        {
+            SetCursor(LoadCursor(IntPtr.Zero, IDC_HAND));
+            return new IntPtr(1);
+        }
         if (msg == WM_PAINT)
         {
             var dc = BeginPaint(hwnd, out var ps);
             GetClientRect(hwnd, out var rect);
-            FillRect(dc, ref rect, GetStockObject(BLACK_BRUSH));
-            SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, 0x00505050);
-            rect.Top = rect.Bottom - 80;
-            DrawText(dc, "This PC is being used from Linc on a phone", -1, ref rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+            if (isButton)
+            {
+                var fill = CreateSolidBrush(0x00303030);
+                FillRect(dc, ref rect, fill);
+                DeleteObject(fill);
+                SetBkMode(dc, TRANSPARENT);
+                SetTextColor(dc, 0x00F0F0F0);
+                DrawText(dc, "\u2715   Turn the screen back on", -1, ref rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+            }
+            else
+            {
+                FillRect(dc, ref rect, GetStockObject(BLACK_BRUSH));
+                SetBkMode(dc, TRANSPARENT);
+                SetTextColor(dc, 0x00505050);
+                rect.Top = rect.Bottom - 80;
+                DrawText(dc, "This PC is being used from Linc on a phone", -1, ref rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+            }
             EndPaint(hwnd, ref ps);
             return IntPtr.Zero;
         }
         return DefWindowProc(hwnd, msg, wParam, lParam);
     }
+
+    private const int ButtonWidth = 300, ButtonHeight = 48;
 
     // ---- Win32 -----------------------------------------------------------------------------------
 
@@ -163,7 +220,8 @@ public sealed class PcCurtain(Func<bool> stillWanted, ILogService log)
     private const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
     private const uint LWA_ALPHA = 0x2;
     private const int SW_SHOWNOACTIVATE = 4;
-    private const uint WM_QUIT = 0x12, WM_PAINT = 0xF, WM_TIMER = 0x113;
+    private const uint WM_QUIT = 0x12, WM_PAINT = 0xF, WM_TIMER = 0x113, WM_NULL = 0, WM_LBUTTONUP = 0x202, WM_SETCURSOR = 0x20;
+    private static readonly IntPtr IDC_HAND = new(32649);
     private const int BLACK_BRUSH = 4, TRANSPARENT = 1;
     private const uint DT_CENTER = 0x1, DT_VCENTER = 0x4, DT_SINGLELINE = 0x20;
     private static readonly IntPtr HWND_TOPMOST = new(-1);
@@ -208,6 +266,11 @@ public sealed class PcCurtain(Func<bool> stillWanted, ILogService log)
     [DllImport("user32.dll")] private static extern int FillRect(IntPtr dc, ref RECT rect, IntPtr brush);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int DrawText(IntPtr dc, string text, int count, ref RECT rect, uint format);
     [DllImport("gdi32.dll")] private static extern IntPtr GetStockObject(int obj);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateSolidBrush(uint color);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern IntPtr SetCursor(IntPtr cursor);
+    [DllImport("user32.dll")] private static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
     [DllImport("gdi32.dll")] private static extern int SetBkMode(IntPtr dc, int mode);
     [DllImport("gdi32.dll")] private static extern uint SetTextColor(IntPtr dc, uint color);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string? name);

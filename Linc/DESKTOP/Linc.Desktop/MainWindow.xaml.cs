@@ -115,9 +115,32 @@ public sealed partial class MainWindow : Window
             else if (Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported()) SystemBackdrop = new Microsoft.UI.Xaml.Media.DesktopAcrylicBackdrop();
             else return;
             if (Application.Current.Resources["SurfaceBrush"] is not Microsoft.UI.Xaml.Media.SolidColorBrush surface || Content is not Grid root) return;
-            var tint = new Microsoft.UI.Xaml.Media.SolidColorBrush(surface.Color) { Opacity = mica ? 0.55 : 0.7 };
+
+            // Layers, back to front: Mica (the window) → the phone's wallpaper, blurred (an
+            // ambient glow of the phone, the owner's ask) → the theme's surface, part-transparent
+            // → the pages, whose cards are themselves a little see-through.
+            var theme = App.Services.GetRequiredService<IThemeSyncService>();
+            var ambient = new Image
+            {
+                Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
+                Opacity = 0.9,
+                Source = theme.AmbientWallpaper,
+                IsHitTestVisible = false,
+            };
+            var tint = new Microsoft.UI.Xaml.Media.SolidColorBrush(surface.Color) { Opacity = theme.AmbientWallpaper is null ? (mica ? 0.55 : 0.7) : 0.62 };
+            var veil = new Border { Background = tint, IsHitTestVisible = false };
+            var backdrop = new Grid { IsHitTestVisible = false };
+            backdrop.Children.Add(ambient);
+            backdrop.Children.Add(veil);
+            Grid.SetRowSpan(backdrop, Math.Max(1, root.RowDefinitions.Count));
+            root.Children.Insert(0, backdrop);
+            root.Background = null;
             surface.RegisterPropertyChangedCallback(Microsoft.UI.Xaml.Media.SolidColorBrush.ColorProperty, (_, _) => tint.Color = surface.Color);
-            root.Background = tint;
+            theme.WallpaperChanged += () =>
+            {
+                ambient.Source = theme.AmbientWallpaper;
+                tint.Opacity = theme.AmbientWallpaper is null ? (mica ? 0.55 : 0.7) : 0.62;
+            };
         }
         catch (Exception ex)
         {

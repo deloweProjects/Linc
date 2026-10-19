@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:views="using:Linc.Desktop.Views">
 
-    <Grid Padding="32">
+    <Grid views:PageLayout.Adaptive="True" Padding="32">
         <StackPanel Spacing="16" MaxWidth="640" HorizontalAlignment="Left" VerticalAlignment="Top">
             <TextBlock Text="Details" Style="{StaticResource HeadlineText}" />
             <TextBlock views:Explain.IsHelp="True"

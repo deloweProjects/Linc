@@ -60,8 +60,10 @@
     <SolidColorBrush x:Key="OnTertiaryContainerBrush" Color="{ThemeResource MdOnTertiaryContainer}" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="{ThemeResource MdSurface}" />
     <SolidColorBrush x:Key="OnSurfaceBrush" Color="{ThemeResource MdOnSurface}" />
-    <SolidColorBrush x:Key="SurfaceContainerBrush" Color="{ThemeResource MdSurfaceContainer}" />
-    <SolidColorBrush x:Key="SurfaceContainerHighBrush" Color="{ThemeResource MdSurfaceContainerHigh}" />
+    <!-- Cards let the window's backdrop (Mica + the phone's blurred wallpaper) glow through a
+         little; their colour still comes from the phone's palette (ThemeSyncService). -->
+    <SolidColorBrush x:Key="SurfaceContainerBrush" Color="{ThemeResource MdSurfaceContainer}" Opacity="0.78" />
+    <SolidColorBrush x:Key="SurfaceContainerHighBrush" Color="{ThemeResource MdSurfaceContainerHigh}" Opacity="0.86" />
     <SolidColorBrush x:Key="OnSurfaceVariantBrush" Color="{ThemeResource MdOnSurfaceVariant}" />
     <SolidColorBrush x:Key="OutlineBrush" Color="{ThemeResource MdOutline}" />
     <SolidColorBrush x:Key="OutlineVariantBrush" Color="{ThemeResource MdOutlineVariant}" />

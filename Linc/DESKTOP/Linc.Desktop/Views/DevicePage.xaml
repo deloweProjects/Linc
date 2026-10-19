@@ -40,7 +40,7 @@
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
-        <Grid x:Name="Root" Padding="32" RowSpacing="20" MaxWidth="1280">
+        <Grid x:Name="Root" views:PageLayout.Adaptive="True" Padding="32" RowSpacing="20" MaxWidth="1280">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
