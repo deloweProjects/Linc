@@ -14,6 +14,7 @@
          the real registry it matches beacons against, and the real log it writes to. -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\BlePresenceService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\FolderPair.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\HomeLayout.cs" />
     <!-- DeviceRegistry.cs's KnownDevice record references these two settings types (D-054),
