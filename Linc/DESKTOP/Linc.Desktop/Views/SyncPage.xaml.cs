@@ -85,7 +85,7 @@ public sealed partial class SyncPage : Page
     private async Task EditPairAsync(FolderPairVm? existing)
     {
         var name = new TextBox { Header = "Name", PlaceholderText = "Uses the PC folder's name", Text = existing?.Name ?? "" };
-        var pcPath = new TextBox { Header = "Folder on this PC", PlaceholderText = @"C:\Users\…\Documents", Text = existing?.PcPath ?? "" };
+        var pcPath = new TextBox { Header = "Folder on this PC", PlaceholderText = "Choose a folder on this PC", Text = existing?.PcPath ?? "" };
         var pickPc = new Button { Content = "Choose…", VerticalAlignment = VerticalAlignment.Bottom };
         var phonePath = new TextBox { Header = "Folder on the phone", PlaceholderText = "/sdcard/Documents", Text = existing?.PhonePath ?? "/sdcard/Download" };
         var browse = new Button { Content = "Browse…", VerticalAlignment = VerticalAlignment.Bottom };
