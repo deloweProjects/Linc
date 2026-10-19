@@ -75,7 +75,7 @@ public sealed class FakePhone(X509Certificate2 cert, Action<string> log)
         {
             TargetHost = "linc-desktop",
             ClientCertificates = new X509CertificateCollection { cert },
-            RemoteCertificateValidationCallback = (_, _, _, _) => true,
+            // The PC's certificate is accepted by the constructor's callback (it may only be set once).
         }, ct);
         return ssl;
     }
