@@ -157,7 +157,7 @@
                              had a whole row of buttons sitting on top; now one compact entry point.
                              Same commands, same behaviour. -->
                         <Grid>
-                            <Button Content="&#xE712;" HorizontalAlignment="Left" Padding="12,8" CornerRadius="16"
+                            <Button Content="&#xE712;" FontFamily="{ThemeResource SymbolThemeFontFamily}" HorizontalAlignment="Left" Padding="12,8" CornerRadius="16"
                                     Background="{ThemeResource SecondaryContainerBrush}" Foreground="{ThemeResource OnSecondaryContainerBrush}"
                                     BorderThickness="0" FontSize="15" ToolTipService.ToolTip="Widget options">
                                 <Button.Flyout>

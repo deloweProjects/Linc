@@ -93,6 +93,15 @@ jobs:
       - name: Build the fake phone
         run: dotnet build Linc\tools\uishots\uishots.csproj -c Release -v:m
 
+      # The runner's screen is 1024x768, and Windows keeps a window inside the screen, so every
+      # PC screenshot came out at that size whatever the test asked for.
+      - name: A 1920x1080 screen
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Get-CimInstance Win32_VideoController | Select-Object CurrentHorizontalResolution, CurrentVerticalResolution | Format-Table
+
       - name: Screens with a fake phone
         shell: pwsh
         run: |
