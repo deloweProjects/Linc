@@ -171,13 +171,13 @@ fun LincScaffold(
             }
         } else if (toolsMenu != null) {
             IconButton(onClick = toolsMenu) {
-                Icon(LincSymbols.MoreVert, contentDescription = "Tools menu")
+                Icon(LincSymbols.MoreVert, contentDescription = "Control menu")
             }
         }
     }
     val barActions: @Composable RowScope.() -> Unit = {
         if (onBack != null && toolsMenu != null) {
-            IconButton(onClick = toolsMenu) { Icon(LincSymbols.MoreVert, contentDescription = "Tools menu") }
+            IconButton(onClick = toolsMenu) { Icon(LincSymbols.MoreVert, contentDescription = "Control menu") }
         }
         actions()
         if (onSettings != null) {

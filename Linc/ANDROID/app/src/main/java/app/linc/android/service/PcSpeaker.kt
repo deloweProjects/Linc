@@ -49,7 +49,7 @@ object PcSpeaker {
     /** What to tell the user about [error], in plain words. */
     fun explain(error: String?): String? = when (error) {
         null -> null
-        "no-cable" -> "The PC needs its virtual cable first. In Tools → Voice, turn on " +
+        "no-cable" -> "The PC needs its virtual cable first. In Control → Remote → Voice, turn on " +
             "\"Use this phone as the PC's microphone\" once: Linc sets the cable up, then this works too."
         "denied" -> "Windows didn't let Linc switch the PC's speakers. Try again, or pick " +
             "\"CABLE Input\" in the PC's Sound settings."

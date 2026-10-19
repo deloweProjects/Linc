@@ -145,6 +145,7 @@ private fun HomeContent(
     val fabExpanded by remember { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 40 } }
     var connectionSheet by remember { mutableStateOf(false) }
     var voiceSheet by remember { mutableStateOf(false) }
+    var powerSheet by remember { mutableStateOf(false) }
     var telegramDone by remember { mutableStateOf(ProjectLinks.telegramCardDone(context)) }
     val connected = connection as? ServiceState.Connected
 
@@ -197,7 +198,7 @@ private fun HomeContent(
             if (media?.present == true) {
                 item("media") { NowPlaying(media) }
             }
-            item("tools-h") { SectionHeader("Tools") }
+            item("tools-h") { SectionHeader("Control") }
             item("tools") {
                 val ready = connected != null
                 ToolGrid(listOf(
@@ -210,6 +211,7 @@ private fun HomeContent(
                     HomeTool("Clipboard", LincSymbols.Clipboard, MaterialShapes.SoftBurst) { onNavigate(HomeDestination.Clipboard) },
                     HomeTool("Voice", LincSymbols.VoiceAccess, MaterialShapes.Pentagon, active = voice.on || voice.tool, enabled = ready) { voiceSheet = true },
                     HomeTool("Quick Share", LincSymbols.NearMe, MaterialShapes.Cookie7Sided) { onNavigate(HomeDestination.Share) },
+                    HomeTool("Power", LincSymbols.PowerOff, MaterialShapes.Sunny, enabled = ready) { powerSheet = true },
                 ))
             }
             lastClip?.let { clip ->
@@ -251,6 +253,15 @@ private fun HomeContent(
     }
 
     if (connectionSheet) ConnectionSheet(onDismiss = { connectionSheet = false })
+    if (powerSheet) {
+        // The PC's power, from Home: lock, sleep, restart, shut down, and its brightness.
+        ModalBottomSheet(onDismissRequest = { powerSheet = false }) {
+            Column(
+                Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(Kit.groupGap),
+            ) { PowerSheet(controlsReason(connection)) }
+        }
+    }
     if (voiceSheet) {
         ModalBottomSheet(onDismissRequest = { voiceSheet = false }) {
             Column(

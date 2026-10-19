@@ -91,7 +91,10 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
     val transfers by PcTools.transfers.collectAsState()
     val note by PcTools.fileNote.collectAsState()
     val notify = rememberNotify()
-    val ready = PcTools.ready()
+    // Follow the connection: "ready" read once went stale when the page opened mid-reconnect
+    // (common over Wi-Fi), and the page then sat on "Connect the PC" or an old listing for ever.
+    val connection by app.linc.android.service.CompanionStateHolder.state.collectAsState()
+    val ready = remember(connection) { PcTools.ready() }
     var grid by remember { mutableStateOf(prefs.getBoolean(KEY_GRID, true)) }
     var menuFor by remember { mutableStateOf<PcFileEntry?>(null) }
     var renaming by remember { mutableStateOf<PcFileEntry?>(null) }
@@ -100,7 +103,14 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         for (uri in uris) PcTools.upload(context, listing.path, uri)
     }
-    LaunchedEffect(ready) { if (ready && listing.entries.isEmpty()) PcTools.list("") }
+    // On open and on every reconnect, ask again for where we are (or the start page).
+    LaunchedEffect(ready, connection) { if (ready) PcTools.list(listing.path) }
+    // An answer that never comes says so, with a way to try again.
+    var slow by remember { mutableStateOf(false) }
+    LaunchedEffect(listing.loading) {
+        slow = false
+        if (listing.loading) { kotlinx.coroutines.delay(8_000); slow = listing.loading }
+    }
     LaunchedEffect(note) { note?.let { notify(it); PcTools.clearNote() } }
 
     val atRoots = listing.path.isEmpty()
@@ -139,6 +149,12 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
                 HelperText("Connect the PC, and update Linc on it, to see its files.", kind = Explanations.Kind.Blocked)
             }
             listing.error?.let { item(span = { full }) { HelperText(it, kind = Explanations.Kind.Error) } }
+            if (slow && ready) item(span = { full }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    HelperText("The PC hasn't answered yet.", kind = Explanations.Kind.Warning, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { PcTools.list(listing.path) }) { Text("Try again") }
+                }
+            }
             if (listing.loading) item(span = { full }) { LinearWavyProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 4.dp)) }
             for (t in transfers.filter { !it.done || it.error != null }.take(4)) item(t.id, span = { full }) {
                 Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {

@@ -100,7 +100,8 @@ fun PcScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) {
     val info by PcTools.info.collectAsState()
     val history by PcTools.history.collectAsState()
     val apps by PcTools.apps.collectAsState()
-    val ready = PcTools.ready()
+    val linkState by app.linc.android.service.CompanionStateHolder.state.collectAsState()
+    val ready = remember(linkState) { PcTools.ready() }
     val notify = rememberNotify()
     val phoneAccent = MaterialTheme.colorScheme.primary
     val phoneDark = androidx.compose.foundation.isSystemInDarkTheme()

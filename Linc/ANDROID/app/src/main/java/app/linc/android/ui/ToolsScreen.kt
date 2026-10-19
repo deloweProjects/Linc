@@ -157,7 +157,7 @@ private fun ToolsRail(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             IconButton(onClick = onToggle, modifier = Modifier.padding(start = if (expanded) 12.dp else 0.dp)) {
-                Icon(LincSymbols.MenuOpen, contentDescription = "Close the tools menu")
+                Icon(LincSymbols.MenuOpen, contentDescription = "Close the Control menu")
             }
             // Mirror PC: the one action that leaves the page, as the rail's FAB.
             FloatingActionButton(

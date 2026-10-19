@@ -29,6 +29,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -73,6 +76,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -436,31 +440,44 @@ private fun RemoteActionsRow(
     voiceReady: Boolean,
     onOpen: (RemoteSheet) -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        ActionButton(LincSymbols.Keyboard, "Keyboard", inputReady, MaterialShapes.Cookie9Sided.toShape()) { onOpen(RemoteSheet.Keyboard) }
-        ActionButton(LincSymbols.MusicNote, "Media", mediaReady, MaterialShapes.Clover4Leaf.toShape()) { onOpen(RemoteSheet.Media) }
-        ActionButton(LincSymbols.Slideshow, "Slides", inputReady, MaterialShapes.Square.toShape()) { onOpen(RemoteSheet.Present) }
-        ActionButton(LincSymbols.KeyboardVoice, "Voice", voiceReady, MaterialShapes.Pill.toShape()) { onOpen(RemoteSheet.Voice) }
-        ActionButton(LincSymbols.PowerOff, "Power", controlsReady, MaterialShapes.Sunny.toShape()) { onOpen(RemoteSheet.Power) }
+    // One calm bar, the way Android's own navigation bar reads: every action the same pill
+    // under its label, no mix of shapes competing for attention.
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            ActionButton(LincSymbols.Keyboard, "Keyboard", inputReady) { onOpen(RemoteSheet.Keyboard) }
+            ActionButton(LincSymbols.MusicNote, "Media", mediaReady) { onOpen(RemoteSheet.Media) }
+            ActionButton(LincSymbols.Slideshow, "Slides", inputReady) { onOpen(RemoteSheet.Present) }
+            ActionButton(LincSymbols.KeyboardVoice, "Voice", voiceReady) { onOpen(RemoteSheet.Voice) }
+            ActionButton(LincSymbols.PowerOff, "Power", controlsReady) { onOpen(RemoteSheet.Power) }
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ActionButton(icon: ImageVector, label: String, enabled: Boolean, shape: androidx.compose.ui.graphics.Shape, onClick: () -> Unit) {
+private fun ActionButton(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Column(
         Modifier.width(64.dp).clip(RoundedCornerShape(16.dp))
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
             .alpha(if (enabled) 1f else 0.38f)
             .padding(vertical = 4.dp)
             .semantics { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Box(
-            Modifier.size(52.dp).clip(shape).background(MaterialTheme.colorScheme.secondaryContainer),
+            Modifier.size(width = 56.dp, height = 36.dp).clip(CircleShape)
+                .background(if (pressed) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.secondaryContainer),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer) }
+        ) {
+            Icon(icon, contentDescription = null,
+                tint = if (pressed) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSecondaryContainer)
+        }
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
@@ -468,8 +485,18 @@ private fun ActionButton(icon: ImageVector, label: String, enabled: Boolean, sha
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RemoteSheetHost(sheet: RemoteSheet, onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = sheet != RemoteSheet.Keyboard)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+    // Full height for every sheet; the keyboard's sheet also rides above the phone's keyboard
+    // (its insets include the IME), so its keys sit right on top of the keys being typed.
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        contentWindowInsets = {
+            if (sheet == RemoteSheet.Keyboard) WindowInsets.ime
+                .union(WindowInsets.navigationBars)
+            else androidx.compose.material3.BottomSheetDefaults.windowInsets
+        },
+    ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(Kit.groupGap),
@@ -523,12 +550,26 @@ private fun KeyboardSheet(blockedReason: String?) {
             }
         },
     )
-    LaunchedEffect(sink, ready) {
-        val target = sink ?: return@LaunchedEffect
-        if (!ready) return@LaunchedEffect
-        kotlinx.coroutines.delay(250) // let the sheet settle before raising the IME
+    fun raise() {
+        val target = sink ?: return
         target.requestFocus()
         context.getSystemService(InputMethodManager::class.java).showSoftInput(target, InputMethodManager.SHOW_IMPLICIT)
+    }
+    LaunchedEffect(sink, ready) {
+        if (sink == null || !ready) return@LaunchedEffect
+        kotlinx.coroutines.delay(250) // let the sheet settle before raising the IME
+        raise()
+    }
+    // Closed the phone's keyboard but still typing on the PC? One tap brings it back.
+    FilledTonalButton(
+        onClick = { raise() },
+        enabled = ready,
+        shapes = ButtonDefaults.shapes(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter).heightIn(min = 48.dp),
+    ) {
+        Icon(LincSymbols.Keyboard, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text("Show the keyboard")
     }
     DisposableEffect(Unit) { onDispose { ModifierKeys.clear() } }
 
@@ -911,7 +952,7 @@ internal fun VoiceSheet() {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun PowerSheet(blockedReason: String?) {
+internal fun PowerSheet(blockedReason: String?) {
     val ready = blockedReason == null
     val state by PcControl.state.collectAsState()
     var confirm by remember { mutableStateOf<String?>(null) } // "shutdown" | "restart"

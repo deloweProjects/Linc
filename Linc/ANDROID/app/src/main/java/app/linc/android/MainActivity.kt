@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
 /** The four destinations (1.0.0.11, D-082). Settings is the gear in every top bar, not a tab. */
 private enum class Tab(val label: String, val icon: ImageVector) {
     Home("Home", LincSymbols.Home),
-    Remote("Tools", LincSymbols.Remote),
+    Remote("Control", LincSymbols.Remote),
     Clipboard("Clipboard", LincSymbols.Clipboard),
     Share("Share", LincSymbols.Share),
 }

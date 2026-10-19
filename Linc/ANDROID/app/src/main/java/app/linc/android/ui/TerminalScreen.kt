@@ -110,7 +110,8 @@ fun TerminalHome(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null)
     val shells by PcTools.shells.collectAsState()
     val open by PcTools.termOpen.collectAsState()
     val error by PcTools.termError.collectAsState()
-    val ready = PcTools.ready()
+    val linkState by app.linc.android.service.CompanionStateHolder.state.collectAsState()
+    val ready = remember(linkState) { PcTools.ready() }
     LaunchedEffect(ready) { if (ready) PcTools.refreshShells() }
 
     LincScaffold(title = "Terminal", subtitle = "On your PC", onBack = onBack, onSettings = onSettings) { inner ->
@@ -184,7 +185,8 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
     val open by PcTools.termOpen.collectAsState()
     val error by PcTools.termError.collectAsState()
     val version by PcTools.screenVersion.collectAsState()
-    val ready = PcTools.ready()
+    val linkState by app.linc.android.service.CompanionStateHolder.state.collectAsState()
+    val ready = remember(linkState) { PcTools.ready() }
     var started by remember { mutableStateOf(shell == null) }
     var fontSp by remember { mutableFloatStateOf(prefs.getFloat(KEY_FONT, 13f)) }
     var input by remember { mutableStateOf<TerminalInputView?>(null) }
