@@ -95,22 +95,31 @@ jobs:
           msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
-      - name: Zip it
+      # One file for both apps, squeezed hard (the owner: "put in 1 file then compress bro like a
+      # lot, I'm low on data"): 7-Zip LZMA2 at its highest setting, solid, a 256 MB dictionary, so
+      # the PC's own copy of the phone app (Assets\companion.apk) costs almost nothing next to the
+      # phone APK at the top. Windows 11 opens .7z itself.
+      - name: Pack both apps into one 7z
         shell: pwsh
         run: |
           $publish = 'Linc\DESKTOP\Linc.Desktop\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish'
           # "Test release" in the name, so a test build is never mistaken for a real one (owner's ask).
           $tag = ($env:GITHUB_REF_NAME -replace '^test-build/', '' -replace '^test-', '' -replace '/', '-')
-          $name = "Linc-Test-Release-$tag-PC.zip"
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $publish), "$PWD\$name", [System.IO.Compression.CompressionLevel]::Optimal, $false)
+          $stage = "$PWD\pack"
+          New-Item -ItemType Directory -Force "$stage\Linc PC" | Out-Null
+          Copy-Item "$publish\*" "$stage\Linc PC" -Recurse
+          Copy-Item 'Linc\ANDROID\app\build\outputs\apk\debug\app-debug.apk' "$stage\Linc phone app.apk"
+          $name = "Linc-Test-Release-$tag.7z"
+          & "$env:ProgramFiles\7-Zip\7z.exe" a -t7z -m0=lzma2 -mx=9 -mfb=273 -md=256m -ms=on -mqs=on -mmt=2 "$PWD\$name" "$stage\*"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Get-Item $name | Format-List Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
-          name: test-desktop
-          path: Linc-Test-Release-*.zip
+          name: test-bundle
+          path: Linc-Test-Release-*.7z
           if-no-files-found: error
+          compression-level: 0
 
   telegram:
     needs: [android, windows]
@@ -137,14 +146,11 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          name: test-bundle
           path: dist
-          merge-multiple: true
 
-      - name: Name the files
-        run: |
-          name="${GITHUB_REF_NAME#test-build/}"; name="${name#test-}"; name="${name//\//-}"
-          mv dist/app-debug.apk "dist/Linc-Test-Release-$name-Android.apk"
-          ls -la dist
+      - name: The file
+        run: ls -la dist
 
       - name: Connect bot to the local server
         run: |
@@ -177,8 +183,8 @@ jobs:
             notes=$(git log --no-merges --format='• %s' origin/main..HEAD | grep -v '^• WIP' | head -12)
             [ -n "$notes" ] || notes=$(git log -1 --format=%s)
           fi
-          msg="🧪 Linc test release: $name"$'\n'"A preview for testing, not the next update. Your installed Linc won't offer it, and it installs over the one you have (no need to uninstall)."$'\n\n'"What's new:"$'\n'"$notes"$'\n\n'"📱 Phone: install the Android APK."$'\n'"💻 PC: close Linc, unzip the PC zip and run Linc.Desktop.exe."$'\n'"Found a problem? Send the logs from Settings → Logs."
-          ./telegram-uploader/send.sh -m "$msg" dist/*.apk dist/*.zip
+          msg="🧪 Linc test release: $name"$'\n'"A preview for testing, not the next update. Your installed Linc won't offer it, and it installs over the one you have (no need to uninstall)."$'\n\n'"What's new:"$'\n'"$notes"$'\n\n'"One file for both apps, packed small. Open it on the PC (Windows 11 opens .7z; else 7-Zip)."$'\n'"💻 PC: close Linc, then run Linc.Desktop.exe in the Linc PC folder."$'\n'"📱 Phone: install \"Linc phone app.apk\" (copy it to the phone, or Device → More: install an app on the PC)."$'\n'"Found a problem? Send the logs from Settings → Logs."
+          ./telegram-uploader/send.sh -m "$msg" dist/*.7z
 
       - name: Release the bot from the local server
         if: always()
