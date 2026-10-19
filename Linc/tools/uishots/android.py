@@ -50,10 +50,13 @@ def dump() -> ET.Element | None:
     return None
 
 
-def find(label: str, exact: bool = True) -> tuple[int, int] | None:
+def find(label: str, exact: bool = True, lowest: bool = False) -> tuple[int, int] | None:
+    """The centre of the first element showing `label`, or with `lowest` the one nearest the
+    bottom: a tab's name also appears on Home (the "Control" heading, the Clipboard tile)."""
     root = dump()
     if root is None:
         return None
+    best = None
     for node in root.iter("node"):
         for attr in ("text", "content-desc"):
             value = node.get(attr, "")
@@ -61,8 +64,12 @@ def find(label: str, exact: bool = True) -> tuple[int, int] | None:
                 m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
                 if m:
                     x1, y1, x2, y2 = map(int, m.groups())
-                    return (x1 + x2) // 2, (y1 + y2) // 2
-    return None
+                    spot = ((x1 + x2) // 2, (y1 + y2) // 2)
+                    if not lowest:
+                        return spot
+                    if best is None or spot[1] > best[1]:
+                        best = spot
+    return best
 
 
 # Android's own prompts that can sit over Linc: answered as a person would, so the screen under
@@ -88,9 +95,9 @@ def dismiss_prompts() -> None:
                 return
 
 
-def tap(label: str, exact: bool = True) -> bool:
+def tap(label: str, exact: bool = True, lowest: bool = False) -> bool:
     dismiss_prompts()
-    spot = find(label, exact)
+    spot = find(label, exact, lowest)
     if spot is None:
         notes.append(f"- couldn't find **{label}** to tap (step {step + 1})")
         return False
@@ -172,7 +179,7 @@ def walk(theme: str) -> None:
     shot(f"{theme}-home")
     scroll()
     shot(f"{theme}-home-scrolled")
-    if tap("Control"):
+    if tap("Control", lowest=True):
         shot(f"{theme}-control-remote")
         for page in ("Sound", "PC", "Files", "Terminal"):
             if tap("Control menu"):
@@ -185,11 +192,11 @@ def walk(theme: str) -> None:
                         shot(f"{theme}-control-sound-scrolled")
             else:
                 break
-    if tap("Clipboard"):
+    if tap("Clipboard", lowest=True):
         shot(f"{theme}-clipboard")
-    if tap("Share"):
+    if tap("Share", lowest=True):
         shot(f"{theme}-share")
-    if tap("Home") and tap("Settings"):
+    if tap("Home", lowest=True) and tap("Settings"):
         shot(f"{theme}-settings")
         back()
 
