@@ -112,12 +112,12 @@ jobs:
       # Each harness exits 0 when green and 1 when not (CONTRIBUTING.md), and must run from Linc/.
       # Skipped: they need a real phone, Bluetooth adapter, live hotspot link or hardware H.264
       # encoder (mirrorsim; the runner VM only has the Basic Render Driver), none of which a
-      # runner has.
+      # runner has. uishots drives the published app with a fake phone; ui-test.yml runs it.
       - name: Run tools/ harnesses
         shell: pwsh
         working-directory: Linc
         run: |
-          $skip = @('probe', 'desktopsim', 'blescan', 'hotspotprobe', 'mirrorsim')
+          $skip = @('probe', 'desktopsim', 'blescan', 'hotspotprobe', 'mirrorsim', 'uishots')
           $results = @()
           foreach ($dir in Get-ChildItem tools -Directory) {
             if ($skip -contains $dir.Name) { $results += "| $($dir.Name) | skipped (needs hardware) |"; continue }

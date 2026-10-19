@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Screenshots of the Android app on an emulator, for review without a phone in hand.
+
+Run by .github/workflows/ui-test.yml inside android-emulator-runner, with the debug APK built.
+Installs Linc, skips first-run onboarding, walks every main screen by tapping what a person
+would tap (found by its text or accessibility label in a uiautomator dump), and saves a PNG and
+the screen's UI tree per step under out/android/. Exits 1 only if Linc crashed; a screen it
+could not reach is reported in summary.md, not failed, so one moved button doesn't hide the rest.
+
+    python3 tools/uishots/android.py <apk> <out-dir>
+"""
+import os
+import re
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+PKG = "app.linc.android"
+APK, OUT = sys.argv[1], sys.argv[2]
+os.makedirs(OUT, exist_ok=True)
+notes: list[str] = []
+step = 0
+
+
+def adb(*args: str, check: bool = True, capture: bool = True) -> str:
+    res = subprocess.run(["adb", *args], capture_output=capture, text=True, timeout=120)
+    if check and res.returncode != 0:
+        raise RuntimeError(f"adb {' '.join(args)}: {res.stderr.strip()}")
+    return res.stdout if capture else ""
+
+
+def shell(cmd: str, check: bool = False) -> str:
+    return adb("shell", cmd, check=check)
+
+
+def dump() -> ET.Element | None:
+    for _ in range(3):
+        shell("uiautomator dump /sdcard/ui.xml >/dev/null 2>&1")
+        xml = shell("cat /sdcard/ui.xml")
+        if xml.strip().startswith("<?xml"):
+            try:
+                return ET.fromstring(xml)
+            except ET.ParseError:
+                pass
+        time.sleep(1)
+    return None
+
+
+def find(label: str, exact: bool = True) -> tuple[int, int] | None:
+    root = dump()
+    if root is None:
+        return None
+    for node in root.iter("node"):
+        for attr in ("text", "content-desc"):
+            value = node.get(attr, "")
+            if (value == label) if exact else (label.lower() in value.lower()):
+                m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+                if m:
+                    x1, y1, x2, y2 = map(int, m.groups())
+                    return (x1 + x2) // 2, (y1 + y2) // 2
+    return None
+
+
+def tap(label: str, exact: bool = True) -> bool:
+    spot = find(label, exact)
+    if spot is None:
+        notes.append(f"- couldn't find **{label}** to tap (step {step + 1})")
+        return False
+    shell(f"input tap {spot[0]} {spot[1]}")
+    time.sleep(1.5)
+    return True
+
+
+def shot(name: str) -> None:
+    global step
+    step += 1
+    base = os.path.join(OUT, f"{step:02d}-{name}")
+    with open(base + ".png", "wb") as f:
+        f.write(subprocess.run(["adb", "exec-out", "screencap", "-p"], capture_output=True, timeout=60).stdout)
+    shell("uiautomator dump /sdcard/ui.xml >/dev/null 2>&1")
+    with open(base + ".xml", "w", encoding="utf-8") as f:
+        f.write(shell("cat /sdcard/ui.xml"))
+    if not alive():
+        notes.append(f"- **Linc was not running** at {name}")
+
+
+def alive() -> bool:
+    return shell(f"pidof {PKG}").strip() != ""
+
+
+def back() -> None:
+    shell("input keyevent 4")
+    time.sleep(1)
+
+
+# ---- set up --------------------------------------------------------------------------------
+adb("wait-for-device")
+while shell("getprop sys.boot_completed").strip() != "1":
+    time.sleep(2)
+shell("settings put global window_animation_scale 0")
+shell("settings put global transition_animation_scale 0")
+shell("settings put global animator_duration_scale 0")
+shell("input keyevent 82")  # wake and unlock
+adb("install", "-r", "-g", APK)
+# First run's onboarding is its own flow; the screens behind it are what's under review.
+shell(f"run-as {PKG} sh -c 'mkdir -p shared_prefs && printf \"%s\" "
+      f"\"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?><map><boolean name=\\\"onboarded\\\" value=\\\"true\\\" /></map>\""
+      f" > shared_prefs/linc.xml'")
+shell("logcat -c")
+
+
+def launch() -> None:
+    shell(f"am force-stop {PKG}")
+    shell(f"monkey -p {PKG} -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1")
+    time.sleep(6)
+    # A first-run system dialog (notifications, battery) would sit over everything.
+    for label in ("Allow", "Not now", "Skip"):
+        if find(label):
+            tap(label)
+
+
+def walk(theme: str) -> None:
+    launch()
+    shot(f"{theme}-home")
+    shell("input swipe 540 1800 540 600 400")
+    time.sleep(1)
+    shot(f"{theme}-home-scrolled")
+    if tap("Control"):
+        shot(f"{theme}-control-remote")
+        for page in ("Sound", "PC", "Files", "Terminal"):
+            if tap("Control menu"):
+                if page == "Sound":
+                    shot(f"{theme}-control-menu")
+                if tap(page):
+                    shot(f"{theme}-control-{page.lower()}")
+                    if page == "Sound":
+                        shell("input swipe 540 1800 540 600 400")
+                        time.sleep(1)
+                        shot(f"{theme}-control-sound-scrolled")
+            else:
+                break
+    if tap("Clipboard"):
+        shot(f"{theme}-clipboard")
+    if tap("Share"):
+        shot(f"{theme}-share")
+    if tap("Home") and tap("Settings"):
+        shot(f"{theme}-settings")
+        back()
+
+
+walk("dark")
+shell("cmd uimode night no")
+time.sleep(2)
+walk("light")
+shell("cmd uimode night yes")
+
+# ---- report --------------------------------------------------------------------------------
+crashes = [l for l in shell("logcat -d -b crash").splitlines() if PKG in l or "FATAL" in l]
+with open(os.path.join(OUT, "logcat.txt"), "w", encoding="utf-8") as f:
+    f.write(shell("logcat -d -t 4000"))
+with open(os.path.join(OUT, "summary.md"), "w", encoding="utf-8") as f:
+    f.write(f"## Android screens\n\n{step} screenshots.\n\n")
+    if crashes:
+        f.write("### Crash\n\n```\n" + "\n".join(crashes[:80]) + "\n```\n\n")
+    if notes:
+        f.write("### Notes\n\n" + "\n".join(notes) + "\n")
+print(open(os.path.join(OUT, "summary.md"), encoding="utf-8").read())
+sys.exit(1 if crashes else 0)
