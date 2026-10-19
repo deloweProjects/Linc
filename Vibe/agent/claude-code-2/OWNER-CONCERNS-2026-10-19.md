@@ -290,6 +290,35 @@ state sent and received.
   when Wi-Fi dropped — USB took over in 3 s each time; the banner should not show for a handover
   that recovers within a few seconds.
 
+## 12. Owner's answers to the test list (2026-10-19 22:43)
+
+- **Nothing playing**: Linc's notification access was **off**; turned on, still nothing. "This
+  used to work" → a regression, not a setting. Find the commit that broke `media.state` from the
+  phone (phone `MediaBridge.kt` / the notification listener, desktop media handler on the
+  Device/Home pages): `git log -S media.state`, compare with an older test build. Note the PC log
+  does carry "PC media for the phone: …" (PC → phone) but nothing phone → PC.
+- **Mirror sound**: plays on the PC with no audible delay, **but the phone goes silent**. Owner:
+  "adopt this, it's scrcpy that does phone mirror, research how it does it". Our bundled scrcpy is
+  **3.3.4** (`Linc/SCRCPY/Default/meson.build`) and supports **`--audio-dup`** (Android 13+, uses
+  `--audio-source=playback`): the phone keeps playing *and* the PC gets the sound. So:
+  - Mirror: add `--audio-dup` (Settings: "Keep sound on the phone too", default on for
+    Android 13+), via `MirrorSettings` → `MirrorService` args.
+  - "Phone sound on the PC" = scrcpy with `--no-video --no-window --audio-dup` (no recording
+    prompt, no Bluetooth): replaces `PcBluetoothAudio` and `PhoneSource`'s recording route.
+    Then align: the phone delays its own output by scrcpy's measured lag (`--audio-buffer`
+    default 50 ms + decode) — Play everywhere's per-output delay already does this for others.
+  - Write it into PROTOCOL.md/notes as the one way phone sound reaches the PC.
+- **Dark theme / blur**: see the screenshots in item 7 (sent earlier).
+- **Wrong address**: home Wi-Fi now; the phone's hotspot sometimes, long ago. So the PC must not
+  dial the gateway (192.168.2.1) on home Wi-Fi; only when its own address is on the phone's
+  hotspot subnet and the gateway *is* the phone.
+- **Gallery**: a PC → phone photo still doesn't show; "I think it used to" — check whether an
+  older path wrote through MediaStore or scanned (git log on `ShareService.cs`,
+  `FileChannelServer.kt`, `ShareStore.kt`) before adding the scan (item 5).
+- **Terminal (landscape, dark)**: lines look right in landscape (wider), so the break is width +
+  no reflow (item 4). Also: the top bar title "Command Prompt" is **near-invisible** in dark
+  (dark text on dark) — fix its colour.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
