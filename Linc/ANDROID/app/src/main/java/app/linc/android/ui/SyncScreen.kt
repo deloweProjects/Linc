@@ -229,11 +229,17 @@ private fun PathChip(icon: ImageVector, path: String, modifier: Modifier = Modif
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            // The end of a path says which folder it is; the start is the same drive every time.
-            Text(path, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            Text(shortPath(path), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 6.dp))
         }
     }
+}
+
+/** The end of a path says which folder it is; the start is the same drive every time. */
+internal fun shortPath(path: String): String {
+    val sep = if ('\\' in path) '\\' else '/'
+    val parts = path.trimEnd('\\', '/').split('\\', '/').filter { it.isNotEmpty() }
+    return if (parts.size <= 3) path else "…" + sep + parts.takeLast(2).joinToString(sep.toString())
 }
 
 /** Add or edit one pair: its name, the PC folder, this phone's folder and which way files go. */

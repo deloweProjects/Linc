@@ -81,6 +81,16 @@ public sealed partial class FolderPairVm(FolderPair pair, SyncViewModel owner) :
     public string PhonePath => _pair.PhonePath;
     public string Direction => _pair.Direction;
 
+    // The end of a path says which folder it is; the full path is the tooltip.
+    public string PcShort => Short(_pair.PcPath, '\\');
+    public string PhoneShort => Short(_pair.PhonePath, '/');
+
+    private static string Short(string path, char sep)
+    {
+        var parts = path.TrimEnd('\\', '/').Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length <= 3 ? path : "…" + sep + string.Join(sep, parts[^2..]);
+    }
+
     /// <summary>Between the two folders: ⇄ both ways, → PC to phone, ← phone to PC.</summary>
     public string ArrowGlyph => _pair.Direction switch
     {

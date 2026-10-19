@@ -217,7 +217,7 @@
                                             <Border CornerRadius="14" Padding="12,8" Background="{ThemeResource SurfaceContainerBrush}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <FontIcon Glyph="&#xE7F4;" FontSize="14" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
-                                                    <TextBlock Text="{x:Bind PcPath, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                    <TextBlock Text="{x:Bind PcShort, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
                                                                ToolTipService.ToolTip="{x:Bind PcPath, Mode=OneWay}" />
                                                 </StackPanel>
                                             </Border>
@@ -225,7 +225,7 @@
                                             <Border Grid.Column="2" CornerRadius="14" Padding="12,8" Background="{ThemeResource SurfaceContainerBrush}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <FontIcon Glyph="&#xE8EA;" FontSize="14" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
-                                                    <TextBlock Text="{x:Bind PhonePath, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                    <TextBlock Text="{x:Bind PhoneShort, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
                                                                ToolTipService.ToolTip="{x:Bind PhonePath, Mode=OneWay}" />
                                                 </StackPanel>
                                             </Border>
