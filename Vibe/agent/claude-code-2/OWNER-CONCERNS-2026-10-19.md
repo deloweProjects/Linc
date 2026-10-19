@@ -207,7 +207,7 @@ Also in that screenshot (PC Home, disconnected):
 
 Phone clock is ~11.15 s ahead of the PC's (phone "Connected" 21:56:18.770 = PC 21:56:07.621).
 
-**Play everywhere PC→phone dies in ~1 s — it's a race between two links, not the audio code.**
+**Play everywhere PC→phone dies in ~1 s.** (First guess — a race between two links — was wrong; see the USB-only runs below.)
 Timeline in PC time:
 - 28.07 PC: Speaker mode on, "Playing this PC's sound on the phone (AAC, in step)", Play everywhere on.
 - 28.13 phone: "Play everywhere: turning on".
@@ -244,6 +244,30 @@ starts looking fine, keeps saying aligning, then I touch maybe volume it stops w
   endpoint, which refuses. Volume during Play everywhere must set the *owner's own* output
   (`PcSpeakerMode.OwnOutputId`) / Play everywhere's master gain, never the cable.
 - Then it turned off — need the PC log of 22:10–22:12 (PC time ≈ phone − 11 s) to see why.
+
+**Third and fourth runs (22:15–22:17, USB only, both logs) — the two-link theory above is WRONG.**
+Only one link (USB), and it failed the same way twice:
+- PC 41.31 Speaker mode on → 41.40 config written → **41.49 "the phone closed the sound channel
+  (92 ms in)"** → 42.53 write fails "aborted by the software in your host machine" (1137 ms in).
+  Second run: 72 ms / 1105 ms. Same shape every time.
+- Phone (≈ +11.2 s): dial-back in 34 ms, "sound is arriving", "audio focus taken by another
+  player", then **nothing**: no "sound channel ended", no "sound stopped" (`SyncedAudio.receive`'s
+  `finally` always logs those). So **the phone's socket is still open and reading while the PC
+  reads end-of-stream on its socket** ~100 ms in. Something between them ends the PC side.
+- Suspect #1: **f571610 "channel dial-backs through adb reverse on Wireless debugging too"**
+  (2026-10-19 07:47, after the play-everywhere-1 build that worked). On USB and wireless
+  debugging the phone now dials back through `adb reverse` (PC port 46011 → 46001). adb's
+  forwarding tunnel can end the PC-side read direction while the phone keeps its end — the PC
+  sees EOF in `PcAudioStreamer.ClockLoop` (it reads the phone's clock probes on the same socket)
+  and the stream dies. Video/terminal/files don't read on the PC side much, so they survived.
+  Check: does the play-everywhere-1 build fail the same way over USB? Try with the dial-back
+  forced to the LAN address; and log `ClockLoop` bytes read before the EOF.
+- Suspect #2: phone side — `PcPlaybackSession.start` (new in 9f39fb9, after the working build)
+  takes audio focus right as the stream starts ("audio focus taken by another player"); check it
+  doesn't close or replace anything on the channel.
+- Either way: the PC must not tear the stream down on a clock-probe EOF alone — keep playing,
+  log it, and only stop when the *write* side fails; and the phone must notice a dead PC within
+  a few seconds (read timeout) instead of waiting for ever.
 
 **"Nothing playing"**: neither log has a single media line (no `media.state` sent or received)
 while the owner played music. Check the phone's media session listener is running (notification
