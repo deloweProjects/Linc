@@ -6,11 +6,14 @@
 # - windows: the published PC app with a throwaway data root, a fake phone (tools/uishots)
 #   connected to it over Direct TLS, every page and three window sizes screenshotted.
 #
-# Run it by hand (Actions → UI test → Run workflow) or from a session, on any branch.
+# Runs on a push to a ui-test/* branch (a session makes one from the branch under test, the
+# same way test-build/* works), or by hand once this file is on main.
 
 name: UI test
 
 on:
+  push:
+    branches: ["ui-test/**"]
   workflow_dispatch:
 
 concurrency:
