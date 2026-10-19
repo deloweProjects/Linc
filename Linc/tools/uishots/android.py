@@ -92,6 +92,12 @@ def alive() -> bool:
     return shell(f"pidof {PKG}").strip() != ""
 
 
+def scroll() -> None:
+    """One slow drag up, slow enough to scroll rather than fling or be taken for a tap."""
+    shell("input swipe 540 1700 540 700 900")
+    time.sleep(1.5)
+
+
 def back() -> None:
     shell("input keyevent 4")
     time.sleep(1)
@@ -106,6 +112,10 @@ shell("settings put global transition_animation_scale 0")
 shell("settings put global animator_duration_scale 0")
 shell("input keyevent 82")  # wake and unlock
 adb("install", "-r", "-g", APK)
+# Exempt from battery optimisation up front, or Android's own "always run in background?" prompt
+# sits over the first screens.
+shell(f"dumpsys deviceidle whitelist +{PKG}")
+shell("cmd uimode night yes")
 # First run's onboarding is its own flow; the screens behind it are what's under review.
 shell(f"run-as {PKG} sh -c 'mkdir -p shared_prefs && printf \"%s\" "
       f"\"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?><map><boolean name=\\\"onboarded\\\" value=\\\"true\\\" /></map>\""
@@ -116,6 +126,9 @@ shell("logcat -c")
 def launch() -> None:
     shell(f"am force-stop {PKG}")
     shell(f"monkey -p {PKG} -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1")
+    # The companion service, as the PC app starts it over adb when it isn't running yet: on a
+    # fresh install nothing else does, and its socket is what the fake PC dials.
+    shell(f"am start-foreground-service -n {PKG}/{PKG}.service.CompanionService")
     time.sleep(6)
     # A first-run system dialog (notifications, battery) would sit over everything.
     for label in ("Allow", "Not now", "Skip"):
@@ -132,8 +145,7 @@ def walk(theme: str) -> None:
         notes.append(f"- the fake PC wasn't connected for the {theme} walk")
     time.sleep(3)  # the PC's answers land and get drawn
     shot(f"{theme}-home")
-    shell("input swipe 540 1800 540 600 400")
-    time.sleep(1)
+    scroll()
     shot(f"{theme}-home-scrolled")
     if tap("Control"):
         shot(f"{theme}-control-remote")
@@ -144,8 +156,7 @@ def walk(theme: str) -> None:
                 if tap(page):
                     shot(f"{theme}-control-{page.lower()}")
                     if page == "Sound":
-                        shell("input swipe 540 1800 540 600 400")
-                        time.sleep(1)
+                        scroll()
                         shot(f"{theme}-control-sound-scrolled")
             else:
                 break
