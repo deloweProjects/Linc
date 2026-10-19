@@ -2,8 +2,8 @@
 """Screenshots of the Android app on an emulator, for review without a phone in hand.
 
 Run by .github/workflows/ui-test.yml inside android-emulator-runner, with the debug APK built.
-Installs Linc, skips first-run onboarding, walks every main screen by tapping what a person
-would tap (found by its text or accessibility label in a uiautomator dump), and saves a PNG and
+Installs Linc, skips first-run onboarding, connects a fake PC (fakepc.py, the PC app's own USB
+handshake over adb forward), walks every main screen by tapping what a person would tap (found by its text or accessibility label in a uiautomator dump), and saves a PNG and
 the screen's UI tree per step under out/android/. Exits 1 only if Linc crashed; a screen it
 could not reach is reported in summary.md, not failed, so one moved button doesn't hide the rest.
 
@@ -15,6 +15,9 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fakepc import FakePc  # noqa: E402
 
 PKG = "app.linc.android"
 APK, OUT = sys.argv[1], sys.argv[2]
@@ -120,8 +123,14 @@ def launch() -> None:
             tap(label)
 
 
+pc = FakePc(log=print)
+
+
 def walk(theme: str) -> None:
     launch()
+    if not pc.wait_connected(45):
+        notes.append(f"- the fake PC wasn't connected for the {theme} walk")
+    time.sleep(3)  # the PC's answers land and get drawn
     shot(f"{theme}-home")
     shell("input swipe 540 1800 540 600 400")
     time.sleep(1)
@@ -149,18 +158,27 @@ def walk(theme: str) -> None:
         back()
 
 
+pc.start()
 walk("dark")
 shell("cmd uimode night no")
 time.sleep(2)
 walk("light")
 shell("cmd uimode night yes")
 
+# The same Home with no PC, for the disconnected state.
+pc.stop()
+shell(f"am force-stop {PKG}")
+time.sleep(2)
+launch()
+time.sleep(4)
+shot("dark-home-no-pc")
+
 # ---- report --------------------------------------------------------------------------------
 crashes = [l for l in shell("logcat -d -b crash").splitlines() if PKG in l or "FATAL" in l]
 with open(os.path.join(OUT, "logcat.txt"), "w", encoding="utf-8") as f:
     f.write(shell("logcat -d -t 4000"))
 with open(os.path.join(OUT, "summary.md"), "w", encoding="utf-8") as f:
-    f.write(f"## Android screens\n\n{step} screenshots.\n\n")
+    f.write(f"## Android screens\n\n{step} screenshots · fake PC answered {pc.requests} messages.\n\n")
     if crashes:
         f.write("### Crash\n\n```\n" + "\n".join(crashes[:80]) + "\n```\n\n")
     if notes:
