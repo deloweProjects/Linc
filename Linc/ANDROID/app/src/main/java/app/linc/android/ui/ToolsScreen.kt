@@ -76,77 +76,63 @@ object ToolsNav {
 }
 
 /**
- * Tools: a side rail of the PC's tools — Remote, Sound, PC, Files and Terminal — with the page
- * beside it. The rail collapses to icons (the default on a phone, so the page keeps its room)
- * and expands to names; on a phone the expanded rail floats over the page, on a tablet it docks.
- * Whether it was left open is remembered.
+ * Tools: each page — Remote, Sound, PC, Files, Terminal — fills the screen, and a side bar of
+ * them slides in from the left when the ⋮ at the top of the page is tapped.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ToolsScreen(onSettings: (() -> Unit)?, onBack: (() -> Unit)? = null, onMirror: () -> Unit) {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("linc", Context.MODE_PRIVATE) }
     val page by ToolsNav.page.collectAsState()
-    var expanded by remember { mutableStateOf(prefs.getBoolean(KEY_RAIL_EXPANDED, false)) }
-    fun setExpanded(on: Boolean) {
-        expanded = on
-        prefs.edit { putBoolean(KEY_RAIL_EXPANDED, on) }
-    }
+    // The side bar is hidden until the ⋮ at the top of the page opens it: the page gets the
+    // whole screen (the owner's ask). It always starts closed.
+    var open by remember { mutableStateOf(false) }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        val wide = maxWidth >= 600.dp
-        // On a phone the open rail is a sheet over the page: back closes it first.
-        BackHandler(enabled = expanded && !wide) { setExpanded(false) }
-        Row(Modifier.fillMaxSize()) {
-            ToolsRail(
-                page = page,
-                expanded = expanded && wide,
-                onToggle = { setExpanded(!expanded) },
-                onSelect = { ToolsNav.open(it) },
-                onMirror = onMirror,
-            )
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                val enter = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-                val exit = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-                AnimatedContent(
-                    targetState = page,
-                    transitionSpec = {
-                        fadeIn(enter) togetherWith fadeOut(exit)
-                    },
-                    label = "toolPage",
-                ) { current ->
-                    when (current) {
-                        ToolPage.Remote -> RemoteScreen(onSettings = onSettings, onBack = onBack, onMirror = onMirror)
-                        ToolPage.Sound -> SoundScreen(onBack = onBack, onSettings = onSettings)
-                        ToolPage.Pc -> PcScreen(onBack = onBack, onSettings = onSettings)
-                        ToolPage.Files -> PcFilesScreen(onBack = onBack, onSettings = onSettings)
-                        ToolPage.Terminal -> TerminalHome(onBack = onBack, onSettings = onSettings)
-                    }
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        BackHandler(enabled = open) { open = false }
+        val enter = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+        val exit = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+        androidx.compose.runtime.CompositionLocalProvider(LocalToolsMenu provides { open = true }) {
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = { fadeIn(enter) togetherWith fadeOut(exit) },
+                label = "toolPage",
+            ) { current ->
+                when (current) {
+                    ToolPage.Remote -> RemoteScreen(onSettings = onSettings, onBack = onBack, onMirror = onMirror)
+                    ToolPage.Sound -> SoundScreen(onBack = onBack, onSettings = onSettings)
+                    ToolPage.Pc -> PcScreen(onBack = onBack, onSettings = onSettings)
+                    ToolPage.Files -> PcFilesScreen(onBack = onBack, onSettings = onSettings)
+                    ToolPage.Terminal -> TerminalHome(onBack = onBack, onSettings = onSettings)
                 }
             }
         }
-        // The phone's expanded rail: over the page, with a scrim that closes it.
-        if (!wide) {
-            AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
-                Box(
-                    Modifier.fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { setExpanded(false) },
-                )
-            }
-            AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
-                ToolsRail(
-                    page = page,
-                    expanded = true,
-                    onToggle = { setExpanded(false) },
-                    onSelect = { ToolsNav.open(it); setExpanded(false) },
-                    onMirror = { setExpanded(false); onMirror() },
-                    floating = true,
-                )
-            }
+        // The side bar, over the page from the left, with a scrim that closes it.
+        AnimatedVisibility(visible = open, enter = fadeIn(), exit = fadeOut()) {
+            Box(
+                Modifier.fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { open = false },
+            )
+        }
+        AnimatedVisibility(
+            visible = open,
+            enter = androidx.compose.animation.slideInHorizontally { -it } + fadeIn(),
+            exit = androidx.compose.animation.slideOutHorizontally { -it } + fadeOut(),
+        ) {
+            ToolsRail(
+                page = page,
+                expanded = true,
+                onToggle = { open = false },
+                onSelect = { ToolsNav.open(it); open = false },
+                onMirror = { open = false; onMirror() },
+                floating = true,
+            )
         }
     }
 }
+
+/** Opens the Tools side bar; provided by [ToolsScreen], read by every page's top bar (the ⋮). */
+val LocalToolsMenu = androidx.compose.runtime.compositionLocalOf<(() -> Unit)?> { null }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -171,8 +157,7 @@ private fun ToolsRail(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             IconButton(onClick = onToggle, modifier = Modifier.padding(start = if (expanded) 12.dp else 0.dp)) {
-                Icon(if (expanded) LincSymbols.MenuOpen else LincSymbols.Menu,
-                    contentDescription = if (expanded) "Collapse the tools menu" else "Expand the tools menu")
+                Icon(LincSymbols.MenuOpen, contentDescription = "Close the tools menu")
             }
             // Mirror PC: the one action that leaves the page, as the rail's FAB.
             FloatingActionButton(
@@ -233,4 +218,3 @@ private fun RailItem(page: ToolPage, selected: Boolean, expanded: Boolean, onCli
 
 private val RAIL_COLLAPSED: Dp = 80.dp
 private val RAIL_EXPANDED: Dp = 240.dp
-private const val KEY_RAIL_EXPANDED = "tools_rail_expanded"

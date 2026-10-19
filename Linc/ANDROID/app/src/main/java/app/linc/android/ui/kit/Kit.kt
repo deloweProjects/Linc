@@ -162,14 +162,23 @@ fun LincScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Inside Tools, the ⋮ that opens its side bar: in the back arrow's place, or beside it.
+    val toolsMenu = app.linc.android.ui.LocalToolsMenu.current
     val navigation: @Composable () -> Unit = {
         if (onBack != null) {
             IconButton(onClick = onBack) {
                 Icon(LincSymbols.ArrowBack, contentDescription = "Back")
             }
+        } else if (toolsMenu != null) {
+            IconButton(onClick = toolsMenu) {
+                Icon(LincSymbols.MoreVert, contentDescription = "Tools menu")
+            }
         }
     }
     val barActions: @Composable RowScope.() -> Unit = {
+        if (onBack != null && toolsMenu != null) {
+            IconButton(onClick = toolsMenu) { Icon(LincSymbols.MoreVert, contentDescription = "Tools menu") }
+        }
         actions()
         if (onSettings != null) {
             IconButton(onClick = onSettings) {
@@ -202,21 +211,8 @@ fun LincScaffold(
             LargeFlexibleTopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 subtitle = subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(LincSymbols.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                },
-                actions = {
-                    actions()
-                    if (onSettings != null) {
-                        IconButton(onClick = onSettings) {
-                            Icon(LincSymbols.Settings, contentDescription = "Settings")
-                        }
-                    }
-                },
+                navigationIcon = navigation,
+                actions = barActions,
                 scrollBehavior = scroll,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
