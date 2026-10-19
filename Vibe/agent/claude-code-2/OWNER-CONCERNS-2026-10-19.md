@@ -203,6 +203,52 @@ Also in that screenshot (PC Home, disconnected):
   "needs Do Not Disturb access" line and a "Fix on phone" action) while the phone lacks access.
   Check every other ToggleButton group in the app for the same pattern (Home quick controls).
 
+## 11. What the owner's logs (2026-10-19 21:55–22:05, build bluetooth-files-1, v29) show
+
+Phone clock is ~11.15 s ahead of the PC's (phone "Connected" 21:56:18.770 = PC 21:56:07.621).
+
+**Play everywhere PC→phone dies in ~1 s — it's a race between two links, not the audio code.**
+Timeline in PC time:
+- 28.07 PC: Speaker mode on, "Playing this PC's sound on the phone (AAC, in step)", Play everywhere on.
+- 28.13 phone: "Play everywhere: turning on".
+- 28.49 PC: "the phone closed the sound channel (125 ms in)" — **before** the phone's dial-back.
+- 28.55 phone: "Channel 6: dialled back to the PC in 220 ms", 28.64 "the PC's sound is arriving".
+- 29.54 PC: "PC audio ended … ConnectionAborted, writing, 1174 ms in" → Play everywhere off
+  ("the phone went away"). The phone never logs the channel ending: its side of the dial-back is
+  still open, waiting.
+- The phone was connected on **two** PC links at once (wireless debugging adb + Direct TLS:
+  "One of two PC links closed; still connected on the other"). The PC's channel-6 stream was
+  bound to a socket that closed 125 ms in (the adb-forward attempt, or a first socket), while
+  the phone's real dial-back landed on a different one the PC then dropped. The
+  play-everywhere-1 build that worked had one link (and no v28/v29 channel changes).
+- **Do:** trace channel 6 open on the PC (PcAudioStreamer/PcMirrorService + the channel
+  dial-back code from `wifi-fix-2`: "channel dial-backs through adb reverse on Wireless
+  debugging too"): one request → exactly one socket; accept the phone's dial-back for that
+  token even if another attempt failed; never start the stream on a socket that isn't the
+  dial-back. Reproduce in the UI test: fake PC with two links. Log the channel's token + link on
+  both sides.
+
+**"Nothing playing"**: neither log has a single media line (no `media.state` sent or received)
+while the owner played music. Check the phone's media session listener is running (notification
+access / `MediaBridge.kt`) and that it sends on connect and on change; add a log line for each
+state sent and received.
+
+**Other things in the logs**
+- Bluetooth phone sound: "the PC couldn't connect over Bluetooth (UnknownFailure)" — more
+  reason to move to the mirror's audio (item 2).
+- The PC dials wireless debugging at **192.168.2.1:5555** (refused) — that's the router/gateway,
+  not the phone (192.168.2.6). The phone also reports "couldn't connect … at 192.168.2.1". Find
+  where that address is announced/guessed (the hotspot path assumes the gateway is the phone)
+  and only use it when the PC is actually on the phone's hotspot.
+- Direct connection listens on 26.3.178.175 too (a VPN adapter, Radmin-style) — fine, but don't
+  announce VPN addresses first.
+- "Sent Screenshot (92).png to the phone" logged twice for one send.
+- Mirror: "crashed after a healthy run; restarting" on every link drop, then "stopped
+  unexpectedly" — when the link drops, stop mirroring quietly and restart when it's back.
+- Red "Lost the connection" (item 9) fired at 21:55:43 on a network change and again at 22:02
+  when Wi-Fi dropped — USB took over in 3 s each time; the banner should not show for a handover
+  that recovers within a few seconds.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
