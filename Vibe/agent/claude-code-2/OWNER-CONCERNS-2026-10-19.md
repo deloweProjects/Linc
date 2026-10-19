@@ -147,6 +147,21 @@ Also seen in the same screenshots (fix with the above):
 - Add these states to the UI test (no phone; maximised 1920×1080; Add a phone; dark theme) so
   they're checked before every build.
 
+## 8. Phone Control page: thinner side panel, and a button that says "there's a panel"
+
+> "Sidepanel of control page is too large thin it, then 3 dot doesn't let user know therez a side
+> panel replace with something that'll make user know"
+
+- How it works now: `ui/ToolsScreen.kt` — the panel slides in from the right at
+  `RAIL_EXPANDED = 240.dp` (collapsed 80.dp); it opens from the ⋮ (`MoreVert`, "Control menu")
+  that `LincScaffold` (`ui/kit/Kit.kt`) puts last in the top bar.
+- **Do:**
+  - Thinner panel: about 180–200 dp expanded (icon + label), less padding per row.
+  - Replace the ⋮ with something that reads as "pages": the current page's icon + name +
+    a ▾/❯ as a pill in the top bar ("🔊 Sound ▾"), or a panel icon (`menu_open` / "view sidebar")
+    on the right edge. Also a small grab handle on the right screen edge, and swipe-from-right to
+    open. Keep the UI test's "Control menu" label (android.py taps it) or update the test.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
