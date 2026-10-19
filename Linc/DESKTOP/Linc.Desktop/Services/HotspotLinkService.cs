@@ -219,12 +219,23 @@ public sealed class HotspotLinkService(
             expectedSerial = serial;
             chosenAddress = chosen;
 
+            // The live link already rides on wireless debugging: adbd is reachable, and that
+            // link is the proof. Dialling now would start with ConnectAsync's `adb disconnect`
+            // of the very endpoint the phone is connected through — cutting the link ~0.2 s after
+            // every connect, then reconnecting and announcing again, round and round (the
+            // owner's "keeps disconnecting" log, 1.0.0.16 test builds). Ack it as linked instead.
+            if (connection.Current is { Transport: LinkTransport.AdbWireless } live)
+            {
+                LinkedEndpoint ??= live.Serial;
+                alreadyLinkedTo = live.Serial;
+            }
+
             // M13e §1.1 — the promotion case. A settled race means a link from this epoch is
             // already up, and AttemptAsync would drop this announcement on the floor. Compare
             // where the phone says adbd is NOW against where we are actually connected: a
             // different endpoint is a promotion and is the entire point of admitting a same-gen
             // re-announce; an identical one is a repeat and must be idempotent.
-            if (_race.IsSettled)
+            if (alreadyLinkedTo is null && _race.IsSettled)
             {
                 var announcedEndpoint = HotspotConnector.BuildEndpoint(chosenAddress, announcement.Port);
                 var sinceLastRedial = _lastRedialUtc is null
@@ -306,6 +317,14 @@ public sealed class HotspotLinkService(
             if (race.IsSettled)
             {
                 return; // the other branch already won; do not disturb its link
+            }
+            // Same reason as in HandleAnnounceAsync: never `adb disconnect` the endpoint the live
+            // link to the phone is running through (the speculative branch can aim at it too,
+            // once a promotion has moved adbd to 5555).
+            if (connection.Current is { Transport: LinkTransport.AdbWireless } live &&
+                string.Equals(live.Serial, HotspotConnector.BuildEndpoint(address, port), StringComparison.OrdinalIgnoreCase))
+            {
+                return;
             }
 
             var result = await connector.ConnectAsync(address, expectedSerial, ct, port);
