@@ -80,6 +80,21 @@ The owner's words, then what is known and what to do. Do not start new features 
 - **Do:** reproduce with the UI test's fake PC (send a `tree`-like long-line output on channel 9),
   then fix reflow, then pinch-zoom. Write the channel-9 frame format into PROTOCOL.md if missing.
 
+## 5. Pictures sent from the PC don't show in the phone's Gallery
+
+> "Pics shared from PC to phone don't reflect in phone gallery"
+
+- How it works now: desktop `Services/ShareService.cs` pushes the file with
+  `files.PushAsync(localPath, "/sdcard/Download/Linc", …)` (adb push, or the TLS files channel
+  served by phone `service/FileChannelServer.kt`). Nothing tells Android's media index about the
+  new file, so Gallery/Photos never see it until some later rescan.
+- **Do:** after a file lands, have the phone index it: `MediaScannerConnection.scanFile` on the
+  written path (in `FileChannelServer` for the TLS route; for adb, the PC sends a small message,
+  or `share.item` already announces it, and the phone scans on receipt). Better still for images
+  and videos: write them through MediaStore into `Pictures/Linc` / `Movies/Linc` (as
+  `PcTools.kt` already does for Downloads with `RELATIVE_PATH` + `IS_PENDING`), so they appear at
+  once in their own album. Same check for Control → Files downloads and for Sync's pulled files.
+
 ## Still pending, not a concern
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
