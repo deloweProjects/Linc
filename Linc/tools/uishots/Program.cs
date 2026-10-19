@@ -115,6 +115,7 @@ finally
     try { if (!app.HasExited) app.Kill(entireProcessTree: true); } catch { }
     try { phoneTask.Wait(3000); } catch { }
     CopyLogs(root, outDir);
+    if (File.Exists(Path.Combine(outDir, "pc-log.txt"))) Console.WriteLine(File.ReadAllText(Path.Combine(outDir, "pc-log.txt")));
     WriteSummary();
     try { Directory.Delete(root, recursive: true); } catch { }
 }

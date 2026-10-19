@@ -65,7 +65,31 @@ def find(label: str, exact: bool = True) -> tuple[int, int] | None:
     return None
 
 
+# Android's own prompts that can sit over Linc: answered as a person would, so the screen under
+# them is what gets checked. ("access all device logs" comes from READ_LOGS, which the PC grants
+# for background clipboard sync.)
+PROMPTS = ("Allow one-time access", "Allow", "Not now")
+
+
+def dismiss_prompts() -> None:
+    root = dump()
+    if root is None:
+        return
+    texts = {n.get("text", "") for n in root.iter("node")}
+    if not ({"Allow one-time access", "Don’t allow", "Don't allow"} & texts or "Let app always run in background?" in texts):
+        return
+    for label in PROMPTS:
+        if label in texts:
+            spot = find(label)
+            if spot:
+                shell(f"input tap {spot[0]} {spot[1]}")
+                time.sleep(1.5)
+                notes.append(f"- answered Android's prompt with **{label}**")
+                return
+
+
 def tap(label: str, exact: bool = True) -> bool:
+    dismiss_prompts()
     spot = find(label, exact)
     if spot is None:
         notes.append(f"- couldn't find **{label}** to tap (step {step + 1})")
@@ -77,6 +101,7 @@ def tap(label: str, exact: bool = True) -> bool:
 
 def shot(name: str) -> None:
     global step
+    dismiss_prompts()
     step += 1
     base = os.path.join(OUT, f"{step:02d}-{name}")
     with open(base + ".png", "wb") as f:

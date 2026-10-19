@@ -29,6 +29,7 @@ public sealed class FakePhone(X509Certificate2 cert, Action<string> log)
     private readonly object _writeLock = new();
 
     public bool Connected { get; private set; }
+    private int _failures;
     public int Requests { get; private set; }
 
     /// <summary>A self-signed client certificate with a persisted key (SChannel needs one).</summary>
@@ -36,6 +37,8 @@ public sealed class FakePhone(X509Certificate2 cert, Action<string> log)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest("CN=Linc uishots phone", key, HashAlgorithmName.SHA256);
+        // Client authentication, so SChannel is willing to present it in the handshake.
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.2")], critical: false));
         using var ephemeral = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
         File.WriteAllBytes(pfxPath, ephemeral.Export(X509ContentType.Pfx, "uishots"));
         return new X509Certificate2(pfxPath, "uishots", X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.PersistKeySet);
@@ -53,7 +56,10 @@ public sealed class FakePhone(X509Certificate2 cert, Action<string> log)
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                if (Connected) log($"fake phone: link ended ({ex.GetType().Name}: {ex.Message})");
+                // Every reason a dial didn't take, the first few times and then now and then:
+                // a silent retry loop is what hid the first run's failure.
+                if (Connected || ++_failures <= 5 || _failures % 10 == 0)
+                    log($"fake phone: {(Connected ? "link ended" : $"dial {_failures} failed")} ({ex.GetType().Name}: {ex.Message}{(ex.InnerException is { } inner ? $" / {inner.Message}" : "")})");
                 Connected = false;
             }
             try { await Task.Delay(2000, ct); } catch (OperationCanceledException) { }
