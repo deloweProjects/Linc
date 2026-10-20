@@ -39,5 +39,11 @@ failure with its log rather than saying it was sent. Details: `telegram-uploader
   **Never commit a keystore**: the repo is public, and anyone holding the key can ship an "update"
   that installs over Linc with its SMS, call and notification access. The plan is to move to a
   Play Console upload key later.
+- `release.yml` also packs the APK and installer into one 7z on the release, and Telegram gets the
+  APK, installer, 7z and checksums (not the portable zip). Its last step opens and merges a pull
+  request to main, which needs Settings › Actions › "Allow GitHub Actions to create and approve pull
+  requests"; without it the run stops after publishing (1.0.0.17). Then merge to main by hand and
+  dispatch `release-pack.yml` ("Pack release and post it") on main with the tag, which adds the 7z
+  and posts to Telegram.
 - Check the newest tag on GitHub before choosing a version number. Releases have been cut from
   `feature/quick-share-and-recognition`, ahead of `main`, so the version in `main` can lag.
