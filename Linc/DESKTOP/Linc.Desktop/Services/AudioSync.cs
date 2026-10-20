@@ -135,6 +135,14 @@ public sealed class GroupDelay
     /// <summary>The speaker that set the last change, for the log.</summary>
     public string? Reason { get; private set; }
 
+    /// <summary>Back to the minimum, so the next <see cref="Update"/> sets what the speakers need now ("Re-sync").</summary>
+    public void Reset()
+    {
+        CurrentUs = MinUs;
+        Reason = null;
+        _lowSinceUs = -1;
+    }
+
     /// <summary>
     /// Feed the speakers' current needs (µs). Returns true when <see cref="CurrentUs"/> changed.
     /// <paramref name="extraUs"/> is the user's safety margin from settings.

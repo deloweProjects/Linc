@@ -64,7 +64,11 @@ data class EverywhereState(
     val devices: List<EverywhereDevice> = emptyList(),
     /** The phone is recording for an alignment right now. */
     val listening: Boolean = false,
-    /** Whose sound plays everywhere: "pc" or "phone" (v27). */
+    /**
+     * Whose sound plays everywhere: "pc", "phone" (v27, recorded here, channel 8) or "mirror"
+     * (v31: this phone's sound taken by the PC the way Mirror screen does, then played on every
+     * speaker, this phone's included, as the PC's own sound would be).
+     */
     val source: String = "pc",
 )
 
@@ -105,6 +109,18 @@ object AudioEverywhere {
 
     fun ready(): Boolean = CompanionOutbox.canSend(26)
 
+    /** The PC can take this phone's sound the way Mirror screen does and play it everywhere (v31). */
+    fun mirrorReady(): Boolean = CompanionOutbox.canSend(31)
+
+    /**
+     * This phone is the source (v31 "mirror"): the copies it plays back must not be taken by the
+     * PC's capture (it takes media players only, so they play as a game would), and Linc must not
+     * take audio focus or show "Playing from your PC" (that would pause the very app being played).
+     */
+    @Volatile var phoneIsSource = false
+        private set
+    @Volatile private var sourceChosenAt = 0L
+
     /** The app context, once the service or the mixer has attached. */
     fun context(): Context? = appContext
 
@@ -130,6 +146,7 @@ object AudioEverywhere {
 
     fun set(context: Context, on: Boolean) {
         attach(context)
+        markPhoneIsSource(false, byUser = true) // on or off, this is the PC's own sound
         send(buildJsonObject { put("on", on) })
         LogStore.log(LogLevel.INFO, "Play everywhere: turning ${if (on) "on" else "off"}")
     }
@@ -158,6 +175,50 @@ object AudioEverywhere {
         if (!CompanionOutbox.canSend(27)) return
         CompanionOutbox.trySend(Envelope(type = MessageType.AUDIO_EVERYWHERE_SET,
             payload = buildJsonObject { put("source", if (on) "phone" else "pc"); put("on", on) }), requiredVersion = 27)
+    }
+
+    /**
+     * "Whose sound: This phone" on a v31 PC: the PC takes this phone's sound the way Mirror screen
+     * does (scrcpy, no --audio-dup, so this phone's speaker goes quiet) and Play everywhere plays
+     * it on every speaker, this phone's included, in step. Off goes back to the PC's own sound.
+     */
+    fun setMirrorSource(context: Context, on: Boolean) {
+        attach(context)
+        if (!mirrorReady()) return
+        markPhoneIsSource(on, byUser = true)
+        CompanionOutbox.trySend(Envelope(type = MessageType.AUDIO_EVERYWHERE_SET,
+            payload = buildJsonObject { put("source", if (on) "mirror" else "pc"); put("on", true) }), requiredVersion = 31)
+        LogStore.log(LogLevel.INFO, "Play everywhere: ${if (on) "this phone's sound, taken the way Mirror screen does" else "back to the PC's sound"}")
+    }
+
+    /**
+     * Re-sync: this phone learns the PC's clock afresh and every output jumps back onto its
+     * target; a v31 PC also re-aligns its own speakers and drops the group delay to what is
+     * needed now.
+     */
+    fun resync() {
+        SyncedAudio.resync()
+        if (mirrorReady()) send(buildJsonObject { put("resync", true) })
+        LogStore.log(LogLevel.INFO, "Play everywhere: re-sync")
+    }
+
+    private fun markPhoneIsSource(value: Boolean, byUser: Boolean) {
+        val now = System.currentTimeMillis()
+        if (byUser) sourceChosenAt = now
+        // A state sent before the PC saw the user's choice mustn't undo it.
+        else if (now - sourceChosenAt < 4_000) return
+        if (phoneIsSource == value) return
+        phoneIsSource = value
+        if (!SyncedAudio.streaming) return
+        val context = appContext ?: return
+        // Tracks carry their usage from birth: reopen them (off the caller's thread: closing one
+        // waits for its writer), and give up (or take) the media role.
+        thread(name = "linc-everywhere-source", isDaemon = true) {
+            if (value) runCatching { PcPlaybackSession.stop(context) }
+            else runCatching { PcPlaybackSession.start(context) }
+            SyncedAudio.setOutputs(context, emptyList())
+            applyOutputs()
+        }
     }
 
     fun calibrate() = send(buildJsonObject { put("calibrate", true) })
@@ -196,13 +257,17 @@ object AudioEverywhere {
         }
         val delayMs = (payload["delayMs"] as? JsonPrimitive)?.intOrNull ?: 0
         if (delayMs > 0) delayUs = delayMs * 1000L
+        val source = str(payload, "source") ?: "pc"
+        val isOn = bool(payload, "on")
+        if (source == "mirror" && isOn) markPhoneIsSource(true, byUser = false)
+        else if (!isOn || source == "pc") markPhoneIsSource(false, byUser = false)
         _state.value = _state.value.copy(
             on = bool(payload, "on"),
             error = str(payload, "error"),
             delayMs = delayMs,
             marginMs = (payload["marginMs"] as? JsonPrimitive)?.intOrNull ?: 0,
             testing = str(payload, "testing"),
-            source = str(payload, "source") ?: "pc",
+            source = source,
             note = str(payload, "note"),
             devices = devices,
         )

@@ -37,6 +37,7 @@ public sealed class PcAudioEverywhere(
     private readonly Dictionary<string, PcRenderSink> _sinks = new();
     private readonly Dictionary<string, long> _sinkRetryAtUs = new();
     private readonly GroupDelay _group = new();
+    private readonly object _groupLock = new();
     private EverywhereSettings? _settings;
     private List<PcOutputDevice> _pcDevices = [];
     private List<PhoneOutput> _phoneOutputs = [];
@@ -70,10 +71,20 @@ public sealed class PcAudioEverywhere(
             string? source = (string?)p["source"];
             if (p["on"] is JsonValue onValue && onValue.TryGetValue(out bool on))
             {
-                if (source == "phone")
+                if (source == "mirror")
+                {
+                    if (on) await EnableMirrorSourceAsync();
+                    else if (On) Disable("turned off on the phone");
+                }
+                else if (source == "phone")
                 {
                     if (on) await EnablePhoneSourceAsync();
                     else if (_phoneSource) Disable("the phone stopped being the source");
+                }
+                else if (on && _mirrorSource)
+                {
+                    // Back to the PC's own sound: the pipeline stays, only the phone's feed stops.
+                    StopMirrorSource("switching back to the PC's own sound");
                 }
                 else if (on && (!On || _phoneSource))
                 {
@@ -93,6 +104,7 @@ public sealed class PcAudioEverywhere(
             if ((bool?)p["calibrate"] == true) StartTest("calibrate");
             if ((bool?)p["clicks"] == true) StartTest("clicks");
             if ((bool?)p["resetAlignment"] == true) ResetAlignment();
+            if ((bool?)p["resync"] == true) Resync();
         }
         catch (Exception ex)
         {
@@ -203,6 +215,75 @@ public sealed class PcAudioEverywhere(
         new Thread(() => Monitor(stop.Token)) { IsBackground = true, Name = "linc-everywhere" }.Start();
     }
 
+    // ---- the phone as the source, the way Mirror screen takes it (v31) -------------------------
+
+    private bool _mirrorSource;
+    private PhoneMirrorSource? _mirror;
+
+    private PhoneMirrorSource Mirror
+    {
+        get
+        {
+            if (_mirror is not null) return _mirror;
+            var mirror = new PhoneMirrorSource(log);
+            mirror.Failed += OnMirrorFailed;
+            return _mirror = mirror;
+        }
+    }
+
+    /// <summary>
+    /// Play everywhere as for the PC's own sound (cable, capture, every speaker, channel 6), plus
+    /// scrcpy taking the phone's sound without <c>--audio-dup</c>: it plays into the default
+    /// output, which is the cable, so it reaches every speaker, the phone included, in step.
+    /// </summary>
+    private async Task EnableMirrorSourceAsync()
+    {
+        if (_mirrorSource && Mirror.Running) return;
+        _error = null;
+        var live = connection.Current;
+        if (!PhoneMirrorSource.HasRoute(live))
+        {
+            _error = "needs-adb";
+            log.Log(LogLevel.Info, "Play everywhere: the phone's sound needs a USB or wireless-debugging link (scrcpy); nothing changed");
+            return;
+        }
+        if (_phoneSource) Disable("switching to the phone's sound, the way Mirror screen takes it");
+        bool wasOn = On;
+        if (!On)
+        {
+            await EnableAsync();
+            if (!On) return; // EnableAsync said why in _error
+        }
+        var error = Mirror.Start(live);
+        if (error is not null)
+        {
+            if (!wasOn) Disable("couldn't take the phone's sound");
+            _error = error;
+            return;
+        }
+        _mirrorSource = true;
+        _note = null;
+        log.Log(LogLevel.Info, "Play everywhere: the phone's sound now plays on every speaker, the phone's own included, in step");
+    }
+
+    private void StopMirrorSource(string why)
+    {
+        _error = null;
+        if (!_mirrorSource) return;
+        _mirrorSource = false;
+        Mirror.Stop(why);
+    }
+
+    /// <summary>scrcpy ended by itself (Android 12 or older, the cable pulled): stop, and say why.</summary>
+    private void OnMirrorFailed(string error)
+    {
+        if (!_mirrorSource) return;
+        _mirrorSource = false;
+        Disable("the phone's sound stopped coming");
+        _error = error;
+        _ = SendStateAsync();
+    }
+
     /// <summary>Channel 8: sound blocks, and clock probes answered at once (the same as channel 6's, mirrored).</summary>
     private void ReadPhoneAudio(Stream channel)
     {
@@ -274,6 +355,11 @@ public sealed class PcAudioEverywhere(
             _testMode = null;
         }
         foreach (var sink in sinks) sink.Dispose();
+        if (_mirrorSource)
+        {
+            _mirrorSource = false;
+            _mirror?.Stop(why);
+        }
         if (_phoneSource)
         {
             _phoneSource = false;
@@ -458,6 +544,27 @@ public sealed class PcAudioEverywhere(
         log.Log(LogLevel.Info, "Play everywhere: alignment reset for every speaker");
     }
 
+    /// <summary>
+    /// "Re-sync" (v31): every speaker jumps back onto its target, and the group delay drops to
+    /// what the speakers need now instead of waiting out its 20 s fall-back.
+    /// </summary>
+    private void Resync()
+    {
+        if (!On) return;
+        if (!_phoneSource)
+        {
+            lock (_groupLock) _group.Reset();
+            Interlocked.Exchange(ref _delayUs, GroupDelay.MinUs);
+            UpdateGroupDelay(PcClock.NowUs());
+        }
+        lock (_lock)
+        {
+            foreach (var sink in _sinks.Values) sink.Realign();
+            _note = null;
+        }
+        log.Log(LogLevel.Info, $"Play everywhere: re-synced every speaker (now {DelayUs / 1000} ms after the source)");
+    }
+
     // ---- the monitor --------------------------------------------------------------------------
 
     private void Monitor(CancellationToken token)
@@ -524,9 +631,16 @@ public sealed class PcAudioEverywhere(
                 if (Settings.Devices.TryGetValue(o.Id, out var s) && s.Enabled && o.NeedUs > 0)
                     needs.Add((o.Name, o.NeedUs));
         }
-        if (!_group.Update(needs, Settings.MarginMs * 1000L, now)) return false;
-        long old = Interlocked.Exchange(ref _delayUs, _group.CurrentUs);
-        log.Log(LogLevel.Info, $"Play everywhere: every speaker now plays {_group.CurrentUs / 1000} ms after the PC (was {old / 1000}; set by {_group.Reason ?? "the margin"})");
+        long current, old;
+        string? reason;
+        lock (_groupLock)
+        {
+            if (!_group.Update(needs, Settings.MarginMs * 1000L, now)) return false;
+            current = _group.CurrentUs;
+            reason = _group.Reason;
+            old = Interlocked.Exchange(ref _delayUs, current);
+        }
+        log.Log(LogLevel.Info, $"Play everywhere: every speaker now plays {current / 1000} ms after the PC (was {old / 1000}; set by {reason ?? "the margin"})");
         return true;
     }
 
@@ -683,7 +797,7 @@ public sealed class PcAudioEverywhere(
             payload = new JsonObject
             {
                 ["on"] = On,
-                ["source"] = _phoneSource ? "phone" : "pc",
+                ["source"] = _phoneSource ? "phone" : _mirrorSource ? "mirror" : "pc",
                 ["delayMs"] = DelayUs / 1000,
                 ["marginMs"] = Settings.MarginMs,
                 ["testing"] = _testMode,

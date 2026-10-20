@@ -741,3 +741,21 @@ engine files its per-file bookkeeping under it.
 | `sync.now` | phone → desktop | `{}`: run a sync pass now |
 
 `sync.config` (v11) still tells the phone which lanes are on; the PC sends it after a lane changes.
+
+## v31 — the phone's sound in Play everywhere, the way Mirror screen takes it (2026-10-20)
+
+Additive; the phone sends these only when the negotiated version is 31 on both sides, so older
+PCs never see them and older phones never receive `source: "mirror"`. No new message type and no
+new channel.
+
+| Type | Direction | Payload | Notes |
+|---|---|---|---|
+| `audio.everywhere.set` | phone → desktop | `{source: "mirror", on: true}` | "Whose sound: This phone's". The PC turns Play everywhere on as for its own sound (v26: cable as the default output, capture, every PC speaker, channel 6 with `clock` back to the phone) if it isn't already, then runs the bundled scrcpy with `--no-video --no-window --no-control --audio-source=playback --require-audio --audio-buffer=40` (**no** `--audio-dup`): the phone's media apps go quiet on the phone, scrcpy plays them into Windows' default output (the cable), and the existing pipeline plays them everywhere, the phone included, in step. Needs an adb route (USB or wireless debugging) and Android 13+. `{source: "pc", on: true}` stops scrcpy and keeps playing the PC's own sound; `{on: false}` ends it all. |
+| `audio.everywhere.set` | phone → desktop | `{resync: true}` | "Re-sync": the PC re-aligns every PC speaker and drops the group delay to what the speakers need now (instead of waiting out its 20 s fall). The phone re-learns the PC's clock and re-aligns its own outputs on its own side. |
+| `audio.everywhere.state` | desktop → phone | `source` may now be `"mirror"`; `error` may be `needs-adb` (no USB / wireless-debugging link: nothing was changed), `needs-android-13` (scrcpy said so and exited) or `mirror-stopped` (scrcpy ended on its own; Play everywhere was turned off) | |
+
+While `source` is `"mirror"` the phone plays its copies with `USAGE_GAME` (scrcpy's playback capture
+matches `USAGE_MEDIA` only, and its non-duplicating mix ignores the app's capture opt-out), and does not
+take audio focus or show "Playing from your PC". Per-speaker offsets stay `device.manualMs` (the phone's
+Advanced page now offers −400…+400 ms in 10 ms steps; the PC still accepts ±500) and Smooth / Tight sets
+`marginMs` to 150 / 0; both were already in v26 and are saved per device in `audio-everywhere.json`.

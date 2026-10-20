@@ -90,7 +90,8 @@ object SyncedAudio {
         runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
         LogStore.log(LogLevel.INFO, "Play everywhere: the PC's sound is arriving (${sampleRate} Hz, in step)")
         // Showing Linc as a media player is a courtesy: if it fails, the sound must still play.
-        AudioEverywhere.context()?.let { context ->
+        // Not while this phone is the source (v31): taking audio focus would pause the app being played.
+        if (!AudioEverywhere.phoneIsSource) AudioEverywhere.context()?.let { context ->
             runCatching { PcPlaybackSession.start(context) }
                 .onFailure { LogStore.log(LogLevel.WARN, "Play everywhere: couldn't show the PC's sound in the media controls (${it.javaClass.simpleName}: ${it.message})") }
         }
@@ -154,6 +155,16 @@ object SyncedAudio {
         for (o in outputsSnapshot()) o.engine.enqueue(block, delay + 1_000_000)
     }
 
+    /** Learn the PC's clock afresh (quick probes again) and put every output back on target: "Re-sync". */
+    fun resync() {
+        if (!streaming) return
+        fastProbeUntilUs = nowUs() + 3_000_000
+        clock.reset()
+        for (o in outputsSnapshot()) o.engine.realign()
+    }
+
+    @Volatile private var fastProbeUntilUs = 0L
+
     private fun toStereo(mono: ShortArray) = ShortArray(mono.size * 2) { mono[it / 2] }
 
     /** Probe the PC's clock: quickly at first, then once a second to follow drift. */
@@ -172,7 +183,7 @@ object SyncedAudio {
                     LogStore.log(LogLevel.INFO, "Play everywhere: PC clock to within ${clock.uncertaintyUs / 1000.0} ms, drifting ${"%.0f".format(clock.driftPpm)} ppm")
                     AudioEverywhere.reportClock(clock.uncertaintyUs, clock.driftPpm)
                 }
-                Thread.sleep(if (now - started < 5_000_000) 200 else 1_000)
+                Thread.sleep(if (now - started < 5_000_000 || now < fastProbeUntilUs) 200 else 1_000)
             }
         } catch (_: InterruptedException) {
         } catch (e: Exception) {
@@ -231,7 +242,10 @@ class PhoneOutput(context: Context, val spec: PhoneOutputSpec, private val rate:
 
     private val track: AudioTrack = AudioTrack.Builder()
         .setAudioAttributes(AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
+            // While this phone is the source through the PC (v31 "mirror"), the PC's scrcpy takes
+            // every media player on the phone, ignoring the policy below; a game's usage is left
+            // alone, so Linc's own copy still plays here instead of being sent round again.
+            .setUsage(if (AudioEverywhere.phoneIsSource) AudioAttributes.USAGE_GAME else AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
             // Never captured: when the phone is the source, Linc records what apps play, and
             // must not record its own copies back (an echo that feeds itself).

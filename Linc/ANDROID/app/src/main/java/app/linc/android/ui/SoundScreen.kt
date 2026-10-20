@@ -110,6 +110,7 @@ fun PlayEverywhereSummary(onOpen: () -> Unit) {
                 Text(
                     when {
                         phone.on -> "This phone's sound, on ${speakerCount(state, phone.replays.size, true)}"
+                        state.on && state.source == "mirror" -> "This phone's sound, on ${speakerCount(state, 0, false)}"
                         state.on -> "The PC's sound, on ${speakerCount(state, 0, false)}"
                         else -> "Play everywhere, output, speaker and microphone"
                     },
@@ -157,6 +158,9 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
     }
     val bt by PcTools.btAudio.collectAsState()
     val btReady = PcTools.btAudioAvailable()
+    // v31: the PC takes this phone's sound the way Mirror screen does and plays it everywhere.
+    val mirrorReady = AudioEverywhere.mirrorReady()
+    val mirror = state.on && state.source == "mirror"
 
     // Recording what apps play needs the microphone permission, then Android's own consent.
     val startPhone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -172,7 +176,7 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
         if (PcVoiceAccess.hasMicPermission(context)) context.startActivity(Intent(context, CaptureConsentActivity::class.java))
         else startPhone.launch(Manifest.permission.RECORD_AUDIO)
     }
-    val source = if (phone.on || bt.on || bt.busy) "phone" else "pc"
+    val source = if (phone.on || bt.on || bt.busy || mirror) "phone" else "pc"
     val on = state.on || phone.on || bt.on
 
     // A speaker that has sat on "starting" for a while says so, rather than spinning for ever.
@@ -211,6 +215,7 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                                         bt.on -> "This phone's sound plays on the PC too, the way the mirror carries it. Nothing is recorded."
                                         bt.busy -> "Bringing this phone's sound to the PC…"
                                         phone.on -> "This phone's sound, on the speakers below, in step with ${phone.nativeName}."
+                                        mirror -> "This phone's sound, on the speakers below and on this phone, together."
                                         state.on -> "The PC's sound, on the speakers below, together."
                                         else -> "PC speakers, Bluetooth and this phone play the same sound at the same moment."
                                     },
@@ -231,8 +236,15 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                             options = listOf("pc" to "The PC's", "phone" to "This phone's"),
                             selected = source,
                             onSelect = { chosen ->
+                                // A v31 PC takes this phone's sound as Mirror screen does and plays it on
+                                // every speaker, this one included: nothing to record, no prompt.
+                                if (chosen == "phone" && mirrorReady && !phone.on) {
+                                    if (bt.on || bt.busy) PcTools.setBtAudio(context, false)
+                                    AudioEverywhere.setMirrorSource(context, true)
+                                }
+                                else if (chosen == "pc" && mirror) AudioEverywhere.setMirrorSource(context, false)
                                 // A v29 PC plays this phone over Bluetooth: nothing to record, no prompt.
-                                if (chosen == "phone" && btReady) {
+                                else if (chosen == "phone" && btReady) {
                                     if (state.on) AudioEverywhere.set(context, false)
                                     PcTools.setBtAudio(context, true)
                                 }
@@ -246,7 +258,11 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                         )
                         if (!ready && source == "pc") HelperText("Connect the PC (and update Linc there) to play its sound. The phone's sound works without it.",
                             kind = Explanations.Kind.Blocked)
-                        PcSpeaker.explain(state.error)?.let { HelperText(it, kind = Explanations.Kind.Error) }
+                        if (state.error?.let { it in MIRROR_ERRORS } == true) {
+                            HelperText(mirrorError(state.error), kind = Explanations.Kind.Error)
+                            if (state.error != "mirror-stopped") TextButton(onClick = { explainPhone = true }) { Text("Record it instead") }
+                        }
+                        else PcSpeaker.explain(state.error)?.let { HelperText(it, kind = Explanations.Kind.Error) }
                         (phone.note ?: state.note)?.let { HelperText(it, kind = Explanations.Kind.Warning) }
                         if (stuck) HelperText("Still getting the speakers ready. If it stays like this, send the logs from Settings → Logs on both the phone and the PC.",
                             kind = Explanations.Kind.Warning)
@@ -330,14 +346,15 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
                         SettingsRow(
                             title = "This phone's sound on the PC", segment = seg, icon = LincSymbols.Speaker,
                             supporting = when {
+                                mirror -> "Play everywhere already plays this phone's sound on the PC."
                                 bt.busy -> "Starting…"
                                 bt.on -> "On: this phone's sound plays on the PC and here too."
                                 !bt.supported -> "This PC's Windows can't be a Bluetooth speaker (it needs Windows 10 version 2004 or later)."
                                 else -> "Music and videos play on the PC's speakers as well, the way Mirror screen carries the sound. Nothing is recorded."
                             },
                             supportingKind = if (!bt.supported) Explanations.Kind.Blocked else Explanations.Kind.Helper,
-                            enabled = bt.supported && !bt.busy,
-                            trailing = { Switch(checked = bt.on || bt.busy, enabled = bt.supported && !bt.busy, onCheckedChange = { PcTools.setBtAudio(context, it) }) },
+                            enabled = bt.supported && !bt.busy && !mirror,
+                            trailing = { Switch(checked = bt.on || bt.busy, enabled = bt.supported && !bt.busy && !mirror, onCheckedChange = { PcTools.setBtAudio(context, it) }) },
                         )
                     }) else null
                 SettingsGroup(rows = listOfNotNull<@Composable (Segment) -> Unit>(
@@ -467,6 +484,15 @@ private fun PcVolumeCard() {
     }
 }
 
+/** Errors from the v31 "mirror" source (the PC taking this phone's sound with scrcpy). */
+private val MIRROR_ERRORS = setOf("needs-adb", "needs-android-13", "mirror-stopped")
+
+private fun mirrorError(error: String?): String = when (error) {
+    "needs-adb" -> "Taking this phone's sound needs the USB cable or Wireless debugging, as Mirror screen does."
+    "needs-android-13" -> "Taking this phone's sound this way needs Android 13 or later."
+    else -> "The PC stopped getting this phone's sound. Check the cable or Wireless debugging, then choose This phone's again."
+}
+
 private fun align(context: Context, phoneSource: Boolean) {
     if (phoneSource) PhoneSource.calibrate(context) else AudioEverywhere.calibrate()
 }
@@ -552,6 +578,7 @@ private fun AdvancedSound(state: EverywhereState, phoneSource: Boolean, onBack: 
             item {
                 HelperText(
                     if (phoneSource) "Every copy aims for the moment the phone's own output plays the sound: ${PhoneSource.state.value.delayMs} ms after apps play it."
+                    else if (state.source == "mirror") "Every speaker, this phone's included, plays ${state.delayMs} ms after this phone's sound reaches the PC, so the slowest can keep up."
                     else "Every speaker plays ${state.delayMs} ms after the PC, so the slowest can keep up. Sound in PC Remote follows the picture instead.",
                     modifier = Modifier.padding(horizontal = Kit.gutter),
                 )
@@ -561,13 +588,14 @@ private fun AdvancedSound(state: EverywhereState, phoneSource: Boolean, onBack: 
                 item {
                     FlowRow(Modifier.padding(horizontal = Kit.gutter), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(onClick = { AudioEverywhere.clicks() }, enabled = state.testing == null) { Text("Play test clicks") }
+                        FilledTonalButton(onClick = { AudioEverywhere.resync() }, enabled = state.on && state.testing == null) { Text("Re-sync") }
                         TextButton(onClick = { AudioEverywhere.resetAlignment() }) { Text("Reset alignment") }
                     }
                 }
-                item { HelperText("Test clicks: every speaker clicks at once. Nudge any that's early or late below.", modifier = Modifier.padding(horizontal = Kit.gutter)) }
+                item { HelperText("Test clicks: every speaker clicks at once. Nudge any that's early or late below. Re-sync puts every speaker back in step if one has drifted.", modifier = Modifier.padding(horizontal = Kit.gutter)) }
                 item { SectionHeader("Nudge each speaker") }
                 for (d in state.devices.filter { it.enabled }) item(d.id) { NudgeRow(d) }
-                item { SectionHeader("Safety margin") }
+                item { SectionHeader("Buffer") }
                 item { MarginRow(state.marginMs) }
             } else {
                 item { SectionHeader("Speakers on the PC") }
@@ -577,11 +605,15 @@ private fun AdvancedSound(state: EverywhereState, phoneSource: Boolean, onBack: 
     }
 }
 
+/** Each speaker's offset: −400…+400 ms in 10 ms steps, saved per device on the PC (audio-everywhere.json). */
+private const val NUDGE_MAX_MS = 400f
+private const val NUDGE_STEP_MS = 10f
+
 @Composable
 private fun NudgeRow(d: EverywhereDevice) {
-    var nudge by remember(d.id, d.manualMs) { mutableFloatStateOf(d.manualMs.toFloat()) }
+    var nudge by remember(d.id, d.manualMs) { mutableFloatStateOf(d.manualMs.toFloat().coerceIn(-NUDGE_MAX_MS, NUDGE_MAX_MS)) }
     fun commit(value: Float) {
-        nudge = value.coerceIn(-300f, 300f)
+        nudge = ((value / NUDGE_STEP_MS).roundToInt() * NUDGE_STEP_MS).coerceIn(-NUDGE_MAX_MS, NUDGE_MAX_MS)
         AudioEverywhere.setDevice(d.id, manualMs = nudge.toDouble())
     }
     Column(Modifier.padding(horizontal = Kit.gutter)) {
@@ -592,21 +624,26 @@ private fun NudgeRow(d: EverywhereDevice) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { commit(nudge - 1) }) { Icon(LincSymbols.ArrowLeft, contentDescription = "1 ms later") }
-            Slider(value = nudge, onValueChange = { nudge = it }, onValueChangeFinished = { commit(nudge.roundToInt().toFloat()) },
-                valueRange = -300f..300f, modifier = Modifier.weight(1f).semantics { contentDescription = "${d.name} alignment" })
-            IconButton(onClick = { commit(nudge + 1) }) { Icon(LincSymbols.ArrowRight, contentDescription = "1 ms earlier") }
+            IconButton(onClick = { commit(nudge - NUDGE_STEP_MS) }) { Icon(LincSymbols.ArrowLeft, contentDescription = "10 ms later") }
+            Slider(value = nudge, onValueChange = { nudge = it }, onValueChangeFinished = { commit(nudge) },
+                valueRange = -NUDGE_MAX_MS..NUDGE_MAX_MS, steps = ((2 * NUDGE_MAX_MS / NUDGE_STEP_MS).toInt() - 1),
+                modifier = Modifier.weight(1f).semantics { contentDescription = "${d.name} alignment" })
+            IconButton(onClick = { commit(nudge + NUDGE_STEP_MS) }) { Icon(LincSymbols.ArrowRight, contentDescription = "10 ms earlier") }
         }
     }
 }
 
+/** Smooth adds this much to the group delay (the PC's marginMs); Tight adds none. */
+private const val SMOOTH_MARGIN_MS = 150
+
 @Composable
 private fun MarginRow(marginMs: Int) {
-    var margin by remember(marginMs) { mutableFloatStateOf(marginMs.toFloat()) }
-    Column(Modifier.padding(horizontal = Kit.gutter)) {
-        Text("${margin.roundToInt()} ms extra", style = MaterialTheme.typography.bodyMedium)
-        Slider(value = margin, onValueChange = { margin = it }, onValueChangeFinished = { AudioEverywhere.setMargin(margin.roundToInt()) },
-            valueRange = 0f..300f, modifier = Modifier.semantics { contentDescription = "Extra safety margin" })
-        HelperText("Raise this if the sound breaks up on a busy Wi-Fi. Every speaker waits a little longer, together.")
+    Column(Modifier.padding(horizontal = Kit.gutter), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ConnectedChoice(
+            options = listOf("tight" to "Tight", "smooth" to "Smooth"),
+            selected = if (marginMs >= SMOOTH_MARGIN_MS / 2) "smooth" else "tight",
+            onSelect = { AudioEverywhere.setMargin(if (it == "smooth") SMOOTH_MARGIN_MS else 0) },
+        )
+        HelperText("Tight: as little delay as the speakers allow. Smooth: every speaker waits $SMOOTH_MARGIN_MS ms longer, together, so a busy Wi-Fi doesn't break the sound up.")
     }
 }

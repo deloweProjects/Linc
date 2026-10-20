@@ -30,6 +30,37 @@ don't get lost.")
 - **Off:** either side; the PC puts the person's own output back as the default
   (`PcSpeakerMode.Disable`, also on a crash via `RestorePending`).
 
+## 1a. The phone's sound everywhere — "Whose sound: This phone's" (v31)
+
+- **Who starts it:** the phone's Sound page, "Whose sound: This phone's", when the PC speaks v31
+  (`AudioEverywhere.setMirrorSource` → `audio.everywhere.set {source: "mirror", on: true}`).
+  Older PCs: v29/v30 → `pc.btaudio.set` (section 2, not in step); v27/v28 → the recording route.
+- **The idea:** the same as section 1, with the phone's sound arriving at the PC like any app's.
+  `PcAudioEverywhere.EnableMirrorSourceAsync` turns Play everywhere on (if it isn't), then
+  `PhoneMirrorSource` runs scrcpy `--no-video --no-window --no-control --audio-source=playback
+  --require-audio --audio-buffer=40`, **without `--audio-dup`**: the phone's media apps go quiet
+  on the phone, and scrcpy (SDL, default device) plays them into the **cable**, which is the
+  default output while Play everywhere is on. Linc captures the cable as always and plays it on
+  every PC speaker and back to the phone on channel 6, all on the PC's clock. Nothing new on the
+  wire beyond the `source` value. The PC's own sounds still play too (they go into the cable).
+- **No echo:** scrcpy's capture takes `USAGE_MEDIA` players and, without `--audio-dup`, ignores
+  an app's capture opt-out. So while `AudioEverywhere.phoneIsSource` is set the phone's
+  `PhoneOutput` tracks use `USAGE_GAME` (left alone by the capture), and `SyncedAudio` skips
+  `PcPlaybackSession` (its audio focus would pause the app being played). Switching source with a
+  stream running reopens the tracks.
+- **Needs:** an adb route (USB or wireless debugging) — else `error: needs-adb`, nothing changes,
+  and the page offers "Record it instead" (the v27 route); Android 13+ (`needs-android-13`).
+  scrcpy ending on its own turns Play everywhere off (`mirror-stopped`).
+- **Back to the PC's sound:** `{source: "pc", on: true}` stops scrcpy, keeps the pipeline. Off,
+  the phone going away, speaker mode off or Linc closing all stop scrcpy too (`Disable`).
+- **Timing knobs, Advanced only:** per-speaker offset −400…+400 ms in 10 ms steps
+  (`device.manualMs`, saved per device in `audio-everywhere.json`), Re-sync
+  (`{resync: true}`: PC speakers re-align, group delay re-measured; the phone re-learns the
+  clock, `SyncedAudio.resync`), Smooth / Tight (`marginMs` 150 / 0). These apply to the PC's own
+  sound too.
+- **Expected delay:** scrcpy (~40 ms buffer + encode/adb) plus the group delay, about 0.2 s from
+  an app pressing play to sound, everything in step.
+
 ## 2. The phone's sound on the PC (v29 messages, scrcpy underneath)
 
 - **Messages:** `pc.btaudio.set {on, names}`, `pc.btaudio.get`, `pc.btaudio.state {on,
@@ -42,7 +73,10 @@ don't get lost.")
 - **Errors:** `needs-android-13`, `stopped`, `failed`, plus Bluetooth's (`not-paired`,
   `unsupported`, Windows' status) on the fallback.
 - **Retired:** `PhoneSource` (MediaProjection recording, `phone.sound.ask`) stays only for v28
-  phones; don't build on it.
+  phones and as the fallback when there is no adb route (section 1a); don't build on it.
+- This is the phone's sound on the PC **outside** Play everywhere (the "This phone's sound on the
+  PC" switch, the Device page): it keeps `--audio-dup` and is not delayed. Section 1a is the one
+  that silences the phone and plays in step. The switch is disabled while 1a runs.
 
 ## 3. Mirror screen's sound (scrcpy)
 
