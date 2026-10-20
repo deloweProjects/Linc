@@ -24,8 +24,9 @@ Read next in this folder:
   - Posted to Telegram (t.me/LincApp): APK, setup, 7z, checksums.
 - **main** = PR #8 merged ("Linc 1.0.0.17 (#8)"), so `Releases/update.json` is live and both apps
   offer 1.0.0.17.
-- **Working branch** for this session: `claude/linc-feature-ui-polish-lgf8au`. It equals main plus
-  this notes folder. A new session usually gets its own branch; start it from **main**.
+- **Branches:** the session branch `claude/linc-feature-ui-polish-lgf8au` and **main hold the
+  same code**. These notes reached main in a docs-only PR straight after the release. A new session
+  gets its own branch: start it from **main**.
 - **Owner's verdict on 1.0.0.17:** "everything works".
   - The one known complaint: Play everywhere on the phone sounds a little weird / low quality.
   - The owner said **no more fixing for now**; they are going to use the apps daily and report bugs.
@@ -84,16 +85,20 @@ the wire protocol is `PROTOCOL.md` next to it. In short:
     `Releases/TEST-NOTES.md` as the message.
   - **It posts to the owner's PUBLIC channel: only when the owner says "send".**
 - **Release:**
-  1. Write the version's section in `Releases/RELEASE-NOTES.md` first.
-  2. Dispatch `release.yml` on the branch that has the work, with `version` = next four-part number
-     (check the newest tag) and `display_name` = `1.0.0-beta.N`.
-  3. `release.ps1` stamps the versions, builds, tests, publishes, then opens and merges a PR to main.
-  - **That PR step fails** unless Settings › Actions › General › "Allow GitHub Actions to create and
-    approve pull requests" is on. It failed for 1.0.0.17.
-  - If it fails: open and merge the PR yourself (MCP `create_pull_request` + `merge_pull_request`),
-    then dispatch `release-pack.yml` on main with `tag=v1.0.0.N`. That adds the 7z and posts to
-    Telegram.
-  - Details are in `CLAUDE.md` › Releases.
+  - Write the version's section in `Releases/RELEASE-NOTES.md` first. Then empty
+    `Releases/TEST-NOTES.md` of shipped items: it still lists the notes for builds that went out in
+    1.0.0.17.
+  - **Merge the work to main first** (PR via MCP `create_pull_request` + `merge_pull_request`; the
+    owner's ask for a release counts as asking for this PR).
+  - Then dispatch `release.yml` **on main** with `version` = next four-part number (check the newest
+    tag) and `display_name` = `1.0.0-beta.N`.
+  - On main, `release.ps1` skips its own PR step (`release.ps1` ~304) and goes on to the 7z and the
+    Telegram post.
+  - **Don't dispatch it on a feature branch.** Its PR step can never succeed there: the workflow
+    grants only `contents` and `actions` permissions (no `pull-requests: write`), so the repo setting
+    alone doesn't fix it. That is exactly how 1.0.0.17 stopped after publishing.
+  - If a run does stop after publishing: merge to main by hand, then dispatch `release-pack.yml` on
+    main with `tag=v1.0.0.N`. It adds the 7z and posts to Telegram.
 - **Signing:**
   - The APK is a debug build signed with the owner's debug key, restored from the
     `ANDROID_DEBUG_KEYSTORE` secret. Its certificate SHA-256 is

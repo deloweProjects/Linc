@@ -4,6 +4,10 @@
 this repository, or a person trying to work out what all these documents are — this page is enough to
 get you working. Read it, then read the four files your role points you at.
 
+> **Newest state first:** read [`Vibe/claude-notes/HANDOFF.md`](claude-notes/HANDOFF.md) (2026-10-20,
+> after release 1.0.0.17). It says where things stand, how the cloud workflow, releases and Telegram
+> work, and which of the older docs below are stale ([`DOCS-STATE.md`](claude-notes/DOCS-STATE.md)).
+
 ---
 
 ## What Linc is
