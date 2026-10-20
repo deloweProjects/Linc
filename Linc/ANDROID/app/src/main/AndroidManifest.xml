@@ -12,6 +12,7 @@
     <!-- The phone as the PC's microphone (D-075): Android 14+ only lets a foreground service
          record with the screen off or Linc in the background when it is typed "microphone". -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- Android 14+ requires one "device interaction" permission alongside the
          connectedDevice FGS type; CHANGE_NETWORK_STATE is normal (auto-granted). -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
@@ -71,6 +72,14 @@
          system settings, and DisplayControl.canWrite() re-checks before every write. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
+    <!-- v28: the PC's Device page sets this phone's wallpaper (a normal permission), and shows
+         today's screen time. Usage access is an appop: declaring it grants nothing; the PC turns
+         it on over USB debugging (appops set … GET_USAGE_STATS allow), or the user does under
+         Settings > Apps > Special app access > Usage access. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- v18 / M13c: lets the companion arm wireless debugging itself
          (Settings.Global "adb_wifi_enabled"), so a hotspot link comes up with no cable and no
          trip into Developer options. This is a signature|privileged permission: DECLARING it
@@ -108,6 +117,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Linc"
         android:supportsRtl="true">
+
+        <!-- Authorship, stated openly (Provenance.kt, NOTICE). Read by nothing; informational. -->
+        <meta-data
+            android:name="app.linc.author"
+            android:value="deloweProjects" />
 
         <activity
             android:name=".MainActivity"
@@ -214,10 +228,24 @@
             device, since abstract sockets carry no permission check. Nothing here grants a caller
             access to data it could not already request over that socket.
         -->
+        <!-- Full-page tools opened from Tools: sound, PC look, terminal, files (D-097). -->
+        <activity
+            android:name=".PcToolActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Linc" />
+
+        <!-- Play everywhere with the phone as the source (D-097): Android's one-time consent to
+             record what apps play. No UI of its own; it closes as soon as Android answers. -->
+        <activity
+            android:name=".CaptureConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Linc.Invisible" />
+
         <service
             android:name=".service.CompanionService"
             android:exported="true"
-            android:foregroundServiceType="connectedDevice|microphone" />
+            android:foregroundServiceType="connectedDevice|microphone|mediaProjection" />
 
         <service
             android:name=".service.LincNotificationListener"

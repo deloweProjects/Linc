@@ -368,8 +368,12 @@ public sealed class ConnectionManager(
                 {
                     // TLS pairing is best-effort; ADB keeps working regardless.
                 }
-                // adb reverse: lets the phone dial this PC over the USB cable (D-022).
-                if (transport == LinkTransport.AdbUsb)
+                // adb reverse: lets the phone dial this PC through adb itself (D-022) — over the
+                // cable, and over Wireless debugging too, where it rides adb's own connection.
+                // Without it a Wi-Fi link left the phone dialling this PC's LAN address, which
+                // Windows Firewall blocks on most networks: every channel back (PC Remote's
+                // video, the terminal, files) failed with "couldn't open that channel back".
+                if (transport is LinkTransport.AdbUsb or LinkTransport.AdbWireless)
                 {
                     try
                     {
@@ -378,7 +382,8 @@ public sealed class ConnectionManager(
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        // Cable dial-in is a bonus path; ignore failures.
+                        // A bonus path (the LAN address is still tried); say so for the logs.
+                        log.Log(LogLevel.Info, $"Couldn't set up the phone's way back through adb ({ex.Message}); it will try this PC's network address");
                     }
                 }
             }

@@ -31,6 +31,12 @@ public sealed class PcSpeakerMode(ILogService log)
         get { lock (_lock) return _restoreRenderId is not null; }
     }
 
+    /// <summary>The user's own default output, put aside while the cable is the default (Play everywhere plays to it).</summary>
+    public string? OwnOutputId
+    {
+        get { lock (_lock) return _restoreRenderId; }
+    }
+
     /// <summary>
     /// Route the PC's sound into the cable. Null on success, else <c>"no-cable"</c> (nothing to
     /// route into) or <c>"denied"</c> (Windows refused the switch).
@@ -53,6 +59,7 @@ public sealed class PcSpeakerMode(ILogService log)
                 }
             }
             _restoreRenderId = current;
+            PcControlService.HeardOutputId = current == cable ? null : current;
             log.Log(LogLevel.Info, "Speaker mode: this PC's sound now plays on the phone");
             return null;
         }
@@ -66,6 +73,7 @@ public sealed class PcSpeakerMode(ILogService log)
         {
             restore = _restoreRenderId;
             _restoreRenderId = null;
+            PcControlService.HeardOutputId = null;
         }
         if (restore is null) return;
         if (!PcVoiceAccess.SetDefaultEndpoint(restore))

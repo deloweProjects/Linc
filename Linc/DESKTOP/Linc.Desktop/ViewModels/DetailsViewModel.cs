@@ -34,6 +34,14 @@ public partial class DetailsViewModel : ObservableObject
         RefreshSessionStats();
     }
 
+    /// <summary>True once a status snapshot has arrived. Until then the page shows a short hint
+    /// instead of four rows of "—" (the owner: values "—" with no hint why).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoStats))]
+    public partial bool HasStats { get; set; }
+
+    public bool HasNoStats => !HasStats;
+
     [ObservableProperty]
     public partial string CpuText { get; set; }
 
@@ -54,6 +62,7 @@ public partial class DetailsViewModel : ObservableObject
 
     private void OnStatusUpdated(DeviceStatus status)
     {
+        HasStats = true;
         CpuText = status.CpuLoad1m is { } load ? $"{load:0.00}" : "Not available on this phone";
 
         RamText = status.RamUsedBytes is { } used && status.RamTotalBytes is { } total and > 0

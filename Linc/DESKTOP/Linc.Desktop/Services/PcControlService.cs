@@ -337,10 +337,19 @@ public sealed class PcControlService(IConnectionManager connection, ILogService 
         }
     }
 
+    /// <summary>
+    /// The output the person actually hears while Play everywhere has made the virtual cable the
+    /// Windows default (<see cref="PcSpeakerMode"/>); null otherwise. Volume and mute go to it:
+    /// the cable refused them ("Windows refused that request" for every press on the phone).
+    /// </summary>
+    public static volatile string? HeardOutputId;
+
     private static IAudioEndpointVolume? GetDefaultEndpoint()
     {
         var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-        enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out var device);
+        IMMDevice? device = null;
+        if (HeardOutputId is { } heard) enumerator.GetDevice(heard, out device);
+        if (device is null) enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out device);
         if (device is null) return null;
 
         var iid = typeof(IAudioEndpointVolume).GUID;
@@ -518,6 +527,7 @@ public sealed class PcControlService(IConnectionManager connection, ILogService 
     {
         [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, uint stateMask, out IntPtr devices);
         [PreserveSig] int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice? endpoint);
+        [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice? device);
     }
 
     [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"),

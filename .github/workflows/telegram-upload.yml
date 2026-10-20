@@ -97,7 +97,11 @@ jobs:
           msg="$GITHUB_REPOSITORY $TAG"$'\n'"$url"
           [ -n "$EXTRA" ] && msg="$msg"$'\n\n'"$EXTRA"
           shopt -s nullglob
-          files=(dist/*)
+          # The phone app, the PC installer, one 7z holding both, and the checksums (the owner,
+          # 1.0.0.17: "normal apk and setup, then compressed with both"). The ~170 MB portable zip
+          # stays on the GitHub release. A release without those files posts whatever it has.
+          files=(dist/*.apk dist/Linc-Setup-*.exe dist/*.7z dist/CHECKSUMS.txt)
+          [ ${#files[@]} -gt 0 ] || files=(dist/*)
           if [ ${#files[@]} -eq 0 ]; then
             ./telegram-uploader/send.sh -m "$msg (no files attached to this release)"
           else

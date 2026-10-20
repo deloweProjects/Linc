@@ -122,6 +122,9 @@ public sealed class PcMirrorService(
                 break;
 
             case MessageType.PcAudioStop:
+                // PC Remote closing must not cut off speaker mode or Play everywhere, which
+                // need the same stream; they stop it themselves.
+                if (_speaker?.On == true) break;
                 StopAudio();
                 break;
 
@@ -167,6 +170,17 @@ public sealed class PcMirrorService(
                 bool speakerOn = (bool?)envelope.Payload["on"] ?? false;
                 _ = Task.Run(() => SetSpeakerAsync(speakerOn));
                 break;
+
+            // v26 (D-096): Play everywhere — every speaker at once, in step.
+            case MessageType.AudioEverywhereSet:
+                var everywhereSet = envelope.Payload.DeepClone().AsObject();
+                _ = Task.Run(() => Everywhere.HandleSetAsync(everywhereSet));
+                break;
+
+            case MessageType.AudioEverywhereReport:
+                var report = envelope.Payload.DeepClone().AsObject();
+                _ = Task.Run(() => Everywhere.OnReport(report));
+                break;
         }
     }
 
@@ -184,35 +198,48 @@ public sealed class PcMirrorService(
     /// <summary>
     /// Open the pc-audio channel and start streaming the PC's sound. Like the mirror's own
     /// start, a repeat request while one is in flight or already running is ignored, so the
-    /// phone may simply re-ask after a reconnect.
+    /// phone may simply re-ask after a reconnect — unless <paramref name="options"/> asks for a
+    /// different stream (Play everywhere's), which replaces the running one.
     /// </summary>
-    private async Task StartAudioAsync()
+    private async Task<PcAudioStreamer?> StartAudioAsync(AudioStreamOptions? options = null)
     {
-        if (_audio is not null || Interlocked.CompareExchange(ref _audioStarting, 1, 0) == 1) return;
+        if (_audio is { } running && (options is null || running.Options == options)) return running;
+        if (Interlocked.CompareExchange(ref _audioStarting, 1, 0) == 1) return null;
         try
         {
+            if (_audio is not null) StopAudio();
+            options ??= new AudioStreamOptions();
             // Probe on an MTA thread (WASAPI is COM; see the encoder note in StartAsync).
-            int rate = await Task.Run(PcAudioStreamer.ProbeSampleRate);
+            int rate = await Task.Run(() => PcAudioStreamer.ProbeSampleRate(options.LoopbackDeviceId));
             var channel = await connection.OpenPhoneDialledChannelAsync(PcAudioStreamer.Channel, CancellationToken.None);
-            await Framing.WriteAsync(channel, PcAudioStreamer.Config(rate).ToJsonString(), CancellationToken.None);
-            var audio = PcAudioStreamer.Start(channel, rate, log);
+            await Framing.WriteAsync(channel, PcAudioStreamer.Config(rate, options.Clock).ToJsonString(), CancellationToken.None);
+            var audio = PcAudioStreamer.Start(channel, rate, log, options);
             audio.Ended += reason =>
             {
                 log.Log(LogLevel.Info, $"PC audio ended: {reason}");
                 if (!ReferenceEquals(_audio, audio)) return;
                 StopAudio();
                 // The phone is gone, so the cable is playing to no one: give the PC its sound back.
+                _everywhere?.OnAudioEnded();
                 _speaker?.Disable();
             };
             _audio = audio;
-            log.Log(LogLevel.Info, $"Playing this PC's sound on the phone (AAC, {rate} Hz)");
+            log.Log(LogLevel.Info, $"Playing this PC's sound on the phone (AAC, {rate} Hz{(options.Clock ? ", in step" : "")})");
+            return audio;
         }
         catch (Exception ex)
         {
             log.Log(LogLevel.Warn, $"Couldn't play this PC's sound on the phone: {ex.Message}");
+            return null;
         }
         finally { Interlocked.Exchange(ref _audioStarting, 0); }
     }
+
+    // ---- Play everywhere (v26, D-096) ------------------------------------------------------
+
+    private PcAudioEverywhere? _everywhere;
+    private PcAudioEverywhere Everywhere => _everywhere ??= new PcAudioEverywhere(
+        connection, log, Speaker, options => StartAudioAsync(options), StopAudio);
 
     // ---- phone as PC speaker (v22, D-076) ------------------------------------------
 
@@ -222,6 +249,13 @@ public sealed class PcMirrorService(
     private async Task SetSpeakerAsync(bool on)
     {
         string? error = null;
+        // Play everywhere already routes through the cable; speaker mode off ends it too.
+        if (!on && _everywhere?.On == true) _everywhere.Disable("speaker mode turned off");
+        if (on && _everywhere?.On == true)
+        {
+            await SendSpeakerStateAsync(null);
+            return;
+        }
         if (on)
         {
             error = Speaker.Enable();
@@ -252,7 +286,7 @@ public sealed class PcMirrorService(
         {
             var payload = new JsonObject
             {
-                ["on"] = _speaker?.On == true,
+                ["on"] = _speaker?.On == true && _everywhere?.On != true,
                 ["cable"] = await Task.Run(PcVoiceAccess.CablePresent),
             };
             if (error is not null) payload["error"] = error;
@@ -307,6 +341,8 @@ public sealed class PcMirrorService(
                 ["skipPct"] = (int)(snap.SkipRatio * 100),
                 ["dropped"] = snap.Dropped,
             };
+            // v27: frame timestamps' zero on the PC clock, for lip-sync on the phone (D-097).
+            if (_source is { } source) payload["epochUs"] = source.StreamEpochUs;
             lastFrames = snap.SentFrames; lastBytes = snap.SentBytes; lastMs = now;
             try
             {
@@ -620,6 +656,7 @@ public sealed class PcMirrorService(
     {
         if (_disposed) return;
         _disposed = true;
+        _everywhere?.Disable("Linc is closing"); // stops the PC's own speakers it was playing
         StopAudio();
         _speaker?.Disable();      // puts the user's own speakers back
         _voiceAccess?.Dispose(); // puts the user's own default microphone back

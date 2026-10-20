@@ -1,8 +1,10 @@
 package app.linc.android.service
 
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
+import android.webkit.MimeTypeMap
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -46,10 +48,54 @@ object ShareStore {
     private val _lastReceived = MutableStateFlow<String?>(null)
     val lastReceived: StateFlow<String?> = _lastReceived
 
+    /** How many received files the Share tab keeps (it shows the newest 20 until "Show all"). */
+    private const val KEEP = 200
+
+    @Volatile private var appContext: Context? = null
+
+    /** From the Share tab (and anything else holding a context), so arrivals can be indexed. */
+    fun attach(context: Context) {
+        appContext = context.applicationContext
+    }
+
+    /**
+     * Tell Android's media index about a file the PC just wrote, so pictures and videos show in
+     * Gallery / Google Photos at once instead of after some later rescan. Nothing else does: the
+     * PC writes with `adb push` or through [FileChannelServer], neither of which goes through
+     * MediaStore. Scanning a path that no longer exists drops its stale entry instead.
+     */
+    fun scan(path: String) {
+        val context = appContext ?: AudioEverywhere.context() ?: return
+        runCatching {
+            val mime = mimeOf(path)
+            MediaScannerConnection.scanFile(context, arrayOf(path), if (mime != null) arrayOf(mime) else null, null)
+        }
+    }
+
+    private fun mimeOf(path: String): String? =
+        MimeTypeMap.getSingleton().getMimeTypeFromExtension(path.substringAfterLast('.', "").lowercase())
+
     fun addReceived(name: String, path: String) {
         _received.value = (listOf(ReceivedFile(name, path, System.currentTimeMillis())) +
-            _received.value.filterNot { it.path == path }).take(50)
+            _received.value.filterNot { it.path == path }).take(KEEP)
         _lastReceived.value = name
+        scan(path)
+    }
+
+    /**
+     * Delete received files from the phone (the Share tab's selection), drop them from the list
+     * and from the media index. Returns how many were actually removed.
+     */
+    fun deleteReceived(paths: Collection<String>): Int {
+        val gone = paths.filter { path ->
+            val file = File(path)
+            runCatching { !file.exists() || file.delete() }.getOrDefault(false)
+        }.toSet()
+        if (gone.isNotEmpty()) {
+            _received.value = _received.value.filterNot { it.path in gone }
+            gone.forEach { scan(it) }
+        }
+        return gone.size
     }
 
     /**
@@ -60,10 +106,14 @@ object ShareStore {
         if (!Environment.isExternalStorageManager()) return
         scope.launch {
             val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Linc")
-            val files = dir.listFiles { f -> f.isFile }?.sortedByDescending { it.lastModified() }?.take(50) ?: return@launch
+            val files = dir.listFiles { f -> f.isFile }?.sortedByDescending { it.lastModified() }?.take(KEEP) ?: return@launch
             val known = _received.value.map { it.path }.toSet()
-            _received.value = (_received.value + files.filter { it.absolutePath !in known }
-                .map { ReceivedFile(it.name, it.absolutePath, it.lastModified()) }).sortedByDescending { it.at }.take(50)
+            val found = files.filter { it.absolutePath !in known }
+            _received.value = (_received.value + found
+                .map { ReceivedFile(it.name, it.absolutePath, it.lastModified()) }).sortedByDescending { it.at }.take(KEEP)
+            // Files that landed while nothing announced them (or before Linc indexed arrivals):
+            // index them once, the first time this process sees them, so they reach the Gallery too.
+            found.forEach { scan(it.absolutePath) }
         }
     }
 

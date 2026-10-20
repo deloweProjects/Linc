@@ -15,6 +15,46 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
+## 1.0.0.17 ("1.0.0-beta.17") — 2026-10-20
+
+Install both apps (protocol v31). Phones and settings are kept; nothing else to install. Everything
+in 1.0.0.16 and earlier below, plus:
+
+**Sound**
+- **Play everywhere**: the PC's sound on the phone and every PC speaker at once, in step. Fixed the
+  sound cutting out after a second and the endless "Aligning…"; volume keys work while it's on.
+- **The phone's sound everywhere** ("Whose sound: This phone", needs USB or wireless debugging,
+  Android 13+): the phone's music plays on the PC's speakers and the phone together, in step.
+  Speaker offsets (±400 ms), Re-sync and Smooth/Tight are under Advanced.
+- **Phone sound on the PC** now comes through the mirror's sound path: no Bluetooth pairing, and
+  the phone keeps playing too. Mirror screen keeps the sound on the phone as well.
+
+**Phone**
+- **Sync folders** (Control → Sync): keep folders on the PC and the phone the same, both ways or
+  one way.
+- **Terminal**: long lines stay whole, swipe sideways to read them; pinch to zoom.
+- **Share**: open the received folder, select several files, then send, share or delete them.
+  Pictures from the PC show up in the Gallery.
+- **Control**: a "Pages" button and an edge handle open the side panel; Mirror PC sits in the
+  Your PC card on Home. "Now playing" works again once notification access is on.
+- **Appearance** (Settings): wallpaper background with frosted, colour-tinted sheets and menus;
+  floating navigation bar; a choice of fonts (Manrope, DM Sans, Outfit, Playfair Display).
+- **Clipboard**: search first; sending text to the PC is behind a "Send to PC" button.
+
+**PC**
+- **Home** shrinks to fit smaller windows; Now playing uses the album art; clock styles (Classic,
+  Bold, Stacked, Serif, Minimal) and fonts (Inter, Plus Jakarta Sans, Manrope, Outfit).
+- **Look**: the phone's wallpaper behind everything, or turn it off for the plain background
+  (Settings → Appearance); frosted, colour-tinted menus, dialogs and side bar; the floating bar
+  rises only while the taskbar is showing.
+- **Clipboard**: search first, "Send to phone" behind a button; opens faster and fits the window.
+- **Device page** shows the battery straight away; the last battery and Wi-Fi stay (greyed) while
+  the phone is away; Ring / Vibrate / Silent say when the phone needs Do Not Disturb access.
+- **About** shows the right version, credits and licences.
+- A new Linc takes over from an older copy still running in the tray.
+
+Linc is made by deloweProjects — <https://github.com/deloweProjects/Linc>.
+
 ## 1.0.0.16 ("1.0.0-beta.16") — 2026-10-18
 
 Install both apps (protocol v25). Phones and settings are kept. Everything in 1.0.0.15 and earlier

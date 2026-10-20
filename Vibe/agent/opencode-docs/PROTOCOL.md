@@ -54,6 +54,11 @@ The desktop always sends first.
 2. Phone → Desktop: `hello` (`replyTo` set) with `{"app": "linc-android", "appVersion": "0.1.0", "v": 3}` — the phone picks the highest version both sides support.
 3. If there is no overlap, the phone replies `error` with code `version-mismatch` and closes.
 
+**Optional `author` (1.0.0.17, no version gate).** Both `hello` payloads may carry
+`"author": "deloweProjects"` — open authorship information from each app's `Provenance` constants
+(`Provenance.kt` / `Provenance.cs`, see `NOTICE`). It is purely informational: neither side reads,
+checks or requires it, and an older peer ignores it under the unknown-fields rule above.
+
 Both sides must gate version-specific messages on the negotiated `v` (e.g. no clipboard traffic on a v0 link).
 
 No other message may be sent before the handshake completes.
@@ -605,6 +610,65 @@ Remote Desktop feels instant on links where its video is visibly behind, because
 
 `pc.state` (v17) also gains two optional, read-only fields for the phone's Home "Your PC" card: `battery: {percent, charging}` (absent on a PC without a battery) and `network: "wifi" | "ethernet"` (absent when unknown). Older phones ignore them.
 
+## v26 — Play everywhere (2026-10-18; D-096)
+
+The PC's sound on its own speakers, its Bluetooth devices and the phone's outputs at once, heard in
+step, with a volume per device. Built on speaker mode's routing (v25): the cable is the default
+output, Linc captures it once and renders it to every chosen PC device itself (so each can be
+delayed) and to the phone over pc-audio.
+
+**Timing model.** Every block carries the PC-clock (QPC, µs) time it was captured, `Tc`. Every
+speaker aims to be heard at `Tc + D`; the desktop sets the group delay `D` from what each speaker
+needs (rises at once, falls only after 20 s of needing 30 ms less). A speaker's "heard" time is its
+own position clock plus a per-device hidden latency (a Bluetooth buffer, a TV's processing) that
+the phone's microphone measures. Each speaker corrects its error by a jump when unlocked or more
+than 40 ms out, otherwise by playing up to ±0.5% fast or slow (PI loop). The playout is pinned by
+`tools/audiosyncsim` (desktop) and `AudioSyncTest` (phone), which must agree.
+
+**pc-audio channel 6 with `clock`.** When the config frame has `"clock": true` (only Play
+everywhere's stream; a v25 phone never sees it): packet timestamps are PC-clock capture times, and
+the channel's back direction carries clock probes. Phone → desktop: 16 bytes, big-endian:
+`int32 0x4C434C4B ("LCLK")`, `int32 0`, `int64 phone µs (t0)`. Desktop → phone: a packet with the
+**config flag** set and a 24-byte payload: `int64 t0`, `int64 arrived (t1)`, `int64 leaving (t2)`
+(PC µs). The phone keeps the quickest round trips and fits offset + drift over the last minute.
+
+| Type | Direction | Payload | Notes |
+|---|---|---|---|
+| `audio.everywhere.set` | phone → desktop | `{on?, device?: {id, enabled?, volume? 0–100, muted?, manualMs?}, marginMs?, calibrate?, clicks?, resetAlignment?}` | Any of these; an empty `{}` just asks for the state. `on: true` turns speaker mode's routing on, restarts pc-audio with `clock`, and opens a render stream on each enabled PC output. `manualMs` (±500) is the user's nudge: positive plays earlier. `marginMs` (0–500) is added to the group delay. Answered with `audio.everywhere.state`. |
+| `audio.everywhere.state` | desktop → phone | `{on, delayMs, marginMs, testing, note?, error?, devices: [{id, name, kind: "pc"\|"phone", bluetooth, enabled, volume, muted, autoMs, manualMs, hiddenUs, calibrated, status, offByMs, needMs, problem?}]}` | After every `set`, on a change of `D`, and every 2 s while on. Phone entries come from the phone's report; the desktop stores every device's settings in `audio-everywhere.json` under the store root. `testing`: `"calibrate"`, `"clicks"` or null. `error` as `pc.speaker.state`'s. |
+| `audio.everywhere.report` | phone → desktop | `{outputs: [{id, name, bluetooth, needUs, status, offByUs}], clockReady, clock?: {uncertaintyUs, driftPpm}, calibration?: {seq, results: [{id, ok, errorUs, snr}], error?}}` | Every 2 s while the clocked stream plays. Phone output ids are `phone:speaker`, `phone:bt:<name>`, `phone:wired`, `phone:usb:<name>`; a new one is enabled by default. `needUs` includes the output's hidden latency. |
+| `audio.everywhere.test` | desktop → phone | `{seq, mode: "calibrate"\|"clicks", sounds: [{id, atUs, kind: "chirp"\|"click"}], listenFromUs, listenToUs}` | Program sound is muted on every speaker until the last sound. Each speaker plays its own sounds so they are heard at `atUs` (PC clock). `calibrate`: each device, one at a time, 3 rounds, 800 ms apart, a 60 ms 1.5→6 kHz chirp; the phone records `listenFromUs`–`listenToUs`, finds each chirp by cross-correlation within −200/+600 ms of when it was due, and reports per device the median error (ok only when two rounds agree within 4 ms). The desktop adds `errorUs` to that device's measured hidden latency (refusing beyond ±600 ms). `clicks`: every device at once, twice a second, for the user to judge by ear. |
+
+## v27 — Phone as Play everywhere's source, lip-sync, PC tools (2026-10-18; D-097)
+
+**Lip-sync.** `pc.mirror.stats` gains `epochUs`: the PC-clock time (µs) of video timestamp 0.
+With Play everywhere's clocked sound running, the phone measures each shown frame's delay
+(`toPc(now) − (epochUs + pts)`) and, while PC Remote shows the picture, plays its own outputs at
+that delay instead of the group delay.
+
+**The phone as the source.** `audio.everywhere.set {source: "phone", on}` — the phone records
+what its apps play (Android playback capture) and asks the PC to listen: the PC dials **channel
+8** (pc-phone-audio). Phone → desktop: packets framed like pc-video (12-byte header). Sound
+packets carry 16-bit little-endian stereo 48 kHz PCM, and their timestamp is the **PC-clock
+moment the block must be heard** (the phone's own output's moment), so the PC plays each block at
+exactly that time with no group delay of its own. Config-flagged packets are clock probes
+(16 bytes: `"LCLK"`, 0, phone µs); the PC answers each on the back direction with a
+config-flagged 24-byte packet (`t0`, arrived, leaving), as on channel 6. `{source: "pc", on: false}`
+ends it. `audio.everywhere.state` gains `source: "pc" | "phone"`.
+
+**PC tools.** All phone → desktop requests, answered with their own message types:
+
+| Request | Answer | Notes |
+|---|---|---|
+| `pc.look.get {}` / `pc.look.set {appsDark?, systemDark?, accent? "#RRGGBB", autoAccent?, transparency?}` | `pc.look.state {appsDark, systemDark, transparency, accent, autoAccent, wallpaper?, error?}` | HKCU Personalize/DWM/Explorer\Accent, then `WM_SETTINGCHANGE "ImmersiveColorSet"`. |
+| `pc.wallpaper.set {jpeg (base64, ≤ ~700 KB), fit: fill\|fit\|stretch\|center\|tile\|span}` | `pc.look.state` | Saved under the store root, a new name each time. |
+| `pc.info.get {}` | `pc.info {name, user, os, uptimeMin, cpuPct, memTotalMb, memUsedMb, disks[], battery?}` | |
+| `pc.apps.get {}` / `pc.apps.end {pid}` | `pc.apps {apps: [{pid, name, title, memMb}]}` | End: close the window, then end it after 3 s. |
+| `pc.open {url}` or `{path}` | — | Shell-opened, as a double-click. |
+| `pc.files.list {path}` (`""` = the starting places) | `pc.files.listing {path, parent, entries: [{name, path, dir, size, modified, drive?, place?}], truncated?, error?}` | Hidden/system entries skipped; 2000 max. |
+| `pc.files.op {op, id, …}`: `mkdir {path, name}`, `rename {path, name}`, `delete {path}` (Recycle Bin), `open {path}`, `download {path}`, `upload {dir, name, size}` | `pc.files.done {op, id, ok, path?, error?}` | Transfers: the PC dials **channel 10**, writes a JSON frame `{id, op}` (+ `name`, `size` for a download), then the bytes flow PC → phone (download) or phone → PC (upload, `size` bytes or until close). |
+| `pc.term.get {}` / `pc.term.open {shell: powershell\|cmd\|wsl, cols, rows}` | `pc.term.state {shells, running?, error?}` | The PC dials **channel 9** and runs the shell in a ConPTY. Both ways: `[type u8][length u32 BE][payload]`; 1 = UTF-8 text (VT output / keystrokes), 2 = resize (cols, rows as u16 BE), 3 = exit (i32 code, PC → phone). |
+
 ## Protocol draft — later milestones (not implemented)
 
 Everything below is **draft until its milestone ships**. These message types are ignored by current peers per the envelope's unknown-type rule.
@@ -620,3 +684,90 @@ Later milestones extend these tables — each extension bumps the protocol versi
 - Handshake must complete within 5 s of TCP connect, else either side may close.
 - Desktop pings every 15 s of idle; two missed pongs → treat the link as dead and let the ConnectionManager reconnect.
 - Either side closing the socket is normal shutdown; no goodbye message in v0.
+
+## v28 — sound output, PC screen curtain, the Device page reaching into the phone
+
+Additive; gated on a negotiated version of 28 on both sides.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `pc.audio.outputs.get` | phone → desktop | `{}` |
+| `pc.audio.outputs` | desktop → phone | `{outputs: [{id, name, bluetooth, default}]}` (also the answer to a set) |
+| `pc.audio.output.set` | phone → desktop | `{id}`: make it Windows' default output |
+| `pc.curtain.set` | phone → desktop | `{on}`: black, click-through, topmost window per monitor, `WDA_EXCLUDEFROMCAPTURE` so the capture still sees the desktop; lifts when the phone goes away |
+| `pc.curtain.state` | desktop → phone | `{on, available, error?}` |
+| `phone.sound.ask` | desktop → phone | `{on}`: on opens the playback-capture consent (directly with overlay permission, else a notification); off stops the phone source |
+| `phone.usage.get` | desktop → phone | `{}` |
+| `phone.usage` | phone → desktop | `{allowed, totalMin, unlocks, apps: [{package, name, minutes}]}`; `allowed:false` when usage access is off (the PC can grant it over adb: `appops set app.linc.android GET_USAGE_STATS allow`) |
+| `phone.wallpaper.set` | desktop → phone | `{jpeg (base64, ≤ ~640 KB), target: home\|lock\|both}` |
+
+`pc.info` gains optional Task Manager fields: `cpuName, cores, threads, cpuMhz, processes, handles, diskPct,
+diskReadKBps, diskWriteKBps, netSendKbps, netRecvKbps, netName, gpuPct, gpuName, memCommittedMb, memCommitLimitMb`.
+`pc.term.state.shells` may now also list `winps`, `wsl:<distro>` and `gitbash`. The phone's Play everywhere
+output reports may carry status `clock` (waiting for the PC's clock). Phone colours and dark theme are set by
+the desktop over adb (`settings put secure theme_customization_overlay_packages …`, `cmd uimode night`), not
+by protocol.
+
+## v29 — the phone's sound on the PC over Bluetooth
+
+Additive; gated on a negotiated version of 29 on both sides. Windows becomes the phone's Bluetooth
+speaker (A2DP sink, `Windows.Media.Audio.AudioPlaybackConnection`, Windows 10 2004+), so the phone
+plays to the PC like to any Bluetooth speaker: nothing is recorded on the phone and Android shows no
+capture prompt. The phone must be paired with the PC over Bluetooth once.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `pc.btaudio.set` | phone → desktop | `{on, names: [the phone's Bluetooth/device names]}`: the desktop picks the paired phone matching a name (else the only one, else the first) and opens or closes the connection |
+| `pc.btaudio.get` | phone → desktop | `{}` |
+| `pc.btaudio.state` | desktop → phone | `{on, supported, device?, error?}`; `error` is `not-paired`, `unsupported`, or Windows' own open status. Also sent unprompted when the connection closes (Bluetooth off, out of range) |
+
+The PC's Device page opens the same connection itself, without the phone. `phone.sound.ask` (the
+recording route) stays for v28 phones.
+
+## v30 — the phone's Sync page and folder pairs
+
+Additive; gated on a negotiated version of 30 on both sides. The Folders lane now keeps several
+folders the same, each a **pair**: a PC folder and a phone folder, with a direction. The PC runs
+the engine and keeps the setup (per phone, `KnownDevice.FolderPairs`); the phone's Sync page reads
+and edits it. Older settings with one folder (`FolderSyncPcPath`/`FolderSyncPhonePath`) read as a
+single pair with id `folders`, so its sync history carries over.
+
+A pair is `{id, name, pcPath, phonePath, direction, enabled}`. `direction` is `both` (new and
+changed files go both ways, the newer copy wins), `toPhone` (the PC's folder is copied to the
+phone) or `toPc` (the phone's folder is copied to the PC). `id` never changes once made; the
+engine files its per-file bookkeeping under it.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `sync.state.get` | phone → desktop | `{}` |
+| `sync.state` | desktop → phone | `{lanes: {folders, photos, messages, calls}, pairs: [pair], status, photosPcPath}`. Also sent unprompted whenever the setup changes (from either side) or a sync pass finishes |
+| `sync.pairs.set` | phone → desktop | `{pairs: [pair]}`, the whole list; a pair with no `pcPath` or `phonePath` is dropped, one with no `id` gets a new one |
+| `sync.lane.set` | phone → desktop | `{lane, on}` |
+| `sync.now` | phone → desktop | `{}`: run a sync pass now |
+
+`sync.config` (v11) still tells the phone which lanes are on; the PC sends it after a lane changes.
+
+## v31 — the phone's sound in Play everywhere, the way Mirror screen takes it (2026-10-20)
+
+Additive; the phone sends these only when the negotiated version is 31 on both sides, so older
+PCs never see them and older phones never receive `source: "mirror"`. No new message type and no
+new channel.
+
+| Type | Direction | Payload | Notes |
+|---|---|---|---|
+| `audio.everywhere.set` | phone → desktop | `{source: "mirror", on: true}` | "Whose sound: This phone's". The PC turns Play everywhere on as for its own sound (v26: cable as the default output, capture, every PC speaker, channel 6 with `clock` back to the phone) if it isn't already, then runs the bundled scrcpy with `--no-video --no-window --no-control --audio-source=playback --require-audio --audio-buffer=40` (**no** `--audio-dup`): the phone's media apps go quiet on the phone, scrcpy plays them into Windows' default output (the cable), and the existing pipeline plays them everywhere, the phone included, in step. Needs an adb route (USB or wireless debugging) and Android 13+. `{source: "pc", on: true}` stops scrcpy and keeps playing the PC's own sound; `{on: false}` ends it all. |
+| `audio.everywhere.set` | phone → desktop | `{resync: true}` | "Re-sync": the PC re-aligns every PC speaker and drops the group delay to what the speakers need now (instead of waiting out its 20 s fall). The phone re-learns the PC's clock and re-aligns its own outputs on its own side. |
+| `audio.everywhere.state` | desktop → phone | `source` may now be `"mirror"`; `error` may be `needs-adb` (no USB / wireless-debugging link: nothing was changed), `needs-android-13` (scrcpy said so and exited) or `mirror-stopped` (scrcpy ended on its own; Play everywhere was turned off) | |
+
+While `source` is `"mirror"` the phone plays its copies with `USAGE_GAME` (scrcpy's playback capture
+matches `USAGE_MEDIA` only, and its non-duplicating mix ignores the app's capture opt-out), and does not
+take audio focus or show "Playing from your PC". Per-speaker offsets stay `device.manualMs` (the phone's
+Advanced page now offers −400…+400 ms in 10 ms steps; the PC still accepts ±500) and Smooth / Tight sets
+`marginMs` to 150 / 0; both were already in v26 and are saved per device in `audio-everywhere.json`.
+
+### Optional status field (no version bump): `dndAccess`
+
+`status` (the health probe's reply) may carry `dndAccess: bool`: whether the phone has given Linc
+Do Not Disturb access (`NotificationManager.isNotificationPolicyAccessGranted`), which `dnd.set` and
+`sound.set` need. The PC greys Ring / Vibrate / Silent and says where to allow it when it is
+`false`; absent (older phones) counts as allowed, as before.

@@ -10,11 +10,15 @@ get you working. Read it, then read the four files your role points you at.
 
 Linc connects an Android phone to a Windows PC — files, screen mirroring in both directions,
 clipboard, notifications, media, messages and calls — over a USB cable or your own Wi-Fi. It talks
-directly between the two devices using a **versioned JSON protocol** (currently **v18**) over ADB,
+directly between the two devices using a **versioned JSON protocol** (currently **v31**) over ADB,
 with a direct TLS channel as a fallback.
 
 **There is no backend and no account.** This repository is the only infrastructure the project has:
 even the update channel is a file in it (`Releases/update.json`).
+
+**Every feature, where it lives in each app, and its settings and defaults:**
+[`Vibe/agent/opencode-docs/FEATURES.md`](agent/opencode-docs/FEATURES.md) (as of 1.0.0.17; it also
+explains Linc's open authorship fingerprint).
 
 It is an **established, hardware-verified codebase under refinement** — not a greenfield project.
 Treat every existing file as load-bearing until you have proven otherwise.

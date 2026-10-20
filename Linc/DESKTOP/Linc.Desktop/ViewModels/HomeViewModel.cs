@@ -372,6 +372,7 @@ public partial class HomeViewModel : ObservableObject
         AppsMessage = "";
 
         MediaArt = null;
+        MediaArtSoft = null;
         QuickActionMessage = "";
         BatteryText = "—";
         SignalText = "—";
@@ -511,6 +512,7 @@ RefreshGradient();
         }
         OnPropertyChanged(nameof(ShowPhone));
         OnPropertyChanged(nameof(ShowQuickActions));
+        OnPropertyChanged(nameof(ShowWidgetOptionsAlone));
         OnPropertyChanged(nameof(ShowApps));
         OnPropertyChanged(nameof(ShowMedia));
         OnPropertyChanged(nameof(ShowPhotos));
@@ -527,17 +529,24 @@ RefreshGradient();
     // Visibility properties bound by the cards in HomePage.xaml
     public bool ShowPhone => _registry.Home.IsVisible("phone");
     public bool ShowQuickActions => _registry.Home.IsVisible("quickactions");
+
+    /// <summary>The widget options (⋯) live in the quick controls' header; with that card hidden a
+    /// lone ⋯ stands in, so Sections is always reachable.</summary>
+    public bool ShowWidgetOptionsAlone => !ShowQuickActions;
     public bool ShowApps => _registry.Home.IsVisible("apps");
     public bool ShowMedia => _registry.Home.IsVisible("media");
     public bool ShowPhotos => _registry.Home.IsVisible("photos");
     public bool ShowShared => _registry.Home.IsVisible("shared");
     public bool ShowClipboard => _registry.Home.IsVisible("clipboard");
 
-    // Combined visibility: section enabled AND data available (for Media, Photos, Shared).
+    // Combined visibility: section enabled AND data available (for Photos, Shared).
     // Each is composed of two independent sources, so EVERY site that raises either half must
     // also raise the combined name — RefreshSections covers the layout half, and the data half is
     // raised alongside HasMedia / HasPhotos / HasReceivedShares (M6a regression, fixed in M6b).
-    public bool ShowMediaWidget => ShowMedia && HasMedia;
+    // Media is the exception since 2026-10-19 (the owner: keep the music widget on Home even when
+    // nothing plays): it shows whenever its section is on, saying "Nothing playing" with its
+    // buttons disabled (HasMedia) until something does.
+    public bool ShowMediaWidget => ShowMedia;
     public bool ShowPhotosWidget => ShowPhotos && HasPhotos;
     public bool ShowSharedWidget => ShowShared && HasReceivedShares;
 
@@ -1610,21 +1619,41 @@ RefreshGradient();
         OnPropertyChanged(nameof(LinkAddress));
         OnPropertyChanged(nameof(HasLinkAddress));
         OnPropertyChanged(nameof(QuickActionsEnabled));
+        OnPropertyChanged(nameof(SoundControlsEnabled));
+        OnPropertyChanged(nameof(ShowDndAccessHint));
         OnPropertyChanged(nameof(ScreenshotEnabled));
         OnPropertyChanged(nameof(ShowAdbHint));
         if (!IsConnected)
         {
-            BatteryText = "—";
-            SignalText = "—";
+            // The last battery and Wi-Fi the phone sent, greyed, rather than "—" (owner concerns).
+            if (_supervisor.LastStatus is { } last) OnStatusUpdated(last, fromProbe: false);
+            else
+            {
+                BatteryText = "—";
+                SignalText = "—";
+            }
         }
+        OnPropertyChanged(nameof(StatusOpacity));
     }
 
-    private void OnStatusUpdated(DeviceStatus status)
+    /// <summary>The battery / Wi-Fi line: full while connected, greyed while it shows the last known values.</summary>
+    public double StatusOpacity => IsConnected ? 1.0 : 0.5;
+
+    private void OnStatusUpdated(DeviceStatus status) => OnStatusUpdated(status, fromProbe: true);
+
+    private void OnStatusUpdated(DeviceStatus status, bool fromProbe)
     {
         BatteryText = status.Charging ? $"{status.Battery}% ⚡" : $"{status.Battery}%";
         SignalText = status.WifiSignalLevel is { } level
             ? $"Wi-Fi {SignalWord(level)}"
             : "Not on Wi-Fi";
+        if (!fromProbe) return; // last known values only: don't replay DND and the rest
+        if (_dndAccess != status.DndAccess)
+        {
+            _dndAccess = status.DndAccess;
+            OnPropertyChanged(nameof(SoundControlsEnabled));
+            OnPropertyChanged(nameof(ShowDndAccessHint));
+        }
         if (status.DndEnabled is { } dnd)
         {
             IsDndOn = dnd;
@@ -1657,6 +1686,12 @@ RefreshGradient();
         OnPropertyChanged(nameof(IsSoundSilent));
     }
 
+    /// <summary>
+    /// Ring / Vibrate / Silent is one choice that always shows the phone's real mode. The buttons
+    /// never keep the state a click gave them (views:ChoiceButton reverts it); this re-raises all
+    /// three afterwards, success or not, so a refusal (no Do Not Disturb access on the phone)
+    /// leaves the mode the phone is really in selected — not every button that was clicked.
+    /// </summary>
     [RelayCommand]
     private async Task SetSoundAsync(string mode)
     {
@@ -1674,6 +1709,10 @@ RefreshGradient();
         catch (LincException ex)
         {
             QuickActionMessage = ex.Message;
+        }
+        finally
+        {
+            OnSoundModeChanged(SoundMode);
         }
     }
 
@@ -1709,6 +1748,15 @@ RefreshGradient();
 
     /// <summary>Ring/DND need protocol v7 (an updated phone app); mirror/screenshot need ADB (until M17).</summary>
     public bool QuickActionsEnabled => IsConnected && _supervisor.Device is { Companion.V: >= 7 };
+
+    private bool? _dndAccess;
+
+    /// <summary>Ring / Vibrate / Silent: greyed when the phone says Linc has no Do Not Disturb access.</summary>
+    public bool SoundControlsEnabled => QuickActionsEnabled && _dndAccess != false;
+
+    public bool ShowDndAccessHint => IsConnected && _dndAccess == false;
+
+    public string DndAccessHint => "To change these from here, allow Linc on the phone: Settings › Notifications › Do Not Disturb access.";
     public bool ScreenshotEnabled => IsConnected && _connection.HasAdb;
 
     /// <summary>On a direct (no-ADB) link, tell the user what turning debugging on would unlock.</summary>
@@ -1811,6 +1859,16 @@ RefreshGradient();
     public bool HasMediaArt => MediaArt is not null;
     public bool HasNoMediaArt => MediaArt is null;
 
+    /// <summary>
+    /// The same album art decoded only <see cref="SoftArtWidth"/> px across: drawn across the
+    /// whole media card it is a soft blur of the cover (the trick the wallpaper backdrop uses).
+    /// Set together with <see cref="MediaArt"/>, cleared with it.
+    /// </summary>
+    [ObservableProperty]
+    public partial BitmapImage? MediaArtSoft { get; set; }
+
+    private const int SoftArtWidth = 16;
+
     partial void OnMediaArtChanged(BitmapImage? value)
     {
         OnPropertyChanged(nameof(HasMediaArt));
@@ -1881,6 +1939,7 @@ RefreshGradient();
         {
             _artId = artId;
             MediaArt = null;
+            MediaArtSoft = null;
             if (artId is not null)
             {
                 _ = LoadMediaArtAsync(artId);
@@ -1907,10 +1966,25 @@ RefreshGradient();
 
     private async Task LoadMediaArtAsync(string artId)
     {
-        var image = await FetchImageAsync("albumArt", artId);
-        if (_artId == artId) // still the current track
+        try
         {
-            MediaArt = image;
+            var bytes = await _connection.FetchBulkAsync("albumArt", artId, CancellationToken.None);
+            if (bytes is not { Length: > 0 } || _artId != artId)
+            {
+                return;
+            }
+            var image = await ToImageAsync(bytes);
+            var soft = await ToImageAsync(bytes, SoftArtWidth);
+            if (_artId == artId) // still the current track
+            {
+                // Soft first: HasMediaArt (which shows the art layers) follows MediaArt.
+                MediaArtSoft = soft;
+                MediaArt = image;
+            }
+        }
+        catch (Exception)
+        {
+            // Cosmetic only, like every other image fetch here: the card keeps its plain look.
         }
     }
 
@@ -1925,7 +1999,7 @@ RefreshGradient();
         // Home shows the newest few; the Clipboard page has the whole history (D-083).
         foreach (var entry in _clipboard.History.Where(c => !c.Pinned).Take(5))
         {
-            Clips.Add(new ClipVm(entry, _clipboard, _connection));
+            Clips.Add(new ClipVm(entry with { Text = TextRepair.FixMojibake(entry.Text) }, _clipboard, _connection));
         }
         OnPropertyChanged(nameof(HasClips));
         OnPropertyChanged(nameof(HasNoClips));
@@ -1979,12 +2053,16 @@ RefreshGradient();
     }
 
     /// <summary>Fetches PNG bytes over the bulk channel and decodes them; null on any failure.</summary>
-    private static async Task<BitmapImage> ToImageAsync(byte[] bytes)
+    private static async Task<BitmapImage> ToImageAsync(byte[] bytes, int decodeWidth = 0)
     {
         using var stream = new InMemoryRandomAccessStream();
         await stream.WriteAsync(bytes.AsBuffer());
         stream.Seek(0);
         var image = new BitmapImage();
+        if (decodeWidth > 0)
+        {
+            image.DecodePixelWidth = decodeWidth; // set before the source, or it decodes full size
+        }
         await image.SetSourceAsync(stream);
         return image;
     }

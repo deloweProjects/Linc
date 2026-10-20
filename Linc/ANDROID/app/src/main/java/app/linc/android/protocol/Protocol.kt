@@ -9,7 +9,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 25
+const val PROTOCOL_VERSION = 31
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -101,6 +101,52 @@ object MessageType {
     const val PC_MIC_AUTO = "pc.mic.auto"                   // phone → desktop: PC Remote, "Phone" chosen (v23)
     const val PC_SPEAKER_SET = "pc.speaker.set"             // phone → desktop: {on} phone as PC speaker (v25)
     const val PC_SPEAKER_STATE = "pc.speaker.state"         // desktop → phone: {on, cable, error?} (v25)
+    // v26 (D-096): Play everywhere — PC, PC Bluetooth and phone speakers at once, in step.
+    const val AUDIO_EVERYWHERE_SET = "audio.everywhere.set"         // phone → desktop
+    const val AUDIO_EVERYWHERE_STATE = "audio.everywhere.state"     // desktop → phone
+    const val AUDIO_EVERYWHERE_REPORT = "audio.everywhere.report"   // phone → desktop
+    const val AUDIO_EVERYWHERE_TEST = "audio.everywhere.test"       // desktop → phone
+    // v27 (D-097): the full-page PC tools — look, info, running apps, files, terminal.
+    const val PC_LOOK_GET = "pc.look.get"
+    const val PC_LOOK_SET = "pc.look.set"
+    const val PC_LOOK_STATE = "pc.look.state"
+    const val PC_WALLPAPER_SET = "pc.wallpaper.set"
+    const val PC_INFO_GET = "pc.info.get"
+    const val PC_INFO = "pc.info"
+    const val PC_APPS_GET = "pc.apps.get"
+    const val PC_APPS = "pc.apps"
+    const val PC_APPS_END = "pc.apps.end"
+    const val PC_OPEN = "pc.open"
+    const val PC_FILES_LIST = "pc.files.list"
+    const val PC_FILES_LISTING = "pc.files.listing"
+    const val PC_FILES_OP = "pc.files.op"
+    const val PC_FILES_DONE = "pc.files.done"
+    const val PC_TERM_GET = "pc.term.get"
+    const val PC_TERM_OPEN = "pc.term.open"
+    const val PC_TERM_STATE = "pc.term.state"
+    // v28: the PC's sound output, a curtain over the PC's screen while you use it from the phone,
+    // and the PC's Device page reaching into the phone (its sound, screen time, wallpaper).
+    const val PC_AUDIO_OUTPUTS_GET = "pc.audio.outputs.get"   // phone → desktop: {}
+    const val PC_AUDIO_OUTPUTS = "pc.audio.outputs"           // desktop → phone: {outputs: [{id, name, bluetooth, default}]}
+    const val PC_AUDIO_OUTPUT_SET = "pc.audio.output.set"     // phone → desktop: {id}
+    const val PC_CURTAIN_SET = "pc.curtain.set"               // phone → desktop: {on}
+    const val PC_CURTAIN_STATE = "pc.curtain.state"           // desktop → phone: {on, available, error?}
+    const val PHONE_SOUND_ASK = "phone.sound.ask"             // desktop → phone: {on} send (or stop sending) this phone's sound to the PC
+    const val PHONE_USAGE_GET = "phone.usage.get"             // desktop → phone: {}
+    const val PHONE_USAGE = "phone.usage"                     // phone → desktop: {allowed, totalMin, unlocks?, apps: [{package, name, minutes}]}
+    const val PHONE_WALLPAPER_SET = "phone.wallpaper.set"     // desktop → phone: {jpeg (base64), target: home|lock|both}
+    // v29: this phone's sound on the PC over Bluetooth — Windows becomes the phone's Bluetooth
+    // speaker (AudioPlaybackConnection), so nothing is recorded here.
+    const val PC_BTAUDIO_SET = "pc.btaudio.set"               // phone → desktop: {on, names: [this phone's Bluetooth names]}
+    const val PC_BTAUDIO_GET = "pc.btaudio.get"               // phone → desktop: {}
+    const val PC_BTAUDIO_STATE = "pc.btaudio.state"           // desktop → phone: {on, supported, device?, error?}
+    // v30: the phone's Sync page — the PC's lanes and folder pairs, read and changed from here.
+    // The PC owns the setup (it runs the engine) and sends sync.state whenever it changes.
+    const val SYNC_STATE_GET = "sync.state.get"               // phone → desktop: {}
+    const val SYNC_STATE = "sync.state"                       // desktop → phone: {lanes: {folders, photos, messages, calls}, pairs: [{id, name, pcPath, phonePath, direction: both|toPhone|toPc, enabled}], status, photosPcPath}
+    const val SYNC_PAIRS_SET = "sync.pairs.set"               // phone → desktop: {pairs: [...]} (the whole list)
+    const val SYNC_LANE_SET = "sync.lane.set"                 // phone → desktop: {lane, on}
+    const val SYNC_NOW = "sync.now"                           // phone → desktop: {}
 
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).

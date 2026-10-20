@@ -13,9 +13,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,8 +34,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.linc.android.BuildConfig
@@ -49,6 +58,7 @@ import app.linc.android.service.SmsProvider
 import app.linc.android.service.TransportStore
 import app.linc.android.service.UpdateCheck
 import app.linc.android.service.UpdateSettings
+import app.linc.android.ui.kit.LincAlertDialog
 import app.linc.android.ui.kit.Chevron
 import app.linc.android.ui.kit.ConnectedChoice
 import app.linc.android.ui.kit.Kit
@@ -58,7 +68,11 @@ import app.linc.android.ui.kit.SettingsGroup
 import app.linc.android.ui.kit.SettingsRow
 import app.linc.android.ui.kit.pagePadding
 import app.linc.android.ui.kit.rememberNotify
+import app.linc.android.ui.theme.AppFont
+import app.linc.android.ui.theme.AppFontSetting
+import app.linc.android.ui.theme.FloatingNav
 import app.linc.android.ui.theme.LincTheme
+import app.linc.android.ui.theme.headingFamily
 
 /**
  * Settings (1.0.0.11, D-082): one grouped list, in the order of the spec — Connection, Features
@@ -91,6 +105,17 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
     val sms = remember(tick) { SmsProvider.canRead(context) }
     val calls = remember(tick) { CallProvider.canReadLog(context) }
     val allFiles = remember(tick) { Environment.isExternalStorageManager() }
+    val wallpaperBackground by app.linc.android.ui.theme.WallpaperBackground.flow(context).collectAsState()
+    val floatingNav by FloatingNav.flow(context).collectAsState()
+    val appFont by AppFontSetting.flow(context).collectAsState()
+    var choosingFont by remember { mutableStateOf(false) }
+    if (choosingFont) {
+        FontDialog(
+            current = appFont ?: AppFont.Default,
+            onPick = { AppFontSetting.set(context, it); choosingFont = false },
+            onDismiss = { choosingFont = false },
+        )
+    }
 
     LincScaffold(title = "Settings", onBack = onBack) { inner ->
         val notify = rememberNotify()
@@ -189,6 +214,17 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                     { s -> SettingsRow("Show explanations", s, LincSymbols.Info,
                         supporting = "The short lines that explain each setting. Warnings and errors always show.",
                         trailing = { Switch(explanations, { Explanations.set(context, it) }) }) },
+                    { s -> SettingsRow("Wallpaper background", s, LincSymbols.Wallpaper,
+                        supporting = if (allFiles) "Your wallpaper, blurred and frosted, behind every screen."
+                            else "Your wallpaper, blurred, behind every screen. Needs All files access (above) to read it.",
+                        trailing = { Switch(wallpaperBackground == true, { app.linc.android.ui.theme.WallpaperBackground.set(context, it) }) }) },
+                    { s -> SettingsRow("Floating navigation bar", s, LincSymbols.TaskView,
+                        supporting = "The tabs as a floating pill above the bottom edge, instead of a full-width bar.",
+                        trailing = { Switch(floatingNav == true, { FloatingNav.set(context, it) }) }) },
+                    { s -> SettingsRow("Font", s, LincSymbols.TextSnippet,
+                        value = (appFont ?: AppFont.Default).label,
+                        supporting = "The typeface used across Linc.",
+                        onClick = { choosingFont = true }, trailing = { Chevron() }) },
                 ))
             }
 
@@ -224,7 +260,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
             item {
                 SettingsGroup(rows = listOf(
                     { s -> SettingsRow("Linc for Android", s, LincSymbols.Smartphone, value = "Version ${BuildConfig.VERSION_NAME}") },
-                    { s -> SettingsRow("Developer", s, LincSymbols.Info, value = "${ProjectLinks.DEVELOPER} (${ProjectLinks.DEVELOPER_HANDLE})",
+                    { s -> SettingsRow("Developer", s, LincSymbols.Info, value = "deloweProjects (${ProjectLinks.DEVELOPER}, ${ProjectLinks.DEVELOPER_HANDLE})",
                         onClick = { openLink(context, ProjectLinks.DEVELOPER_GITHUB) }) },
                     { s -> SettingsRow("Telegram channel", s, LincSymbols.Send, supporting = "News, new versions and help — t.me/LincApp",
                         onClick = { openLink(context, ProjectLinks.TELEGRAM) }, trailing = { Chevron() }) },
@@ -254,6 +290,37 @@ private fun GrantRow(
         supporting = what,
         onClick = if (granted) null else fix,
         trailing = if (granted) null else ({ FilledTonalButton(onClick = fix) { Text("Allow") } }),
+    )
+}
+
+/** The font choices, each name drawn in its own font (headings' font for the serif pairing). */
+@Composable
+private fun FontDialog(current: AppFont, onPick: (AppFont) -> Unit, onDismiss: () -> Unit) {
+    LincAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Font") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                AppFont.entries.forEach { f ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .selectable(selected = f == current, onClick = { onPick(f) }, role = Role.RadioButton)
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = f == current, onClick = null)
+                        Column(Modifier.padding(start = 16.dp)) {
+                            // Default previews the phone's own font even while another is chosen.
+                            val family = f.headingFamily() ?: FontFamily.Default
+                            Text(f.label, style = MaterialTheme.typography.titleLarge.copy(fontFamily = family))
+                            Text(f.blurb, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
 }
 

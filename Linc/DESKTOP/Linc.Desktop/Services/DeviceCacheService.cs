@@ -40,6 +40,8 @@ public interface IDeviceCacheService
 
     /// <summary>Cached wallpaper bytes for the paired device, or null.</summary>
     byte[]? LoadWallpaper(string serial);
+    /// <summary>The phone's id for the cached wallpaper, so an unchanged one isn't fetched again.</summary>
+    string? LoadWallpaperId(string serial);
     void SaveWallpaper(string serial, string wallpaperId, byte[] bytes);
 
     /// <summary>
@@ -199,6 +201,19 @@ public sealed class DeviceCacheService : IDeviceCacheService
         }
     }
 
+    public string? LoadWallpaperId(string serial)
+    {
+        try
+        {
+            var path = Path.Combine(DirectoryFor(serial), "wallpaper.id");
+            return File.Exists(path) ? File.ReadAllText(path).Trim() : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public void SaveWallpaper(string serial, string wallpaperId, byte[] bytes)
     {
         try
@@ -206,6 +221,7 @@ public sealed class DeviceCacheService : IDeviceCacheService
             var dir = DirectoryFor(serial);
             Directory.CreateDirectory(dir);
             File.WriteAllBytes(Path.Combine(dir, "wallpaper.bin"), bytes);
+            File.WriteAllText(Path.Combine(dir, "wallpaper.id"), wallpaperId);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

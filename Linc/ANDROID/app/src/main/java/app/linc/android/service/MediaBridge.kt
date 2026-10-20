@@ -47,16 +47,37 @@ class MediaBridge(private val context: Context) {
         MediaSessionManager.OnActiveSessionsChangedListener { list -> onSessions(list.orEmpty()) }
 
     fun start() {
+        current = this
+        handler.post { attach() }
+    }
+
+    /**
+     * Starts watching once notification access allows it. Without access Android throws, and
+     * this used to stay inert until Linc restarted — turning the access on afterwards changed
+     * nothing ("the PC says Nothing playing"). Retried when the listener connects and whenever
+     * the PC asks for the current state.
+     */
+    private fun attach() {
+        if (manager != null) return
         val component = ComponentName(context, LincNotificationListener::class.java)
         runCatching {
             val mgr = context.getSystemService(MediaSessionManager::class.java)
             mgr.addOnActiveSessionsChangedListener(sessionsListener, component, handler)
             manager = mgr
+            LogStore.log(LogLevel.INFO, "Media: watching what plays on this phone, for the PC")
             onSessions(mgr.getActiveSessions(component))
-        } // SecurityException: notification access not granted — stay inert.
+        }.onFailure {
+            if (!warned) {
+                warned = true
+                LogStore.log(LogLevel.WARN, "Media: no notification access, so the PC can't see what this phone plays")
+            }
+        }
     }
 
+    @Volatile private var warned = false
+
     fun stop() {
+        if (current === this) current = null
         runCatching { manager?.removeOnActiveSessionsChangedListener(sessionsListener) }
         controllers.forEach { runCatching { it.unregisterCallback(controllerCallback) } }
         controllers = emptyList()
@@ -66,7 +87,7 @@ class MediaBridge(private val context: Context) {
 
     /** Sends the current state now — called when the desktop subscribes to `media`. */
     fun pushCurrent() {
-        handler.post { electAndPublish() }
+        handler.post { attach(); electAndPublish() }
     }
 
     /** Executes a `media.control` command on the primary session (no-op without one). */
@@ -86,6 +107,18 @@ class MediaBridge(private val context: Context) {
         }
     }
 
+    companion object {
+        private const val ART_SIZE_PX = 256
+
+        /** The running bridge, so the notification listener can wake it when access arrives. */
+        @Volatile var current: MediaBridge? = null
+            private set
+
+        fun onAccessGranted() {
+            current?.let { it.handler.post { it.attach() } }
+        }
+    }
+
     /** Album art bytes for an `artId` handed out in `media.state`, or null. */
     fun artFor(id: String): ByteArray? = synchronized(artLock) { arts[id] }
 
@@ -96,7 +129,8 @@ class MediaBridge(private val context: Context) {
 
     private fun onSessions(list: List<MediaController>) {
         controllers.forEach { runCatching { it.unregisterCallback(controllerCallback) } }
-        controllers = list
+        // Not Linc's own session (the PC's sound playing here): it would echo the PC's track back.
+        controllers = list.filter { it.packageName != context.packageName }
         controllers.forEach { it.registerCallback(controllerCallback, handler) }
         electAndPublish()
     }
@@ -161,7 +195,4 @@ class MediaBridge(private val context: Context) {
         return id
     }
 
-    private companion object {
-        const val ART_SIZE_PX = 256
-    }
 }

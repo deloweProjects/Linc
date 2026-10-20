@@ -1,0 +1,123 @@
+# Screenshots of both apps, for review before a build goes to anyone (the owner: "a way for you
+# to test"). Nothing here is published or posted: the PNGs, UI trees and logs are artifacts.
+#
+# - android: the APK on an emulator (KVM on the Linux runner) with a fake PC connected
+#   (tools/uishots/fakepc.py, over adb forward like the PC app's USB link); android.py taps
+#   through every main screen in dark and light theme, then Home once with no PC.
+# - windows: the published PC app with a throwaway data root, a fake phone (tools/uishots)
+#   connected to it over Direct TLS, every page and three window sizes screenshotted.
+#
+# Runs on a push to a ui-test/* branch (a session makes one from the branch under test, the
+# same way test-build/* works), or by hand once this file is on main.
+
+name: UI test
+
+on:
+  push:
+    branches: ["ui-test/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: Linc/ANDROID
+        run: bash gradlew assembleDebug --no-daemon
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Screens on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python3 Linc/tools/uishots/android.py Linc/ANDROID/app/build/outputs/apk/debug/app-debug.apk out/android
+
+      - name: Summary
+        if: always()
+        run: cat out/android/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-android
+          path: out/android/
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: microsoft/setup-msbuild@v2
+
+      # The same Beta publish the test builds ship, framework-dependent like them (the runner has
+      # the .NET 8 Desktop Runtime): it proves that build starts (see build.yml for the redist junction).
+      - name: Publish desktop app (Beta)
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $latest = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } |
+            Sort-Object { [version]$_.Name } | Select-Object -Last 1
+          $redist = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC'
+          New-Item -ItemType Directory -Force $redist | Out-Null
+          New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
+          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:RollForward=Major -p:Configuration=Release -p:Platform=x64 -v:m
+
+      - name: Build the fake phone
+        run: dotnet build Linc\tools\uishots\uishots.csproj -c Release -v:m
+
+      # The runner's screen is 1024x768, and Windows keeps a window inside the screen, so every
+      # PC screenshot came out at that size whatever the test asked for.
+      - name: A 1920x1080 screen
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Get-CimInstance Win32_VideoController | Select-Object CurrentHorizontalResolution, CurrentVerticalResolution | Format-Table
+
+      - name: Screens with a fake phone
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem Linc\DESKTOP\Linc.Desktop\bin -Recurse -Filter Linc.Desktop.exe | Where-Object { $_.FullName -match '\\publish\\' } | Select-Object -First 1
+          $tool = Get-ChildItem Linc\tools\uishots\bin\Release -Recurse -Filter linc-uishots.exe | Select-Object -First 1
+          & $tool.FullName --exe $exe.FullName --out out\windows
+          exit $LASTEXITCODE
+
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: if (Test-Path out\windows\summary.md) { Get-Content out\windows\summary.md >> $env:GITHUB_STEP_SUMMARY }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-windows
+          path: out/windows/

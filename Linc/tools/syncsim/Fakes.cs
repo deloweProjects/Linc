@@ -24,8 +24,7 @@ public interface IConnectionSupervisor
 public interface IDeviceRegistry
 {
     bool SyncLane(string lane);
-    string? FolderSyncPcPath { get; }
-    string FolderSyncPhonePath { get; }
+    IReadOnlyList<FolderPair> FolderPairs { get; }
     string RootPath { get; }
 }
 
@@ -54,8 +53,7 @@ public sealed class FakeRegistry(string pcFolder, string phoneFolder, string roo
 {
     // Photos stays OFF: enabling it would point a real pair at the user's Pictures\Linc/Photos.
     public bool SyncLane(string lane) => lane == "folders";
-    public string? FolderSyncPcPath => pcFolder;
-    public string FolderSyncPhonePath => phoneFolder;
+    public IReadOnlyList<FolderPair> FolderPairs { get; } = [new FolderPair(FolderPair.LegacyId, "Folder", pcFolder, phoneFolder)];
     public string RootPath => rootPath;
 }
 

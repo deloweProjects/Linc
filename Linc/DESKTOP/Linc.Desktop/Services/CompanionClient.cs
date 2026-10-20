@@ -39,7 +39,10 @@ public sealed record DeviceStatus(
     // are present-or-absent on every v15 link.
     string? RotationMode = null,
     bool? BrightnessAuto = null,
-    int? BrightnessLevel = null);
+    int? BrightnessLevel = null,
+    // Optional (any version): false when the phone hasn't given Linc Do Not Disturb access, which
+    // Ring / Vibrate / Silent and DND need. Absent on older phones: treated as allowed.
+    bool? DndAccess = null);
 
 /// <summary>
 /// Protocol client for the phone's companion socket, reached through an ADB-forwarded
@@ -109,6 +112,8 @@ public sealed class CompanionClient : IDisposable
             // D-088: which PC this is, so a phone that knows several can tell them apart and keep
             // to one at a time. Optional: older phones ignore it.
             ["pcId"] = PcId,
+            // Informational only (Provenance.cs); optional, older phones ignore it.
+            ["author"] = Provenance.Author,
             ["minV"] = ProtocolConstants.MinVersion,
             ["maxV"] = ProtocolConstants.Version,
         });
@@ -296,7 +301,8 @@ public sealed class CompanionClient : IDisposable
             WallpaperId: (string?)reply.Payload["wallpaperId"],
             RotationMode: rotation,
             BrightnessAuto: auto,
-            BrightnessLevel: level);
+            BrightnessLevel: level,
+            DndAccess: (bool?)reply.Payload["dndAccess"]);
     }
 
     private static IReadOnlyDictionary<string, string>? ParseTheme(JsonNode? node)

@@ -116,6 +116,17 @@ public interface IDeviceRegistry
 
     void SaveFolderSyncPaths(string? pcPath, string phonePath);
 
+    /// <summary>
+    /// The Folders lane's pairs for the active phone: each a PC folder kept the same as a phone
+    /// folder, in its own direction. A phone set up before pairs gets its one folder as the first.
+    /// </summary>
+    IReadOnlyList<FolderPair> FolderPairs { get; }
+
+    void SaveFolderPairs(IReadOnlyList<FolderPair> pairs);
+
+    /// <summary>Raised after <see cref="SaveFolderPairs"/> or a lane toggle: the sync setup changed.</summary>
+    event Action? SyncSetupChanged;
+
     /// <summary>Remember (or, with null, forget — D-081) the active phone's last wireless host:port.</summary>
     void SaveLastHostPort(string? hostPort);
     void SavePairedDevice(string serial, string model);
@@ -136,6 +147,39 @@ public interface IDeviceRegistry
 
     /// <summary>Raised after <see cref="SaveShowExplanations"/>.</summary>
     event Action? ShowExplanationsChanged;
+
+    /// <summary>
+    /// Settings → Appearance → Navigation. Default on: the pages are icons in a bar floating at the
+    /// bottom of the window. Off puts them back in the side rail down the left.
+    /// </summary>
+    bool FloatingNav { get; }
+
+    /// <summary>Settings → Appearance → Clock on Home. Default on: the time and date on the phone's wallpaper.</summary>
+    bool HomeClock { get; }
+
+    /// <summary>Settings → Appearance → Wallpaper as background. Default on: the phone's wallpaper, blurred, behind the app.</summary>
+    bool WallpaperBackdrop { get; }
+
+    /// <summary>
+    /// Settings → Appearance → Clock style: how the Home clock is drawn (see
+    /// <c>Views.ClockStyles</c>). Default "classic", the thin large clock the app shipped with.
+    /// </summary>
+    string ClockStyle { get; }
+
+    /// <summary>
+    /// Settings → Appearance → Font: the app's font (see <c>Views.AppFonts</c>). Default
+    /// "default", Windows' own Segoe UI Variable, untouched.
+    /// </summary>
+    string AppFont { get; }
+
+    void SaveFloatingNav(bool floating);
+    void SaveHomeClock(bool show);
+    void SaveWallpaperBackdrop(bool show);
+    void SaveClockStyle(string style);
+    void SaveAppFont(string font);
+
+    /// <summary>Raised after any of <see cref="SaveFloatingNav"/>, <see cref="SaveHomeClock"/>, <see cref="SaveWallpaperBackdrop"/>, <see cref="SaveClockStyle"/>, <see cref="SaveAppFont"/>.</summary>
+    event Action? AppearanceChanged;
 
     /// <summary>
     /// Settings → Mirror PC → Use software encoding (D-087). Default off. Skips the graphics
@@ -244,7 +288,10 @@ public sealed record KnownDevice(
     // D-094: Wi-Fi hardware addresses this phone has used, learned when it connects over the LAN.
     // Android randomises the MAC per network but keeps it stable on each, so there is one per
     // Wi-Fi it has joined. Newest first, at most WifiMacLimit.
-    List<string>? WifiMacs = null);
+    List<string>? WifiMacs = null,
+    // The Folders lane's pairs (v30). Null on a phone set up before pairs: its single
+    // FolderSyncPcPath/FolderSyncPhonePath is read as the first pair (FolderPair.LegacyId).
+    List<FolderPair>? FolderPairs = null);
 
 /// <summary>Persists known-device data under %LOCALAPPDATA%\Linc.</summary>
 public sealed class DeviceRegistry : IDeviceRegistry
@@ -294,7 +341,16 @@ public sealed class DeviceRegistry : IDeviceRegistry
         int? ClipboardHistorySize = null,
         bool? ShowExplanations = null,
         // D-087: appended at the end like every field above it; missing reads back as off.
-        bool? ForceSoftwareEncoding = null);
+        bool? ForceSoftwareEncoding = null,
+        // The floating bar, Home clock and wallpaper backdrop: appended at the end like every
+        // field above it; missing reads back as on, the look the app ships with.
+        bool? FloatingNav = null,
+        bool? HomeClock = null,
+        bool? WallpaperBackdrop = null,
+        // Clock style and app font: appended at the end like every field above it; missing reads
+        // back as "classic" / "default", the look the app shipped with.
+        string? ClockStyle = null,
+        string? AppFont = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -367,6 +423,19 @@ public sealed class DeviceRegistry : IDeviceRegistry
 
     public string FolderSyncPhonePath =>
         string.IsNullOrWhiteSpace(Active?.FolderSyncPhonePath) ? "/sdcard/Download" : Active.FolderSyncPhonePath;
+
+    public IReadOnlyList<FolderPair> FolderPairs =>
+        Active?.FolderPairs is { } pairs ? pairs
+        : string.IsNullOrWhiteSpace(Active?.FolderSyncPcPath) ? []
+        : [new FolderPair(FolderPair.LegacyId, FolderPair.NameFor(Active!.FolderSyncPcPath!), Active.FolderSyncPcPath!, FolderSyncPhonePath)];
+
+    public event Action? SyncSetupChanged;
+
+    public void SaveFolderPairs(IReadOnlyList<FolderPair> pairs)
+    {
+        UpdateActive(d => d with { FolderPairs = pairs.ToList() });
+        SyncSetupChanged?.Invoke();
+    }
 
     public ConnectionPreference ConnectionPreference => Active?.Preference ?? ConnectionPreference.Auto;
     public event Action? ConnectionPreferenceChanged;
@@ -450,6 +519,11 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 ClipboardHistorySize = ClampHistorySize(settings?.ClipboardHistorySize ?? 500);
                 ShowExplanations = settings?.ShowExplanations ?? true;
                 ForceSoftwareEncoding = settings?.ForceSoftwareEncoding ?? false;
+                FloatingNav = settings?.FloatingNav ?? true;
+                HomeClock = settings?.HomeClock ?? true;
+                WallpaperBackdrop = settings?.WallpaperBackdrop ?? true;
+                ClockStyle = Blank(settings?.ClockStyle) ?? "classic";
+                AppFont = Blank(settings?.AppFont) ?? "default";
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -561,6 +635,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
         Persist();
         ActiveDeviceChanged?.Invoke();
         SyncLanesChanged?.Invoke(); // the new device's lanes are (probably) different ones
+        SyncSetupChanged?.Invoke();
     }
 
     public void ClearActiveDevice()
@@ -675,6 +750,52 @@ public sealed class DeviceRegistry : IDeviceRegistry
 
     private static int ClampHistorySize(int size) => size is 100 or 2000 ? size : 500;
 
+    public bool FloatingNav { get; private set; } = true;
+    public bool HomeClock { get; private set; } = true;
+    public bool WallpaperBackdrop { get; private set; } = true;
+    public string ClockStyle { get; private set; } = "classic";
+    public string AppFont { get; private set; } = "default";
+    public event Action? AppearanceChanged;
+
+    public void SaveFloatingNav(bool floating) => SaveAppearance(FloatingNav, floating, v => FloatingNav = v);
+    public void SaveHomeClock(bool show) => SaveAppearance(HomeClock, show, v => HomeClock = v);
+    public void SaveWallpaperBackdrop(bool show) => SaveAppearance(WallpaperBackdrop, show, v => WallpaperBackdrop = v);
+
+    public void SaveClockStyle(string style)
+    {
+        style = Blank(style) ?? "classic";
+        if (ClockStyle == style)
+        {
+            return;
+        }
+        ClockStyle = style;
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
+
+    public void SaveAppFont(string font)
+    {
+        font = Blank(font) ?? "default";
+        if (AppFont == font)
+        {
+            return;
+        }
+        AppFont = font;
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
+
+    private void SaveAppearance(bool current, bool value, Action<bool> set)
+    {
+        if (current == value)
+        {
+            return;
+        }
+        set(value);
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
+
     public void SaveShowExplanations(bool show)
     {
         if (ShowExplanations == show)
@@ -741,6 +862,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
             return d with { SyncLanes = lanes };
         });
         SyncLanesChanged?.Invoke();
+        SyncSetupChanged?.Invoke();
     }
 
     public void SaveFolderSyncPaths(string? pcPath, string phonePath) =>
@@ -773,7 +895,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 null, null, _knownDevices,
                 NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
                 null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
-                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding)));
+                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding,
+                FloatingNav, HomeClock, WallpaperBackdrop, ClockStyle, AppFont)));
         }
         catch (IOException)
         {

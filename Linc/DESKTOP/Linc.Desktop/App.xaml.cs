@@ -127,6 +127,10 @@ public partial class App : Application
             .AddSingleton<IHotspotPromotion, HotspotPromotion>()
             .AddSingleton<IHotspotLinkService, HotspotLinkService>()
             .AddSingleton<IShareService, ShareService>()
+            .AddSingleton<PcBluetoothAudio>()
+            .AddSingleton<PhoneSoundOnPc>()
+            .AddSingleton<SyncRemote>()
+            .AddSingleton<PcToolsService>()
             .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()
             .AddSingleton<QuickShareViewModel>()
             .AddSingleton<ClipboardViewModel>()
@@ -142,6 +146,7 @@ public partial class App : Application
             .AddSingleton<AppShellViewModel>()
             .AddSingleton<DeviceTabsViewModel>()
             .AddSingleton<DeviceViewModel>()
+            .AddSingleton<PhoneExtrasViewModel>()
             .AddSingleton<SettingsViewModel>()
             .AddSingleton<LogsViewModel>()
             .AddSingleton<DetailsViewModel>()
@@ -155,6 +160,42 @@ public partial class App : Application
     // Prevents two copies fighting over the Direct-TLS listener port (a real bug that
     // silently disabled direct connections when a stray instance held :46001).
     private static System.Threading.Mutex? _singleInstance;
+
+    /// <summary>
+    /// A copy of Linc from another folder is already running (the installed one, started with
+    /// Windows): ask it to quit and take over, instead of exiting and leaving it in charge. Before
+    /// this, running a test build's Linc.Desktop.exe silently handed over to the old copy, and the
+    /// owner tested the old app for a whole round without knowing. Same folder: leave it be.
+    /// </summary>
+    private static bool TakeOverFromOtherCopy()
+    {
+        try
+        {
+            var me = Environment.ProcessPath;
+            using var current = System.Diagnostics.Process.GetCurrentProcess();
+            var other = System.Diagnostics.Process.GetProcessesByName(current.ProcessName)
+                .Where(p => p.Id != current.Id)
+                .Select(p => { try { return p.MainModule?.FileName; } catch { return null; } })
+                .FirstOrDefault(path => path is not null);
+            if (other is null || me is null || string.Equals(Path.GetFullPath(other), Path.GetFullPath(me), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            QuickShare.QsShellIntegration.TryForwardQuit();
+            try
+            {
+                return _singleInstance!.WaitOne(TimeSpan.FromSeconds(10));
+            }
+            catch (System.Threading.AbandonedMutexException)
+            {
+                return true; // it went without releasing: the mutex is ours now
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public const string RestoreAndExitArgument = "--restore-and-exit";
 
@@ -206,6 +247,10 @@ public partial class App : Application
             var quickSharePaths = QuickShare.QsShellIntegration.PathsFrom(Environment.GetCommandLineArgs());
             var phonePaths = QuickShare.QsShellIntegration.PathsFrom(
                 Environment.GetCommandLineArgs(), QuickShare.QsShellIntegration.PhoneArgument);
+            if (!isFirst && quickSharePaths.Count == 0 && phonePaths.Count == 0 && TakeOverFromOtherCopy())
+            {
+                isFirst = true;
+            }
             if (!isFirst)
             {
                 // Explorer's "Send with Quick Share" / "Send to phone (Linc)" start a second copy;
@@ -235,6 +280,8 @@ public partial class App : Application
             {
                 // Toasts unavailable; the in-app notification center still works.
             }
+            // The first line of every run says what this is and who made it (Provenance.cs).
+            Services.GetRequiredService<ILogService>().Log(LogLevel.Info, Provenance.Banner(Provenance.Version));
             // M12g Part A3: a redirected data root must never be silent — a future session
             // debugging "my devices vanished" needs this line (same reasoning as D-057's guard).
             if (_parsedDataRoot is not null)
@@ -242,8 +289,13 @@ public partial class App : Application
                 Services.GetRequiredService<ILogService>().Log(
                     LogLevel.Info, $"Store root redirected via --data-root: {_parsedDataRoot}");
             }
+            // Settings › Appearance › Font: set before the window is built so its controls start in
+            // the chosen font; the default font leaves everything exactly as it was.
+            var fontRegistry = Services.GetRequiredService<IDeviceRegistry>();
+            Linc.Desktop.Views.AppFonts.ApplyResource(fontRegistry.AppFont);
             _window = new MainWindow();
             MainWindowInstance = _window;
+            Linc.Desktop.Views.AppFonts.Attach(_window, fontRegistry);
             // D-057: the cable driver and the mic-restore note live under the store root, which
             // only the registry resolves.
             var storeRoot = Services.GetRequiredService<IDeviceRegistry>().RootPath;

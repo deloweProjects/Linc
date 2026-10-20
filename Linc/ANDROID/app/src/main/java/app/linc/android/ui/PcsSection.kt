@@ -4,7 +4,6 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.linc.android.service.PcGate
 import app.linc.android.service.TransportStore
+import app.linc.android.ui.kit.LincAlertDialog
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
 import app.linc.android.ui.kit.SettingsGroup
@@ -95,7 +95,7 @@ fun PcsSection() {
     }
 
     forgetting?.let { pc ->
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { forgetting = null },
             icon = { Icon(LincSymbols.Delete, contentDescription = null) },
             title = { Text("Forget ${pc.name}?") },

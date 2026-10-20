@@ -10,7 +10,9 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import app.linc.android.BuildConfig
 import app.linc.android.MainActivity
+import app.linc.android.Provenance
 import app.linc.android.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +40,8 @@ class CompanionService : Service() {
     override fun onCreate() {
         super.onCreate()
         LogStore.init(this)
+        // The first line of every run says what this is and who made it (Provenance.kt).
+        LogStore.log(LogLevel.INFO, Provenance.banner(BuildConfig.VERSION_NAME))
         ClipboardHistoryStore.init(this)
         // The PC as a Direct Share target, named after it once it says its name (D-083).
         scope.launch {
@@ -50,28 +54,58 @@ class CompanionService : Service() {
         createNotificationChannel()
     }
 
+    /** The microphone is streaming to the PC (D-075). */
+    private var micOn = false
+    /** Apps' sound is being recorded for Play everywhere (D-097). */
+    private var projectionOn = false
+
+    /**
+     * Run as a foreground service of every kind in use: Android lets a background app record the
+     * microphone, or what apps play, only while its service says so.
+     */
+    private fun goForeground(): Boolean = runCatching {
+        ServiceCompat.startForeground(
+            this, NOTIFICATION_ID, buildNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                (if (micOn) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0) or
+                (if (projectionOn) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0),
+        )
+    }.onFailure { LogStore.log(LogLevel.WARN, "Linc: Android wouldn't let it run in the background (${it.message})") }.isSuccess
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A button on the "Playing from your PC" notification (D-097).
+        if (intent?.action == PcPlaybackSession.ACTION_MEDIA) {
+            PcPlaybackSession.onCommand(intent.getStringExtra(PcPlaybackSession.EXTRA_COMMAND))
+            if (server != null) return START_STICKY
+        }
         // The phone's mic streaming to the PC (D-075): add (or drop) the microphone type so
         // Android keeps recording with the screen off and Linc in the background.
         if (intent?.action == ACTION_MIC && server != null) {
-            val on = intent.getBooleanExtra(EXTRA_ON, false)
-            runCatching {
-                ServiceCompat.startForeground(
-                    this, NOTIFICATION_ID, buildNotification(),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                        (if (on) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0),
-                )
-            }.onFailure { LogStore.log(LogLevel.WARN, "Phone microphone: Android wouldn't let it run in the background (${it.message})") }
+            micOn = intent.getBooleanExtra(EXTRA_ON, false)
+            goForeground()
             return START_STICKY
         }
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildNotification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-        )
+        // The phone as Play everywhere's source (D-097): Android requires the media-projection
+        // type before the consent it gave can be used.
+        if (intent?.action == PhoneSource.ACTION_START) {
+            val code = intent.getIntExtra(PhoneSource.EXTRA_RESULT_CODE, 0)
+            @Suppress("DEPRECATION")
+            val data = intent.getParcelableExtra<Intent>(PhoneSource.EXTRA_RESULT_DATA)
+            projectionOn = true
+            if (data != null && goForeground()) PhoneSource.begin(this, code, data)
+            else { projectionOn = false; goForeground() }
+            if (server != null) return START_STICKY
+        }
+        if (intent?.action == PhoneSource.ACTION_STOP) {
+            projectionOn = false
+            goForeground()
+            if (server != null) return START_STICKY
+        }
+        goForeground()
         // Phone → PC clipboard in the background, when the PC granted READ_LOGS (D-092).
         ClipboardWatcher.start(this)
+        // Play everywhere's outputs open from the sound channel, mixer opened or not (D-096).
+        AudioEverywhere.attach(this)
         if (server == null) {
             val gate = PcGate(this).also { PcGate.instance = it }
             val mediaBridge = MediaBridge(this).also { it.start() }

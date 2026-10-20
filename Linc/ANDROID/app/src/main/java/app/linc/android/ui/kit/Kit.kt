@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.linc.android.service.Explanations
 import app.linc.android.ui.LincSymbols
+import app.linc.android.ui.theme.frostedCardBorder
 import kotlinx.coroutines.launch
 
 // The component kit (1.0.0.11, D-082; Vibe/agent/design/android-m3e.md §3). Every screen is built
@@ -157,9 +158,45 @@ fun LincScaffold(
     floatingActionButton: @Composable () -> Unit = {},
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     contentInsets: WindowInsets = WindowInsets(0, 0, 0, 0),
+    /** A small top bar, for pages that fill the screen and don't scroll (Remote, Terminal). */
+    compactBar: Boolean = false,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Inside Control, the "Pages" button that opens its side panel: last at the top right, on
+    // the side the panel slides in from.
+    val toolsMenu = app.linc.android.ui.LocalToolsMenu.current
+    val navigation: @Composable () -> Unit = {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(LincSymbols.ArrowBack, contentDescription = "Back")
+            }
+        }
+    }
+    val barActions: @Composable RowScope.() -> Unit = {
+        actions()
+        if (onSettings != null) {
+            IconButton(onClick = onSettings) {
+                Icon(LincSymbols.Settings, contentDescription = "Settings")
+            }
+        }
+        if (toolsMenu != null) {
+            // Says what it opens: "☰ Pages", not a ⋮ that reads as "more options" (the owner:
+            // "3 dot doesn't let user know there's a side panel").
+            Surface(
+                onClick = toolsMenu,
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "Control menu" },
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(LincSymbols.MenuOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Pages", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 6.dp))
+                }
+            }
+        }
+    }
     Scaffold(
         modifier = modifier.nestedScroll(scroll.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -167,24 +204,26 @@ fun LincScaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = floatingActionButton,
         topBar = {
+            if (compactBar) {
+                androidx.compose.material3.TopAppBar(
+                    title = {
+                        Column {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    },
+                    navigationIcon = navigation,
+                    actions = barActions,
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                )
+                return@Scaffold
+            }
             LargeFlexibleTopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 subtitle = subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(LincSymbols.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                },
-                actions = {
-                    actions()
-                    if (onSettings != null) {
-                        IconButton(onClick = onSettings) {
-                            Icon(LincSymbols.Settings, contentDescription = "Settings")
-                        }
-                    }
-                },
+                navigationIcon = navigation,
+                actions = barActions,
                 scrollBehavior = scroll,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -287,6 +326,7 @@ fun SettingsRow(
     Surface(
         shape = segmentShape(segment),
         color = segmentColor(),
+        border = frostedCardBorder(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(

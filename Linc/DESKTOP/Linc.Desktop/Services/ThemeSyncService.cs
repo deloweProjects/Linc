@@ -27,6 +27,12 @@ public interface IThemeSyncService
     /// </summary>
     BitmapImage? Wallpaper { get; }
 
+    /// <summary>
+    /// The same wallpaper decoded tiny (a few dozen pixels), so stretched across the window it
+    /// reads as an ambient blur of the phone's wallpaper — the app's own background.
+    /// </summary>
+    BitmapImage? AmbientWallpaper { get; }
+
     /// <summary>Current color of a themed brush resource (e.g. "PrimaryContainerBrush"), or null.</summary>
     Windows.UI.Color? BrushColor(string brushKey);
 }
@@ -39,7 +45,7 @@ public interface IThemeSyncService
 /// default, and SolidColorBrush.Color mutation re-renders everything bound to the
 /// brush instances without any resource-dictionary swapping.
 /// </summary>
-public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnectionManager connection, IDeviceRegistry registry) : IThemeSyncService
+public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnectionManager connection, IDeviceRegistry registry, IDeviceCacheService cache) : IThemeSyncService
 {
     private static readonly Dictionary<string, string> RoleToBrush = new()
     {
@@ -63,10 +69,33 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
         ["onErrorContainer"] = "OnErrorContainerBrush",
     };
 
+    /// <summary>
+    /// The overlay brushes in MaterialExpressive.xaml (WinUI's own keys, overridden app-wide):
+    /// flyouts, menus, ContentDialogs, ComboBox lists, tooltips, teaching tips and the
+    /// NavigationView side rail. Frosted glass in the theme's dynamic colour, as on the phone;
+    /// retinted here with the surfaceContainer role, density set by MainWindow.ToneSurfaces.
+    /// </summary>
+    public static readonly string[] OverlayBrushKeys =
+    {
+        "FlyoutPresenterBackground",
+        "MenuFlyoutPresenterBackground",
+        "CommandBarFlyoutBackground",
+        "ContentDialogBackground",
+        "ComboBoxDropDownBackground",
+        "AutoSuggestBoxSuggestionsListBackground",
+        "ToolTipBackgroundBrush",
+        "TeachingTipBackgroundBrush",
+        "TeachingTipTransientBackground",
+        "NavigationViewExpandedPaneBackground",
+        "NavigationViewDefaultPaneBackground",
+        "NavigationViewTopPaneBackground",
+    };
+
     public event Action? PaletteChanged;
     public event Action? WallpaperChanged;
 
     public BitmapImage? Wallpaper { get; private set; }
+    public BitmapImage? AmbientWallpaper { get; private set; }
 
     public Windows.UI.Color? BrushColor(string brushKey) =>
         Application.Current.Resources[brushKey] is SolidColorBrush brush ? brush.Color : null;
@@ -82,6 +111,7 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
     private string? _wallpaperId;
     private Color? _dominant;
     private Color _baseSurface = Color.FromArgb(255, 0, 0, 0);
+    private Color _baseContainer = Color.FromArgb(255, 0x1F, 0x1F, 0x1F);
 
     public void Start(FrameworkElement root)
     {
@@ -92,6 +122,7 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
         _root = root;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         _baseSurface = BrushColor("SurfaceBrush") ?? Color.FromArgb(255, 0, 0, 0);
+        _baseContainer = BrushColor("SurfaceContainerBrush") ?? _baseContainer;
         supervisor.StatusUpdated += status => _dispatcher.TryEnqueue(() => OnStatusUpdated(status));
         // M18 B1: turning "Use my phone's colours" off re-derives immediately rather than waiting
         // for the next status. B4: this only rewrites brush COLORS on existing brush instances, so
@@ -99,10 +130,20 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
         // WinUI animates the brush change in place and there is no white frame.
         registry.UsePhoneColoursChanged += () => _dispatcher.TryEnqueue(ApplyWallpaperAccent);
         supervisor.StateChanged += () => _dispatcher.TryEnqueue(OnLinkStateChanged);
+        // The wallpaper is kept on this PC per phone (the owner: "no need to fetch it each
+        // time"): it shows at once on start and on a tab switch, connected or not, and is only
+        // fetched again when the phone says it changed.
+        registry.ActiveDeviceChanged += () => _dispatcher.TryEnqueue(() => _ = ShowCachedWallpaperAsync());
+        _ = ShowCachedWallpaperAsync();
         // A Windows theme flip re-resolves the brushes' original ThemeResource
         // colors; re-apply the phone palette (and wallpaper accent) on top afterwards.
         root.ActualThemeChanged += (_, _) =>
         {
+            // The bases are local values by now, so they don't follow the flip by themselves:
+            // start from the new theme's shipped ramp, which the phone palette (Apply) replaces.
+            var neutral = DynamicPalette.Neutral(root.ActualTheme == ElementTheme.Dark);
+            _baseSurface = ToColor(neutral.Surface);
+            _baseContainer = ToColor(neutral.SurfaceContainer);
             _appliedFingerprint = "";
             Apply();
             ApplyWallpaperAccent();
@@ -111,14 +152,32 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
 
     private void OnLinkStateChanged()
     {
-        if (supervisor.State != LinkState.Connected && _wallpaperId is not null)
+        // A dropped link keeps the wallpaper: it is this phone's, cached, and still true.
+    }
+
+    private async Task ShowCachedWallpaperAsync()
+    {
+        if (registry.PairedSerial is not { } serial)
         {
-            _wallpaperId = null;
-            Wallpaper = null;
-            _dominant = null;
-            ApplyWallpaperAccent();
-            WallpaperChanged?.Invoke();
+            return;
         }
+        var bytes = cache.LoadWallpaper(serial);
+        var id = cache.LoadWallpaperId(serial);
+        if (bytes is not { Length: > 0 })
+        {
+            return;
+        }
+        var (image, ambient, dominant) = await DecodeAsync(bytes);
+        if (registry.PairedSerial != serial || image is null)
+        {
+            return; // switched again meanwhile
+        }
+        _wallpaperId = id;
+        Wallpaper = image;
+        AmbientWallpaper = ambient;
+        _dominant = dominant;
+        ApplyWallpaperAccent();
+        WallpaperChanged?.Invoke();
     }
 
     private void OnStatusUpdated(DeviceStatus status)
@@ -136,10 +195,7 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
             _wallpaperId = status.WallpaperId;
             if (_wallpaperId is null)
             {
-                Wallpaper = null;
-                _dominant = null;
-                ApplyWallpaperAccent();
-                WallpaperChanged?.Invoke();
+                // The phone can't share it right now (no All-files access): keep the cached one.
             }
             else
             {
@@ -150,39 +206,67 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
 
     private async Task LoadWallpaperAsync(string id)
     {
-        var (image, dominant) = await FetchWallpaperAsync(id);
-        if (_wallpaperId != id)
+        var serial = registry.PairedSerial;
+        var (image, ambient, dominant, bytes) = await FetchWallpaperAsync(id);
+        if (_wallpaperId != id || image is null)
         {
-            return; // superseded by a newer wallpaper
+            return; // superseded by a newer wallpaper, or it couldn't be read (keep what shows)
         }
+        if (serial is not null && bytes is not null) cache.SaveWallpaper(serial, id, bytes);
         Wallpaper = image;
+        AmbientWallpaper = ambient;
         _dominant = dominant;
         ApplyWallpaperAccent();
         WallpaperChanged?.Invoke();
     }
 
-    private async Task<(BitmapImage?, Color?)> FetchWallpaperAsync(string id)
+    private async Task<(BitmapImage?, BitmapImage?, Color?, byte[]?)> FetchWallpaperAsync(string id)
     {
         try
         {
             var bytes = await connection.FetchBulkAsync("wallpaper", id, CancellationToken.None);
             if (bytes is not { Length: > 0 })
             {
-                return (null, null);
+                return (null, null, null, null);
             }
-            var dominant = await ComputeDominantAsync(bytes);
-            using var stream = new InMemoryRandomAccessStream();
-            await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
-            stream.Seek(0);
-            var image = new BitmapImage();
-            await image.SetSourceAsync(stream);
-            return (image, dominant);
+            var (image, ambient, dominant) = await DecodeAsync(bytes);
+            return (image, ambient, dominant, bytes);
         }
         catch (Exception)
         {
-            return (null, null); // cosmetic only
+            return (null, null, null, null); // cosmetic only
         }
     }
+
+    /// <summary>The wallpaper at full size, the same decoded tiny for the ambient blur, and its accent.</summary>
+    private static async Task<(BitmapImage?, BitmapImage?, Color?)> DecodeAsync(byte[] bytes)
+    {
+        try
+        {
+            var dominant = await ComputeDominantAsync(bytes);
+            var image = await ImageAsync(bytes, 0);
+            var ambient = await ImageAsync(bytes, AmbientEdge);
+            return (image, ambient, dominant);
+        }
+        catch (Exception)
+        {
+            return (null, null, null);
+        }
+    }
+
+    private static async Task<BitmapImage> ImageAsync(byte[] bytes, int decodeWidth)
+    {
+        using var stream = new InMemoryRandomAccessStream();
+        await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+        stream.Seek(0);
+        var image = new BitmapImage();
+        if (decodeWidth > 0) image.DecodePixelWidth = decodeWidth;
+        await image.SetSourceAsync(stream);
+        return image;
+    }
+
+    /// <summary>Pixels across for the ambient copy: small enough that scaling it up is the blur.</summary>
+    private const int AmbientEdge = 36;
 
     /// <summary>
     /// The wallpaper's most-abundant colour, preferring a vivid one over a flat grey.
@@ -275,13 +359,11 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
                     _baseSurface = color; // capture the neutral base before the wallpaper wash
                 }
             }
-            // The frosted acrylic follows the surfaceContainer role too.
-            if (role == "surfaceContainer" &&
-                Application.Current.Resources["FrostedSurfaceBrush"] is AcrylicBrush frost &&
-                TryParseHex(hex, out var frostColor))
+            // The frosted acrylic and the overlays follow the surfaceContainer role too
+            // (retinted in ApplyWallpaperAccent below, on top of this base).
+            if (role == "surfaceContainer" && TryParseHex(hex, out var frostColor))
             {
-                frost.TintColor = frostColor;
-                frost.FallbackColor = frostColor;
+                _baseContainer = frostColor;
             }
         }
         _appliedFingerprint = fingerprint;
@@ -360,6 +442,30 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
             var fullAlpha = isDark ? 0xCC : 0xDA;
             var alpha = (byte)Math.Clamp(fullAlpha * ScrimStrength, 0, 255);
             scrim.Color = Color.FromArgb(alpha, tinted.R, tinted.G, tinted.B);
+        }
+
+        // Frosted glass (the floating bar, Home's rail cards) and every overlay: the container
+        // colour, washed toward the wallpaper and clamped exactly like the surface above.
+        var glass = effective is { } wash
+            ? ClampAgainstText(Blend(_baseContainer, wash, DynamicPalette.MaxTint), isDark)
+            : _baseContainer;
+        if (Application.Current.Resources["FrostedSurfaceBrush"] is AcrylicBrush frost)
+        {
+            frost.TintColor = glass;
+            frost.FallbackColor = glass;
+        }
+        foreach (var key in OverlayBrushKeys)
+        {
+            switch (Application.Current.Resources[key])
+            {
+                case AcrylicBrush acrylic:
+                    acrylic.TintColor = glass;
+                    acrylic.FallbackColor = glass;
+                    break;
+                case SolidColorBrush glaze:
+                    glaze.Color = glass;
+                    break;
+            }
         }
     }
 

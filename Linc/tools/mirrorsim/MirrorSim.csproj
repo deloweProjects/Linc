@@ -28,6 +28,7 @@
     <!-- v20 (D-067): the client-drawn cursor and PC audio, exercised against the real OS. -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcCursorWatcher.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcAudioStreamer.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AudioSync.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PcMicAudio.cs" />
     <!-- D-078: which adb serials are network links, not USB cables. -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AdbSerial.cs" />

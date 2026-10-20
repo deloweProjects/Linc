@@ -29,7 +29,8 @@ public sealed class SyncEngine : ISyncEngine, IDisposable
     // second granularity), compared with MtimeToleranceSec slack.
     private sealed record FileState(long PcSize, long PcMtime, long PhoneSize, long PhoneMtime);
 
-    private sealed record SyncPair(string Id, string PcFolder, string PhoneFolder, bool Bidirectional);
+    /// <summary>One folder to reconcile: <paramref name="Push"/> copies PC → phone, <paramref name="Pull"/> phone → PC; both is two-way.</summary>
+    private sealed record SyncPair(string Id, string PcFolder, string PhoneFolder, bool Push, bool Pull);
 
     private const int MtimeToleranceSec = 2;
     private const int SettleSeconds = 2; // ignore PC files touched this recently — still being written
@@ -79,14 +80,18 @@ public sealed class SyncEngine : ISyncEngine, IDisposable
     private List<SyncPair> BuildPairs()
     {
         var pairs = new List<SyncPair>();
-        if (_registry.SyncLane("folders") && !string.IsNullOrWhiteSpace(_registry.FolderSyncPcPath))
+        if (_registry.SyncLane("folders"))
         {
-            pairs.Add(new SyncPair("folders", _registry.FolderSyncPcPath!, _registry.FolderSyncPhonePath, Bidirectional: true));
+            // Every folder pair the person set up, each in its own direction (v30).
+            foreach (var pair in _registry.FolderPairs.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.PcPath)))
+            {
+                pairs.Add(new SyncPair(pair.Id, pair.PcPath, pair.PhonePath, pair.PushesToPhone, pair.PullsToPc));
+            }
         }
         if (_registry.SyncLane("photos"))
         {
             var dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Linc", "Photos");
-            pairs.Add(new SyncPair("photos", dest, "/sdcard/DCIM/Camera", Bidirectional: false));
+            pairs.Add(new SyncPair("photos", dest, "/sdcard/DCIM/Camera", Push: false, Pull: true));
         }
         return pairs;
     }
@@ -99,8 +104,8 @@ public sealed class SyncEngine : ISyncEngine, IDisposable
             w.Dispose();
         }
         _watchers.Clear();
-        // Only bidirectional pairs push PC changes, so only they need a PC-side watcher.
-        foreach (var pair in _pairs.Where(p => p.Bidirectional && Directory.Exists(p.PcFolder)))
+        // Only pairs that push PC changes need a PC-side watcher.
+        foreach (var pair in _pairs.Where(p => p.Push && Directory.Exists(p.PcFolder)))
         {
             try
             {
@@ -231,10 +236,12 @@ public sealed class SyncEngine : ISyncEngine, IDisposable
             var remotePath = CombineRemote(pair.PhoneFolder, name);
             var pcPath = Path.Combine(pair.PcFolder, name);
 
-            // Decide the winner. Pull-only pairs (photos) never push, so a PC-only file or a
-            // PC-side edit is ignored — only phone → PC flows.
-            var pullWins = hasPhone && phoneChanged && (!pair.Bidirectional || !pcChanged || phoneMtime >= pcMtime);
-            var pushWins = pair.Bidirectional && hasPc && pcChanged && (!phoneChanged || pcMtime > phoneMtime);
+            // Decide the winner. A one-way pair only ever copies its way: pull-only (Photos, or a
+            // "phone → PC" pair) ignores PC-side files and edits, push-only ("PC → phone") the
+            // phone's. Two-way, the newer copy wins.
+            var twoWay = pair.Push && pair.Pull;
+            var pullWins = pair.Pull && hasPhone && phoneChanged && (!twoWay || !pcChanged || phoneMtime >= pcMtime);
+            var pushWins = pair.Push && hasPc && pcChanged && (!twoWay || !phoneChanged || pcMtime > phoneMtime);
 
             // One unreadable or locked file must not cost the rest of the folder its progress.
             try
@@ -251,9 +258,9 @@ public sealed class SyncEngine : ISyncEngine, IDisposable
                     seen[name] = new FileState(c!.Length, pcMtime, c.Length, pcMtime);
                     copied++;
                 }
-                else if (!known && hasPhone && hasPc && !pair.Bidirectional)
+                else if (!known && hasPhone && hasPc && !twoWay)
                 {
-                    // Pull-only, same name already on both sides, phone not newer — adopt as in-sync.
+                    // One-way, same name already on both sides and nothing to copy — adopt as in-sync.
                     seen[name] = new FileState(c!.Length, pcMtime, p!.Size, phoneMtime);
                 }
             }

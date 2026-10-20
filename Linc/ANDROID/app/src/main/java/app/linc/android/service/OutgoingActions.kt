@@ -110,33 +110,12 @@ object ShareSender {
         }
     }.getOrNull()
 
-    /** The size the picker/share-sheet reports for a uri, for the M10 Part B bound checks. */
+    /** The size the picker/share-sheet reports for a uri, for the copy's progress. */
     fun sizeOf(context: Context, uri: Uri): Long = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use {
             if (it.moveToFirst()) it.getLong(0) else 0L
         } ?: 0L
     }.getOrDefault(0L)
-}
-
-/**
- * Refuses an oversized share before anything touches the phone's storage or the PC (M10 Part
- * B / B2.4). The bulk channel has no chunk-resume, so a huge transfer that dies mid-way wastes
- * everything — better to refuse clearly upfront than fail late.
- */
-object ShareSizeLimits {
-    const val MAX_SINGLE_ITEM_BYTES = 100L * 1024 * 1024
-    const val MAX_TOTAL_BYTES = 250L * 1024 * 1024
-
-    /** Pure: returns a plain-language refusal naming the limit, or null when the selection is OK. */
-    fun check(sizes: List<Long>): String? {
-        if (sizes.any { it > MAX_SINGLE_ITEM_BYTES }) {
-            return "That file is over the 100 MB limit for a single share."
-        }
-        if (sizes.sum() > MAX_TOTAL_BYTES) {
-            return "That selection is over the 250 MB total limit."
-        }
-        return null
-    }
 }
 
 /**

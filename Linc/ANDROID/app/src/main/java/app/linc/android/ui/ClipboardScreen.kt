@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -53,6 +52,8 @@ import app.linc.android.service.ClipboardSettings
 import app.linc.android.service.CompanionStateHolder
 import app.linc.android.service.CompanionStateHolder.ServiceState
 import app.linc.android.service.Explanations
+import app.linc.android.ui.kit.LincAlertDialog
+import app.linc.android.ui.kit.LincBottomSheet
 import app.linc.android.ui.kit.EmptyState
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
@@ -82,6 +83,7 @@ fun ClipboardScreen(onSettings: (() -> Unit)? = null) {
     )
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ClipboardContent(
     items: List<ClipItem>,
@@ -94,37 +96,67 @@ private fun ClipboardContent(
     var query by rememberSaveable { mutableStateOf("") }
     var expanded by remember { mutableStateOf<Long?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
+    // The owner: search first, and sending text to the PC behind a button, not a card on top.
+    var composing by remember { mutableStateOf(false) }
 
     LincScaffold(
         title = "Clipboard",
         onSettings = onSettings,
         actions = {
+            IconButton(onClick = { ClipboardBridge.syncNow(context) }, enabled = connected) {
+                Icon(LincSymbols.Sync, contentDescription = "Sync now")
+            }
             IconButton(onClick = { confirmClear = true }, enabled = items.isNotEmpty()) {
                 Icon(LincSymbols.ClearAll, contentDescription = "Clear history")
             }
         },
+        floatingActionButton = {
+            androidx.compose.material3.ExtendedFloatingActionButton(
+                onClick = { composing = true },
+                icon = { Icon(LincSymbols.Send, contentDescription = null) },
+                text = { Text("Send to PC") },
+            )
+        },
     ) { inner ->
         val notify = rememberNotify()
         val shown = ClipHistory.search(items, query)
+        if (composing) {
+            LincBottomSheet(onDismissRequest = { composing = false }) {
+                Column(Modifier.padding(bottom = 24.dp)) {
+                    Composer(
+                        text = draft,
+                        onText = { draft = it },
+                        connected = connected,
+                        onSend = {
+                            if (ClipboardBridge.sendToPc(context, draft.trim())) {
+                                notify("Sent — it's on your PC's clipboard")
+                                draft = ""
+                                composing = false
+                            } else {
+                                notify("Your PC isn't connected")
+                            }
+                        },
+                        onSyncNow = {
+                            ClipboardBridge.syncNow(context)
+                            notify(if (connected) "Synced with your PC" else "Your PC isn't connected")
+                        },
+                    )
+                }
+            }
+        }
         LazyColumn(contentPadding = pagePadding(inner)) {
-            item("composer") {
-                Composer(
-                    text = draft,
-                    onText = { draft = it },
-                    connected = connected,
-                    onSend = {
-                        if (ClipboardBridge.sendToPc(context, draft.trim())) {
-                            notify("Sent — it's on your PC's clipboard")
-                            draft = ""
-                        } else {
-                            notify("Your PC isn't connected")
-                        }
-                    },
-                    onSyncNow = {
-                        ClipboardBridge.syncNow(context)
-                        notify(if (connected) "Synced with your PC" else "Your PC isn't connected")
-                    },
-                )
+            if (items.isNotEmpty()) {
+                item("search") {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        singleLine = true,
+                        leadingIcon = { Icon(LincSymbols.Search, contentDescription = null) },
+                        placeholder = { Text("Search the history") },
+                        shape = CircleShape,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter, vertical = 8.dp),
+                    )
+                }
             }
             item("capture") {
                 HelperText(
@@ -138,19 +170,6 @@ private fun ClipboardContent(
                         "History is off: clips sync but aren't kept. Turn it on in Settings → Clipboard.",
                         kind = Explanations.Kind.Warning,
                         modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 8.dp),
-                    )
-                }
-            }
-            if (items.isNotEmpty()) {
-                item("search") {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        leadingIcon = { Icon(LincSymbols.Search, contentDescription = null) },
-                        placeholder = { Text("Search the history") },
-                        shape = CircleShape,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = Kit.gutter, vertical = 8.dp),
                     )
                 }
             }
@@ -189,7 +208,7 @@ private fun ClipboardContent(
     }
 
     if (confirmClear) {
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { confirmClear = false },
             icon = { Icon(LincSymbols.ClearAll, contentDescription = null) },
             title = { Text("Clear the clipboard history?") },

@@ -195,18 +195,26 @@ class SocketServer(
             CHANNEL_BULK -> bulkLoop(input, output)
             CHANNEL_FILES -> fileServe(input, output)
             CHANNEL_VIDEO -> videoReceive(input)
-            CHANNEL_AUDIO -> audioReceive(input)
+            CHANNEL_AUDIO -> audioReceive(input, output)
             CHANNEL_MIC -> PcVoiceAccess.stream(output)
+            CHANNEL_PHONE_AUDIO -> PhoneSource.serve(input, output)
+            CHANNEL_TERMINAL -> PcTools.serveTerminal(input, output)
+            CHANNEL_PC_FILES -> PcTools.serveFiles(input, output)
         }
     }
 
-    /** Channel 6 (pc-audio, v20): like pc-video, the desktop serves; config frame, then AAC. */
-    private fun audioReceive(input: DataInputStream) {
+    /**
+     * Channel 6 (pc-audio, v20): like pc-video, the desktop serves; config frame, then AAC. A v26
+     * config with `clock` is Play everywhere's stream: PC-clock timestamps, and clock probes
+     * answered on the channel's back direction (D-096).
+     */
+    private fun audioReceive(input: DataInputStream, output: DataOutputStream) {
         val configJson = Framing.read(input) ?: return
         val config = ProtocolJson.parseToJsonElement(configJson).jsonObject
         val rate = (config["sampleRate"] as? JsonPrimitive)?.intOrNull ?: return
         val channels = (config["channels"] as? JsonPrimitive)?.intOrNull ?: 2
-        AudioReceiver.receive(input, rate, channels)
+        if ((config["clock"] as? JsonPrimitive)?.booleanOrNull == true) SyncedAudio.receive(input, output, rate, channels)
+        else AudioReceiver.receive(input, rate, channels)
     }
 
     /**
@@ -318,6 +326,8 @@ class SocketServer(
                 payload = buildJsonObject {
                     put("app", "linc-android")
                     put("appVersion", BuildConfig.VERSION_NAME)
+                    // Informational only (Provenance.kt); optional, older desktops ignore it.
+                    put("author", app.linc.android.Provenance.AUTHOR)
                     put("v", negotiated)
                     if (sessionToken != null) put("sessionToken", sessionToken)
                 },
@@ -495,11 +505,16 @@ class SocketServer(
                             )
                         })
                     }
-                    MessageType.CHANNEL_OPEN -> if (negotiated >= 9) {
+                    // Off this loop: dialling back can take seconds over Wi-Fi (a probe race,
+                    // then TLS), and while it ran here nothing else was read — the PC's status
+                    // probes went unanswered and it dropped the whole link ("keeps
+                    // disconnecting"). The reply still carries replyTo, so order doesn't matter.
+                    MessageType.CHANNEL_OPEN -> if (negotiated >= 9) scope.launch(Dispatchers.IO) {
                         val channel = (message.payload["channel"] as? JsonPrimitive)?.intOrNull
                         val opened = channel != null && sessionToken != null &&
-                            onChannelOpen(channel, sessionToken)
-                        send(if (opened) {
+                            runCatching { onChannelOpen(channel, sessionToken) }.getOrDefault(false)
+                        if (!opened) LogStore.log(LogLevel.WARN, "Channel $channel: couldn't dial back to the PC on any route")
+                        runCatching { send(if (opened) {
                             Envelope(type = MessageType.OK, replyTo = message.id)
                         } else {
                             Envelope(
@@ -510,7 +525,7 @@ class SocketServer(
                                     put("message", "The phone couldn't open that channel back to the PC.")
                                 },
                             )
-                        })
+                        }) }
                     }
                     MessageType.PHOTOS_RECENT -> if (negotiated >= 10) {
                         val limit = (message.payload["limit"] as? JsonPrimitive)?.intOrNull ?: 20
@@ -601,6 +616,23 @@ class SocketServer(
                     MessageType.PC_VOICEACCESS_STATE -> if (negotiated >= 21) PcVoiceAccess.onState(message.payload)
                     MessageType.PC_TABLETMODE_STATE -> if (negotiated >= 22) PcTabletMode.onState(message.payload)
                     MessageType.PC_SPEAKER_STATE -> if (negotiated >= 25) PcSpeaker.onState(message.payload)
+                    MessageType.AUDIO_EVERYWHERE_STATE -> if (negotiated >= 26) AudioEverywhere.onState(message.payload)
+                    MessageType.AUDIO_EVERYWHERE_TEST -> if (negotiated >= 26) AudioEverywhere.onTest(message.payload)
+                    // v27 (D-097): answers for the PC tools.
+                    MessageType.PC_LOOK_STATE -> if (negotiated >= 27) PcTools.onLook(message.payload)
+                    MessageType.PC_INFO -> if (negotiated >= 27) PcTools.onInfo(message.payload)
+                    MessageType.PC_APPS -> if (negotiated >= 27) PcTools.onApps(message.payload)
+                    MessageType.PC_FILES_LISTING -> if (negotiated >= 27) PcTools.onListing(message.payload)
+                    MessageType.PC_FILES_DONE -> if (negotiated >= 27) PcTools.onDone(message.payload)
+                    MessageType.PC_TERM_STATE -> if (negotiated >= 27) PcTools.onTermState(message.payload)
+                    // v28: the PC's outputs, its screen curtain, and the Device page reaching in.
+                    MessageType.PC_AUDIO_OUTPUTS -> if (negotiated >= 28) PcTools.onOutputs(message.payload)
+                    MessageType.PC_CURTAIN_STATE -> if (negotiated >= 28) PcTools.onCurtain(message.payload)
+                    MessageType.PC_BTAUDIO_STATE -> if (negotiated >= 29) PcTools.onBtAudio(message.payload)
+                    MessageType.SYNC_STATE -> if (negotiated >= 30) SyncRemote.onState(message.payload)
+                    MessageType.PHONE_SOUND_ASK -> if (negotiated >= 28) PhoneReach.soundAsk(message.payload)
+                    MessageType.PHONE_USAGE_GET -> if (negotiated >= 28) PhoneReach.usage()
+                    MessageType.PHONE_WALLPAPER_SET -> if (negotiated >= 28) PhoneReach.wallpaper(message.payload)
                     // v15: the PC sets the phone's screen orientation (D-055). Bad payload →
                     // internal; WRITE_SETTINGS not granted → not-granted (a plain-language route
                     // to the Settings screen — same wording style as v7 dnd.set).
@@ -793,5 +825,11 @@ class SocketServer(
         const val CHANNEL_VIDEO = 5
         const val CHANNEL_AUDIO = 6
         const val CHANNEL_MIC = 7
+        /** v27 (D-097): the phone's own sound, phone → desktop, for Play everywhere. */
+        const val CHANNEL_PHONE_AUDIO = 8
+        /** v27 (D-097): a terminal on the PC, both ways. */
+        const val CHANNEL_TERMINAL = 9
+        /** v27 (D-097): one PC file, either way. */
+        const val CHANNEL_PC_FILES = 10
     }
 }

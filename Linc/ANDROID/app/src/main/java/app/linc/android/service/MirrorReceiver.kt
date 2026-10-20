@@ -203,6 +203,13 @@ object MirrorReceiver {
             if (index < 0) break
             codec.releaseOutputBuffer(index, true)
             framesShown++
+            // Lip-sync (v27, D-097): how late this frame is, on the PC's clock — known only while
+            // Play everywhere's clocked sound runs, which is when the sound needs it.
+            val epoch = MirrorSession.epochUs
+            val clock = SyncedAudio.clock
+            if (epoch > 0 && clock.ready) {
+                MirrorSession.videoLatency.add(clock.toPc(SyncedAudio.nowUs()) + DISPLAY_US, epoch + info.presentationTimeUs)
+            }
         }
     }
 
@@ -218,6 +225,8 @@ object MirrorReceiver {
 
     /** How long to wait for a decoder input buffer before calling the packet lost. */
     private const val FEED_TIMEOUT_US = 100_000L
+    /** A released frame reaches the glass at the next refresh or so. */
+    private const val DISPLAY_US = 12_000L
     private const val SURFACE_WAIT_MS = 4_000L
     private const val KEYFRAME_REQUEST_GAP_MS = 500L
 }

@@ -113,6 +113,23 @@ jobs:
           if ($env:PRERELEASE -eq 'true') { $params.Prerelease = $true }
           & .\Linc\tools\release.ps1 @params
 
+      - name: One 7z with the phone app and the PC installer
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # For people low on data: both apps in one small download, beside the separate files.
+          $tag = "v$env:VERSION"
+          $dir = Join-Path $env:RUNNER_TEMP 'pack'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          gh release download $tag --repo "$env:GITHUB_REPOSITORY" -p '*.apk' -p 'Linc-Setup-*.exe' -D $dir
+          if ($LASTEXITCODE) { throw 'downloading the APK and installer from the release failed' }
+          $archive = Join-Path $env:RUNNER_TEMP "Linc-$env:VERSION-phone-and-PC.7z"
+          & 7z a -t7z -m0=lzma2 -mx=9 -mfb=273 -md=256m -ms=on -mmt=2 $archive "$dir\*"
+          if ($LASTEXITCODE) { throw '7z failed' }
+          gh release upload $tag --repo "$env:GITHUB_REPOSITORY" $archive --clobber
+          if ($LASTEXITCODE) { throw 'uploading the 7z failed' }
+
       - name: Post the release to Telegram
         shell: pwsh
         env:

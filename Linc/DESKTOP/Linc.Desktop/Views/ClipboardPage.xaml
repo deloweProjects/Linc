@@ -6,12 +6,15 @@
     xmlns:vm="using:Linc.Desktop.ViewModels"
     xmlns:views="using:Linc.Desktop.Views">
 
-    <ScrollViewer>
-        <StackPanel Padding="32" Spacing="16" MaxWidth="980" HorizontalAlignment="Stretch">
+    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
 
-            <Grid ColumnSpacing="12">
+            <!-- Search first; sending text to the phone sits behind its button (the owner). -->
+            <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Spacing="4">
@@ -19,55 +22,62 @@
                     <TextBlock views:Explain.IsHelp="True" Style="{StaticResource BodyText}" TextWrapping="Wrap" Opacity="0.8"
                                Text="What you copy on this PC or your phone, kept here and on the other device." />
                 </StackPanel>
-                <Button Grid.Column="1" VerticalAlignment="Center" Click="OnClearClick"
-                        IsEnabled="{x:Bind ViewModel.HasHistory, Mode=OneWay}"
-                        AutomationProperties.Name="Clear history">
+                <Button Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource FilledButton}"
+                        AutomationProperties.Name="Send text to the phone">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon Glyph="&#xE74D;" FontSize="14" />
-                        <TextBlock Text="Clear history" />
+                        <FontIcon Glyph="&#xE724;" FontSize="14" />
+                        <TextBlock Text="Send to phone" />
                     </StackPanel>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight">
+                            <StackPanel Spacing="12" Width="420">
+                                <TextBlock Text="Send text to your phone" Style="{StaticResource TitleText}" />
+                                <TextBox AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" MaxHeight="200"
+                                         PlaceholderText="Type or paste — it lands on the phone's clipboard"
+                                         Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         AutomationProperties.Name="Text to send to the phone" />
+                                <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Visibility="{x:Bind ViewModel.IsNotConnected, Mode=OneWay}"
+                                           Text="Connect your phone to send. The history still works." />
+                                <Button Style="{StaticResource FilledButton}" HorizontalAlignment="Right" Command="{x:Bind ViewModel.SendCommand}"
+                                        IsEnabled="{x:Bind ViewModel.CanSend, Mode=OneWay}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE724;" FontSize="14" />
+                                        <TextBlock Text="Send" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
                 </Button>
+                <Button Grid.Column="2" VerticalAlignment="Center" Command="{x:Bind ViewModel.SyncNowCommand}"
+                        IsEnabled="{x:Bind ViewModel.IsConnected, Mode=OneWay}"
+                        ToolTipService.ToolTip="Sync now" AutomationProperties.Name="Sync now">
+                    <FontIcon Glyph="&#xE895;" FontSize="14" />
+                </Button>
+                <Button Grid.Column="3" VerticalAlignment="Center" Click="OnClearClick"
+                        IsEnabled="{x:Bind ViewModel.HasHistory, Mode=OneWay}"
+                        ToolTipService.ToolTip="Clear history" AutomationProperties.Name="Clear history">
+                    <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                </Button>
+            </Grid>
+
+            <!-- A plain TextBox, not an AutoSuggestBox: with the AutoSuggestBox the page measured wider
+                 than the window and the column ran off the right edge (UI test, concerns-5). -->
+            <Grid>
+                <TextBox PlaceholderText="Search the history" Padding="36,6,10,6"
+                         Text="{x:Bind ViewModel.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         AutomationProperties.Name="Search the clipboard history" />
+                <FontIcon Glyph="&#xE721;" FontSize="14" Opacity="0.7" Margin="12,0,0,0"
+                          HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" />
             </Grid>
 
             <InfoBar IsOpen="{x:Bind ViewModel.HasMessage, Mode=TwoWay}" Severity="Informational"
                      Message="{x:Bind ViewModel.Message, Mode=OneWay}" />
 
-            <!-- Send text: like copying it on the phone. -->
-            <Border Style="{StaticResource ExpressiveCard}" Padding="20">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="Send text to your phone" Style="{StaticResource TitleText}" />
-                    <TextBox AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" MaxHeight="200"
-                             PlaceholderText="Type or paste — it lands on the phone's clipboard"
-                             Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             AutomationProperties.Name="Text to send to the phone" />
-                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
-                               Visibility="{x:Bind ViewModel.IsNotConnected, Mode=OneWay}"
-                               Text="Connect your phone to send. The history below still works." />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Command="{x:Bind ViewModel.SyncNowCommand}" IsEnabled="{x:Bind ViewModel.IsConnected, Mode=OneWay}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE895;" FontSize="14" />
-                                <TextBlock Text="Sync now" />
-                            </StackPanel>
-                        </Button>
-                        <Button Style="{StaticResource FilledButton}" Command="{x:Bind ViewModel.SendCommand}"
-                                IsEnabled="{x:Bind ViewModel.CanSend, Mode=OneWay}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE724;" FontSize="14" />
-                                <TextBlock Text="Send" />
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
             <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
                        Visibility="{x:Bind ViewModel.HistoryOff, Mode=OneWay}"
                        Text="History is off: clips sync but aren't kept. Turn it on in Settings → Clipboard." />
-
-            <AutoSuggestBox QueryIcon="Find" PlaceholderText="Search the history"
-                            Text="{x:Bind ViewModel.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            AutomationProperties.Name="Search the clipboard history" />
 
             <!-- Empty state -->
             <StackPanel Spacing="8" Padding="0,32" HorizontalAlignment="Center"
@@ -83,11 +93,12 @@
                     <DataTemplate x:DataType="vm:ClipGroupVm">
                         <StackPanel Spacing="2" Margin="0,8,0,0">
                             <TextBlock Text="{x:Bind Header}" Style="{StaticResource LabelText}" Foreground="{ThemeResource PrimaryBrush}" Margin="4,0,0,6" />
+                            <!-- No ItemContainerTransitions: an entrance animation per row made the first
+                                 load of a long history crawl (owner concerns §3). The rows arrive in
+                                 batches instead (ClipboardViewModel.RebuildAsync). -->
                             <ItemsControl ItemsSource="{x:Bind Items}">
                                 <ItemsControl.ItemContainerTransitions>
-                                    <TransitionCollection>
-                                        <AddDeleteThemeTransition />
-                                    </TransitionCollection>
+                                    <TransitionCollection />
                                 </ItemsControl.ItemContainerTransitions>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ClipRowVm">

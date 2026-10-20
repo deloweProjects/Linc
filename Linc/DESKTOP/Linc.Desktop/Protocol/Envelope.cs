@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 25;
+    public const int Version = 31;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -106,6 +106,58 @@ public static class MessageType
     public const string PcMicAuto = "pc.mic.auto";                   // phone → desktop: PC Remote with "Phone" chosen (v23)
     public const string PcSpeakerSet = "pc.speaker.set";       // phone → desktop: {on} phone as PC speaker (v25)
     public const string PcSpeakerState = "pc.speaker.state";   // desktop → phone: {on, cable, error?} (v25)
+
+    // v26 (D-096) — Play everywhere: the PC's sound on its own speakers, its Bluetooth devices
+    // and the phone's at once, in step. Audio rides pc-audio channel 6 with PC-clock capture
+    // timestamps; the phone times the PC's clock over the same channel's back direction.
+    public const string AudioEverywhereSet = "audio.everywhere.set";       // phone → desktop: {on?, device?, marginMs?, calibrate?, clicks?, resetAlignment?}
+    public const string AudioEverywhereState = "audio.everywhere.state";   // desktop → phone: the mixer, the group delay
+    public const string AudioEverywhereReport = "audio.everywhere.report"; // phone → desktop: its outputs, their needs, calibration results
+    public const string AudioEverywhereTest = "audio.everywhere.test";     // desktop → phone: test sounds to play / listen for
+
+    // v27 (D-097) — the phone's full-page PC tools: look, info, running apps, files, terminal.
+    public const string PcLookGet = "pc.look.get";             // phone → desktop: {}
+    public const string PcLookSet = "pc.look.set";             // phone → desktop: {appsDark?, systemDark?, accent?, autoAccent?, transparency?}
+    public const string PcLookState = "pc.look.state";         // desktop → phone
+    public const string PcWallpaperSet = "pc.wallpaper.set";   // phone → desktop: {jpeg (base64), fit}
+    public const string PcInfoGet = "pc.info.get";             // phone → desktop: {}
+    public const string PcInfo = "pc.info";                    // desktop → phone: name, os, cpu, memory, disks, battery
+    public const string PcAppsGet = "pc.apps.get";             // phone → desktop: {}
+    public const string PcApps = "pc.apps";                    // desktop → phone: {apps: [{pid, name, title, memMb}]}
+    public const string PcAppsEnd = "pc.apps.end";             // phone → desktop: {pid}
+    public const string PcOpen = "pc.open";                    // phone → desktop: {url} or {path}
+    public const string PcFilesList = "pc.files.list";         // phone → desktop: {path} ("" = the starting places)
+    public const string PcFilesListing = "pc.files.listing";   // desktop → phone: {path, parent, entries, error?}
+    public const string PcFilesOp = "pc.files.op";             // phone → desktop: {op: mkdir|rename|delete|open|download|upload, id, ...}
+    public const string PcFilesDone = "pc.files.done";         // desktop → phone: {op, id, ok, path?, error?}
+    public const string PcTermGet = "pc.term.get";             // phone → desktop: {}
+    public const string PcTermOpen = "pc.term.open";           // phone → desktop: {shell, cols, rows} → channel 9
+    public const string PcTermState = "pc.term.state";         // desktop → phone: {shells, running, error?}
+
+    // v28 — the PC's sound output, a curtain over the PC's screen while the phone uses it, and
+    // the Device page reaching into the phone: its sound on the PC, screen time, wallpaper.
+    public const string PcAudioOutputsGet = "pc.audio.outputs.get"; // phone → desktop: {}
+    public const string PcAudioOutputs = "pc.audio.outputs";        // desktop → phone: {outputs: [{id, name, bluetooth, default}]}
+    public const string PcAudioOutputSet = "pc.audio.output.set";   // phone → desktop: {id}
+    public const string PcCurtainSet = "pc.curtain.set";            // phone → desktop: {on}
+    public const string PcCurtainState = "pc.curtain.state";        // desktop → phone: {on, available, error?}
+    public const string PhoneSoundAsk = "phone.sound.ask";          // desktop → phone: {on}
+    public const string PhoneUsageGet = "phone.usage.get";          // desktop → phone: {}
+    public const string PhoneUsage = "phone.usage";                 // phone → desktop: {allowed, totalMin, unlocks?, apps}
+    public const string PhoneWallpaperSet = "phone.wallpaper.set";  // desktop → phone: {jpeg (base64), target}
+
+    // v29 — the phone's sound on the PC over Bluetooth: Windows becomes the phone's Bluetooth
+    // speaker (AudioPlaybackConnection), so nothing is recorded on the phone.
+    public const string PcBtAudioSet = "pc.btaudio.set";            // phone → desktop: {on, names: [the phone's Bluetooth names]}
+    public const string PcBtAudioGet = "pc.btaudio.get";            // phone → desktop: {}
+    public const string PcBtAudioState = "pc.btaudio.state";        // desktop → phone: {on, supported, device?, error?}
+
+    // v30 — the phone's Sync page: the same lanes and folder pairs as the PC's, either side edits.
+    public const string SyncStateGet = "sync.state.get";            // phone → desktop: {}
+    public const string SyncState = "sync.state";                   // desktop → phone: {lanes, pairs: [{id, name, pcPath, phonePath, direction, enabled}], status, photosPcPath}
+    public const string SyncPairsSet = "sync.pairs.set";            // phone → desktop: {pairs}
+    public const string SyncLaneSet = "sync.lane.set";              // phone → desktop: {lane, on}
+    public const string SyncNow = "sync.now";                       // phone → desktop: {}
 
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies

@@ -1,142 +1,211 @@
-# Features
+# Linc features (as of 1.0.0.17)
 
-Checklist for the current phase. Full shipped catalog: `Documentation/07-Feature-Catalog.md`. This tracks
-the roadmap (`ROADMAP.md`) + analysis (`REQUIREMENTS-ANALYSIS.md`, incl. the owner corrections).
+What Linc does, where each thing lives on the phone and the PC, how it works in a line or two, and
+which settings change it (with defaults). Written for the owner and for any agent picking up the
+project. This guide covers what the apps do; for how things travel on the wire read
+[PROTOCOL.md](PROTOCOL.md), and for anything that plays, records or carries sound read
+[SOUND.md](SOUND.md).
 
-Legend: `[x]` done · `[~]` in code but not visible/verified to the owner · `[ ]` planned · `[bug]`
-broken, to fix.
+> This file used to be the milestone checklist (M1–M14, last updated 2026-08-12). That history is
+> in git (`git log -p -- Vibe/agent/opencode-docs/FEATURES.md`), and the plan lives in
+> `ROADMAP.md` and `CHANGELOG.md`.
 
-## 📍 CONVERGENCE — STATE AS OF 2026-08-12 (this block supersedes anything below it)
+**Versions.** 1.0.0.17 ("1.0.0-beta.17", 2026-10-20). Both apps report the same four-part version,
+and the protocol is **v31** on both sides. Older peers keep working: each feature appears only when
+both sides support it (see PROTOCOL.md).
 
-Protocol **v18** both sides. The whole M1–M14 series has landed.
+**The two apps.**
+- **Linc for Android** (`Linc/ANDROID`, Kotlin + Jetpack Compose, Material 3 Expressive). Four tabs
+  (**Home, Control, Clipboard, Share**) and Settings behind the gear. Android 11+ (wireless
+  debugging needs it).
+- **Linc for Windows** (`Linc/DESKTOP/Linc.Desktop`, C# WinUI 3). One tab per paired phone, pages
+  **Home, Device, Details, Files, Sync, Clipboard, Share, Logs**, plus Settings. Lives in the
+  notification area (tray) when closed.
 
-- [x] **M1** Files fix + always-visible device tabs · **M2** guided onboarding + bundled companion APK
-- [x] **M3 / M3.5** scrcpy vendored, built from source, frameless rounded draggable window
-- [x] **M5** PC-controls-phone widgets, Device Tools, editable scrcpy settings, **v15** display control
-- [x] **M6** Home layout overhaul + Apps section (**v16** `apps.get`)
-- [x] **M7** per-app windows (`--start-app`), lazy icons, remembered geometry
-- [x] **M8** Desktop Mode — ships as a **second screen**; real windowing dropped (D-053)
-- [x] **M9** SQLite `LincStore`, opt-in notification history (default **off**), offline outbox,
-      cache-first Home + Sync
-- [x] **M10** install-APK from the PC + share sheet accepts files
-- [x] **M11** audio routing as an explicit per-device setting
-- [x] **M12** presence polish + packaging — self-contained publish, app-local VC++ runtime, crash log,
-      `tools/cleanroomsim`, publish **staleness guard**, tray icon fix, **start on sign-in** (opt-in,
-      default off)
-- [x] **M4a** phone Tools: remote **keyboard + trackpad** (no protocol change)
-- [x] **M4b** **v17** quick controls — lock / sleep / shutdown / restart / volume / PC brightness,
-      destructive actions confirmed **on the wire**
-- [x] **M13** **v18** hotspot ADB link-up — **measured 514 ms, phone-AP direction, zero discovery**
-- [x] **M14** black-and-white default theme + the new Linc mark on both apps + Phone section
+**No account, no server.** The phone and the PC talk directly, over the USB cable (ADB), wireless
+debugging, or Linc's own Direct TLS link on your Wi-Fi. The only thing Linc fetches from the
+internet is the update manifest (`Releases/update.json` in this repo) and, when you ask for it,
+VB-CABLE's installer from vb-audio.com.
 
-**Owner checks outstanding:** M14's visual list (tray icon at 16 px light/dark, mirror icon, Android
-launcher, Home connected/disconnected, 3-dots flyout); M4a's cursor test; M4b's quick controls
-(**save your work — the destructive ones have never been executed once**); a Direct-TLS-only link
-with the cable out.
+---
 
-**Not started:** `[ ]` **M15** live status surface in the Phone section (design open) · `[ ]` **M4c**
-multimedia + slideshow remote (no protocol bump) · `[ ]` camera → PC webcam (its own milestone).
+## 1. Connecting
 
-**Known, deliberate limits:** *Wireless debugging* cannot be toggled while the phone hosts a hotspot,
-so hotspot ADB relies on `adb tcpip 5555` armed once over the cable; PC brightness is WMI-only, no
-DDC/CI; the ephemeral-port sweep is deferred (44–175 s on-device).
+| What | Where | How it works | Settings (default) |
+|---|---|---|---|
+| **First setup** | PC: Add a phone (the `+` by the tabs) · phone: the setup pages on first launch | The PC finds the phone over USB or wireless debugging (QR code or pairing code), installs the bundled phone app if needed (or "Linc is already on my phone — don't install it"), and pins each side's certificate for Direct TLS. Setup explains ADB pairing and ticks off when it worked. | Phone: Settings › Run setup again |
+| **Links and handover** | Automatic; PC: Device › Connection shows the link, "Use this link now" pins one | USB is preferred; plugging the cable in switches to it without a drop, unplugging goes back to Wi-Fi. The phone reconnects when it rejoins Wi-Fi, the screen comes on or Linc opens, trying the PC's last address first. The PC also recognises the phone by its Wi-Fi address. | PC: Settings › Connection › Allow USB connections (on), Background connection (on) · phone: Settings › Connection › Background connection (on) |
+| **Stay connected in the background** | Phone: Settings › Connection; Home shows a warning card when it matters | Asks Android to exempt Linc from battery optimisation, and opens the phone maker's own auto-start screen (itel, Tecno, Infinix, Xiaomi, Oppo, Vivo). Without it many phones freeze Linc with the screen off and the Wi-Fi link drops. | Off until you allow it |
+| **Hotspot quick link** | Phone: Settings › Connection | When the phone shares a hotspot, the PC joins over ADB in about half a second (measured 514 ms), no discovery needed. | See the row's explanation |
+| **Tap to connect (NFC)** | Phone: Settings | Writes `linc://tap` to a cheap NFC sticker; tapping the phone on it starts Linc and dials the PC at once. | Optional |
+| **Several PCs** | Phone: Connection sheet › PCs | The phone remembers every PC it paired with. Pick one, or "Any of my PCs". Linc is with one PC at a time; another PC is told the phone is busy and by whom. Forget removes a PC. | "Any of my PCs" |
+| **Several phones** | PC: one tab per phone; Settings › Devices | Each paired phone has a tab. Closing a tab asks whether to disconnect (stays paired) or remove it; one phone is active at a time. | — |
+| **Offline cache** | PC: Home, Sync | The PC keeps the phone's last apps, photos, messages, battery and Wi-Fi (shown greyed while it is away) in a local SQLite store, so pages are useful without the phone. | PC: Settings › Connection › Clear saved phone data |
 
-## Shipped baseline (Files/07)
-- [x] Pairing, discovery, reconnection; multi-transport + failover with **USB prioritized**; Direct TLS
-- [x] File manager, two-way share, folder/photo sync · phone→PC + reverse mirror
-- [x] Clipboard, rich notifications + inline reply, phone media + PC media
-- [x] Messages + Calls lanes (sideload), quick actions, live theme sync
-- [~] **Device tabs** — coded but hidden for single-device users → make always-visible (M1)
-- [~] **Preemptive auto-connect** — coded but unverified in practice → verify/repair (M1/M12)
-- [ ] **Bundle the companion APK** into the desktop (needed by onboarding) — not done yet
+## 2. Home
 
-## New roadmap (planned)
+**Phone › Home.** The hero card for the PC (connected / connecting, with the Connection sheet
+behind it), **Your PC** (the PC's battery and network, volume and brightness sliders, quick
+controls, **Mirror PC**), **Now playing** on the PC, shortcuts into Control, the latest clipboard
+item, and one-time cards: update available, background warning, setup, and the Telegram channel
+(Join / Not now).
 
-### M1 — Files fix + visible tabs + verify — DONE 2026-07-22
-- [x] Files page lists the phone dir (was edge-triggered load missed by the lazy VM)
-- [x] Device tab strip always visible once ≥1 device paired (+ regression harness `tools/filesim`)
-- [x] Verified USB priority, connection-type picker, BLE presence, preemptive connect (USB path)
+**PC › Home.** The phone's wallpaper with a clock (like its lock screen), the frosted phone card
+(battery, Wi-Fi, connection notes, **Mirror phone**), **Now playing** on the phone (album art as the
+background, play controls), **Quick controls** (Ring / Vibrate / Silent, find phone, and more),
+**Apps** (open any phone app in its own window), **Recent photos**, **Clipboard**, **Shared**
+(sent / received), **Messages** and **Calls**. Sections can be hidden and swapped ("Sections",
+"Swap sides"). Home shrinks to fit smaller windows.
 
-### M2a — Device management works + hands-on fixes — DONE 2026-07-23
-- [x] `+` (pairing now shows over a live link), close-tab, and device-switch all work
-- [x] **Settings › Devices** — list, Set active (un-hides a closed tab), Forget (clears cache + unpairs)
-- [x] **Files page:** navigate up to `/`; denied dirs show a plain-language note; downloads → `Downloads/Linc`
-- [x] Confirmed `SyncViewModel`/`MirrorViewModel` don't share the M1 lazy-load bug (no change needed)
-- Wrinkle for M2b: closing the last tab hides the strip **and** the `+` — the add-device entry must
-  stay reachable at zero devices.
+Settings (PC › Settings › Appearance): Clock on Home (on), Clock style (Classic; also Bold,
+Stacked, Serif, Minimal), Wallpaper as background (on), Use my phone's colours (on).
 
-### M2b — Guided front door (onboarding) — DONE 2026-07-23
-- [x] Stepped wizard: enable debugging → detect over ADB → inject bundled companion → done
-- [x] Desktop bundles + injects the companion APK (`apkprobe`/`onboardsim` green)
-- [x] Reachable from the tab-strip `+` and the zero-device first-run state
-- [x] Fixed a crash (string→Visibility x:Bind) and a false-success shortcut
-- Known limitation: adding a 2nd phone while the first is connected won't complete (D-037 single link)
+## 3. Screens
 
-### M2c — Onboarding as the app's own full-screen UI — DONE 2026-07-23
-- [x] Full-window `OnboardingView` overlay replaces the `ContentDialog` (removed)
-- [x] Styled with MaterialExpressive to match `SettingsPage`; `IsOnboarding` flag on AppShellVM
-- [x] `OnboardingViewModel` step logic untouched; builds + harnesses green; owner-checked
-- Cleanup owed: stray `task.md` / `walkthrough.md` / `verify-ui.ps1` left in repo root (remove next session)
+| What | Where | How it works | Settings (default) |
+|---|---|---|---|
+| **Mirror phone** (phone screen on the PC) | PC: Home › Mirror phone; Device › Phone screen on this PC | Linc's build of **scrcpy** (bundled, `Linc/SCRCPY`) in a frameless, rounded Linc window. Sound comes too and stays on the phone as well (`--audio-dup`, Android 13+). | PC: Device › Phone screen on this PC (bit rate, crop, audio; applies at the next start) |
+| **Per-app windows** | PC: Home › Apps | Opens one phone app in its own window (scrcpy `--start-app`), with lazy-loaded icons and remembered window size and position. | — |
+| **Desktop Mode** | PC: Device › Desktop Mode | The phone's desktop as a second screen on the PC, for apps that support it. | Sound off by default (it costs performance) |
+| **Mirror PC** (PC Remote, the PC on the phone) | Phone: Home › Your PC › Mirror PC | The PC's screen as H.264 on the phone, with the PC's pointer drawn on the phone, Touch or Mouse (trackpad) modes, right click, smooth scrolling, the PC's sound, and the keyboard popping up on PC text fields. A status bubble holds the keyboard, Tablet mode, Voice Access and the microphone. A ring and a buzz confirm each click at once. | Phone: Settings › Mirror PC › Picture quality (Balanced; Smooth, Sharp), Pointer (Touch), Keyboard on text fields (on) · PC: Settings › Mirror PC › Use software encoding (off) |
+| **Tablet mode** | Phone: the Mirror PC bubble | Makes a PC without a touch screen finger-friendly: the mirrored display's scale goes up two steps and File Explorer gets touch spacing. Put back when you switch it off or leave, and after a crash. | Off |
 
-### M3 — Vendor + bundle scrcpy; brand via flags (D-041 revised) — DONE 2026-07-23
-- [x] `SCRCPY/Default` submodule (v3.3.4) + bundled prebuilt binaries in `SCRCPY/Custom/bin/`
-- [x] `LICENSE` kept + `SCRCPY/NOTICE.md` + Linc `.ico`; binaries shipped with the desktop build
-- [x] `MirrorService`/`ToolLocator` prefer bundled scrcpy; launch `--window-borderless --window-title
-  "Linc"` + `SCRCPY_ICON_PATH` (interim frameless look; no source build). Owner UI check owed.
-- Loose ends: stray `adb.exe.bak` in the bundle; `mirrorsim` not runnable in Antigravity's env
+## 4. Control (phone tab)
 
-### M3.5 — Custom scrcpy window, iPhone-Mirroring style, from source (D-049) — *highest risk*
-- [x] **Gate (M3.5a):** from-source Windows build of *unmodified* scrcpy proven
-- [x] **M3.5b-1:** ship OUR from-source build standalone (own `scrcpy.exe` + 98 mingw64 DLLs); built **portable** (D-050); mirror confirmed
-- [ ] **M3.5b-2a:** frameless shape — `WM_NCCALCSIZE` + `WM_NCHITTEST` drag strip + tunable rounded-region corners + DWM shadow
-- [ ] **M3.5b-2b:** hover-reveal top bar (close/minimize) = drag zone; fade; bare video at rest
-- [ ] `WM_NCCALCSIZE`/`WM_NCHITTEST`/`TrackMouseEvent` + SDL-drawn buttons + DWM shadow/corners — see `SCRCPY-WINDOW-SPEC.md`
-- [ ] Window/event/render code only; bundle the custom build; supersedes M3's flag look
+Control is a set of full-screen pages; the **Pages** button or the edge handle opens the side panel.
 
-### M4 — Phone as a remote for the PC (D-042)
-- [ ] `pc.control`: lock/sleep/shutdown/restart (confirmed) + volume + **PC sound & brightness**
-- [ ] Phone Home control widgets
-- [ ] Phone **Tools page**: keyboard, trackpad, multimedia, **slideshow/presentation remote**, telephony notifier
-- [ ] **Phone camera → PC webcam** (heavier; own step — needs a Windows virtual camera)
+| Page | What it does |
+|---|---|
+| **Remote** | A full-screen trackpad for the PC (tap to click, two-finger tap for right click, two-finger scroll, tap-then-drag) with Left/Right buttons, and sheets for the keyboard (Ctrl/Alt/Shift/Win, dictation), media and volume, presentations, screen brightness, **Voice Access** and **which microphone the PC hears**. Works without Mirror PC. |
+| **Sound** | Play everywhere, the phone's sound on the PC, the phone as the PC's speaker or microphone. See section 6. |
+| **PC** | The PC's performance (CPU, memory), running apps, **Open on the PC** (a link or an app), and **Personalise** (set the PC's wallpaper from a phone photo, accent colour, light or dark, transparency effects, "Match phone"). |
+| **Files** | Browse the PC's drives from the phone: download to the phone, upload, open on the PC, rename, delete. |
+| **Sync** | Messages and Calls lanes, camera photos to the PC, and **Sync folders** (section 7). |
+| **Terminal** | A real shell on the PC (Command Prompt, PowerShell, Bash from Git for Windows, or WSL Linux) through a ConPTY. Long lines stay whole (swipe sideways to read them), pinch to zoom. |
 
-### M5 — PC controls the phone + Device Tools + scrcpy settings (D-043)
-- [ ] Desktop widgets: force landscape, auto-rotate, brightness (via companion protocol, not raw ADB)
-- [ ] Device page **Tools** grouping (mirror/desktop-mode/apps/scrcpy under it)
-- [ ] Editable **scrcpy settings**, persisted per device
+**Quick controls** (phone Home › Your PC, and the Remote sheets): lock, sleep, restart, shut down
+(the destructive ones are confirmed), volume and the PC's brightness.
 
-### M6 — Home layout overhaul + Apps section
-- [ ] New **Apps** section beside widgets + phone-stuff tabs
-- [ ] Sections removable + re-addable (Home button), flippable left/right
-- [ ] *(nice-to-have)* pop-out panel with small custom embedded top-bar (no Windows title bar)
+## 5. Clipboard
 
-### M7 — Apps windows (D-047)
-- [ ] Load phone apps (icon+name) on first connect; cache per device profile; diff on reconnect
-- [ ] Click app → its own Custom-scrcpy window at default ratio; teardown on close
+| What | Where | How it works | Settings (default) |
+|---|---|---|---|
+| **Clipboard sync** | Automatic both ways | Copy on one device, paste on the other. Phone → PC works in the background once the PC has connected over USB or wireless debugging (it grants what that needs); otherwise while Linc is open on the phone (an Android rule). | Phone: Settings › Features shared with your PC › Clipboard sync (on) · PC: Settings › Sync › Clipboard sync (on) |
+| **Clipboard pages** | Phone: Clipboard tab · PC: Clipboard page | Search first; a searchable history grouped by day with pin, copy and delete; **Sync now**; sending text to the other side is behind "Send to PC" / "Send to phone". | Keep history (on), History size (500; 100 or 2,000) on both |
+| **Sensitive copies** | Both | Passwords and codes that apps mark as sensitive are never saved or sent; a Windows clip excluded from clipboard history is never sent. | Phone: Don't save sensitive copies (on) |
 
-### M8 — Desktop Mode (D-046, see DESKTOP-MODE-SPEC.md)
-- [ ] Desktop Mode widget → `scrcpy --new-display` tuned (`WxH/DPI`, `--mouse/--keyboard=uhid`)
-- [ ] First-run ADB setup (flags + reboot handling, idempotent)
-- [ ] Settings panel (resolution/DPI, aspect mode=match-monitor default, freeform/resizable, auto-fullscreen via windowingMode)
-- [ ] Per-device auto-tune (wm size/density) + "reset to recommended"
+## 6. Sound (details: [SOUND.md](SOUND.md))
 
-### M9 — SQLite + notification history + offline queue (D-044, D-045)
-- [ ] `LincStore` (SQLite); incremental migration from settings.json; update devicesim
-- [ ] **Notification history** days/months, opt-in (default off), retention + clear
-- [ ] **Offline action/share queue** flushes on reconnect; cache-first Sync page
+| What | Where | How it works | Defaults |
+|---|---|---|---|
+| **Play everywhere** | Phone: Control › Sound · PC: Device page | The PC's sound on the phone and on every PC speaker at once, in step on the PC's clock. Volume keys work while it's on. "Aligning…" shows until the clocks agree. | Off |
+| **Whose sound: This phone** | Phone: Control › Sound › Play everywhere | The phone's own sound plays on the PC's speakers and the phone together, in step (scrcpy audio). Needs USB or wireless debugging and Android 13+; otherwise "Record it instead". | PC's sound |
+| **Timing (Advanced)** | Phone: Control › Sound › Timing | Per-speaker offset −400…+400 ms (10 ms steps, saved per device), Re-sync, Smooth / Tight buffer, test clicks. | 0 ms offsets; no extra margin (Tight) |
+| **This phone's sound on the PC** | Phone: Control › Sound · PC: Device › Phone sound on this PC › Play here | Uses the mirror's sound path (scrcpy, no picture): no Bluetooth pairing, and the phone keeps playing. Falls back to Windows as a Bluetooth speaker when there is no adb route. | Off |
+| **Phone as PC speaker** | Phone: Control › Sound | The PC's sound moves to the phone instead of playing on both; the PC's speakers come back when you stop or disconnect. Uses the virtual cable. | Off |
+| **Phone as the PC's microphone** | Phone: Control › Sound and Remote › microphone sheet · PC: Settings › Phone as microphone | Any PC app hears the phone's mic, through VB-CABLE (VB-Audio's free virtual cable, downloaded from vb-audio.com only after you agree, checked against a pinned SHA-256). Automatic in Mirror PC with "Phone" chosen. Your own default microphone is put back after each session, on exit and after a crash. | Off; PC: Set up / Remove |
+| **Voice Access** | Phone: Remote › Voice Access, the Mirror PC bubble | Starts Windows Voice Access (Windows 11 22H2+), hearing through the phone's microphone or the PC's. | Phone mic |
+| **Mirror screen's sound** | Mirror phone | scrcpy forwards the phone's sound and keeps it on the phone too. | On |
 
-### M10 — Sharing & install
-- [ ] Android share-sheet **file** target (`*/*`, multiple)
-- [ ] **Install-APK widget (PC → phone)** via adb, guided
-- [ ] Move Share into phone Home; remove Share tab
+## 7. Files, sharing and sync
 
-### M11 — Routing (D-048)
-- [ ] Audio channel (4): phone audio → PC speaker (Custom scrcpy)
-- [ ] Phone as speaker/mic for the PC (staged)
+| What | Where | How it works | Settings (default) |
+|---|---|---|---|
+| **Files** | PC: Files page | Browse the phone's storage, transfer both ways, delete, rename, new folder, screenshot. Over ADB or the Direct TLS files channel. | Phone: All files access (asked) |
+| **Share** | Phone: Share tab · PC: Share page, tray menu, Explorer | Send files, text and links. Each side says whether it sends over Linc (fast, no prompts) or with **Quick Share** when Linc isn't connected, and picks by itself; progress and retry. On the PC: drop files on the Share page, the tray's **Send to phone**, Explorer right-click → **Send to phone (Linc)** / **Send with Quick Share**, or Send to → **Phone (Linc)** / **Quick Share (Linc)**. A link opens on the phone; text lands on its clipboard. | PC: the Explorer entries (on), "Accept from my connected phone without asking", "Name phones see", Visible / Hidden — all on the Share page |
+| **Received files** | Phone: Share › Received from your PC · PC: Share › Received | Files from the PC land in `Download/Linc` and pictures show in the Gallery. On the phone: Open folder, long-press to select several, then Send, Share or Delete. | — |
+| **Quick Share on the PC** | PC: Share page | Send to and receive from nearby Android devices with Google's Quick Share protocol. | Visible / Hidden |
+| **Send to PC from any app** | Phone: Android share sheet (Linc, and the PC as a Direct Share target) | Shares a file or link to the PC; a notification shows sending, then "Sent". | — |
+| **Install an app** | PC: Device › Install an app | Installs an APK on the phone from the PC; the phone may ask you to allow it. | — |
+| **Sync folders** | Phone: Control › Sync · PC: Sync › Folders | Pick a folder on the PC and one on the phone and keep them the same: both ways (the newer copy wins), PC → phone, or phone → PC. Deletes are never copied; top-level files only; syncs by itself while connected. | None until you add one |
+| **Camera photos** | Phone: Control › Sync · PC: Sync › Photos | New camera photos copy to the PC. | Off |
 
-### M12 — Presence polish + packaging/beta
-- [ ] Preemptive mutual start; optional PC-side BLE advert
-- [ ] Installer/updater; Play-ready build; crash reporting + feedback
+## 8. Phone on the PC
 
-## Deferred (unchanged)
-- [ ] Google account + FCM push-wake (D-007); mirror phase 2 (D-015); call audio via BT HFP (D-017);
-  MediaProjection fallback mirror; macOS/Linux ports
+| What | Where | How it works | Settings (default) |
+|---|---|---|---|
+| **Notifications** | PC: toasts, Home | The phone's notifications on the PC with their actions, inline reply and dismiss. | Phone: notification access (asked) · PC: Settings › Sync › Notification relay (on) |
+| **Notification history** | PC: Settings › Notification history | Keeps notification bodies on this PC for 7, 30 or 90 days. | **Off**; 30 days when on |
+| **Messages** | PC: Home › Messages, Sync › Messages | Read and reply to texts from the PC (sideload builds; no default-SMS-app needed). | Phone: Messages permission (asked); Sync lane (off) |
+| **Calls** | PC: Home › Calls, Sync › Calls | Call log, dial from the PC, decline an incoming call. Call audio stays on the phone. | Phone: Calls permission (asked); Sync lane (off) |
+| **Now playing** | PC: Home, Device | The phone's media with play controls (needs notification access). The phone shows the PC's media too. | — |
+| **Phone controls** | PC: Device › Phone controls, Home › Quick controls | Find phone (full-volume ring), Do not disturb, screenshot, Ring / Vibrate / Silent, rotation, adaptive brightness and brightness. Some need a grant on the phone; the PC says so and greys the control. | Phone: DND access, Modify system settings (asked) |
+| **Wallpaper and colours** | PC: Device › Wallpaper and colours | Set the phone's wallpaper from the PC; the PC follows the phone's Material You colours. | PC: Use my phone's colours (on) |
+| **Screen time** | PC: Device › Screen time | Today's screen time on the phone (needs usage access, which the PC can turn on over USB debugging). | — |
+| **Details** | PC: Details page | Battery, storage, CPU load, memory, uptime, Wi-Fi signal, screen mirroring and this session. | — |
+| **Battery alert** | PC: Windows toast | Once when the phone drops to 15 %, re-armed when it charges or climbs above 20 %. | — |
+
+## 9. Look and feel
+
+- **Phone › Settings › Appearance:** Show explanations (on), Wallpaper background (off; frosted,
+  colour-tinted sheets and menus over the phone's wallpaper), Floating navigation bar (off), Font
+  (default; Manrope, DM Sans, Outfit, Playfair Display). Follows Material You, light and dark,
+  large text and predictive back.
+- **PC › Settings › Appearance:** Navigation (Floating bar; or Side rail), Font (Default = Segoe
+  UI; Inter, Plus Jakarta Sans, Manrope, Outfit), Wallpaper as background (on), Clock on Home (on),
+  Clock style (Classic), Use my phone's colours (on), Show explanations (on). The floating bar only
+  rises while the Windows taskbar is showing.
+
+## 10. App life
+
+| What | Where | Settings (default) |
+|---|---|---|
+| **Updates** | Both: Settings › Updates. Both apps read `Releases/update.json`; an optional update can be skipped, `minimumSupported` forces one; a download whose SHA-256 doesn't match is refused. The phone shows progress and hands the APK to Android's installer. | Keep Linc up to date (on) |
+| **Installer** | `Linc-Setup-<version>.exe` (Inno Setup, no admin). Uninstalling puts back the microphone and display scale, removes the Explorer menus and autostart, and asks whether to delete Linc's data. VB-CABLE stays installed. | — |
+| **Start on sign-in** | PC: Settings › Startup › Start Linc when I sign in (opens quietly in the tray). | Off |
+| **Tray** | Closing the window keeps Linc in the tray with a Send to phone menu; the icon shows when the phone isn't connected. A new Linc takes over from an older copy still running. | — |
+| **Logs** | Phone: Settings › Help & diagnostics › Logs / Copy log · PC: Logs page (Copy log, Open log folder, Clear) | Logs hold connection and sync events, never clipboard text or message contents. **Copy log** makes a plain-text report to paste to whoever is helping (the phone's says why Android ended Linc recently). Both start with the line "Linc <version> by deloweProjects — https://github.com/deloweProjects/Linc". |
+| **ADB tools** | PC: Settings › ADB status (devices, port forwards, run a shell command, restart the ADB server) | — |
+| **About** | Both: Settings › About: version, developer, Telegram channel (t.me/LincApp), source on GitHub, credits and licences. | — |
+
+---
+
+## Provenance (who made Linc, and how anyone can check)
+
+Linc is made by **deloweProjects** (<https://github.com/deloweProjects/Linc>), released under the
+MIT License (`LICENSE`), with third-party credits in `NOTICE`. To make the authorship easy to see
+and hard to strip by accident, both apps carry the same small, open set of constants:
+
+- Phone: `Linc/ANDROID/app/src/main/java/app/linc/android/Provenance.kt` (`object Provenance`)
+- PC: `Linc/DESKTOP/Linc.Desktop/Provenance.cs` (`static class Provenance`)
+
+| Constant | Value |
+|---|---|
+| Product | `Linc` |
+| Author | `deloweProjects` |
+| Source | `https://github.com/deloweProjects/Linc` |
+| Copyright | `© 2026 deloweProjects` |
+| Statement | `Linc by deloweProjects — https://github.com/deloweProjects/Linc` |
+| Fingerprint | `93b660d11f6717cfe67f72a92881210977685b4954a673cadf67e2e11358f281` |
+
+**Where it shows.** The first log line of every run and the header of **Copy log** on both apps
+("Linc 1.0.0.17 by deloweProjects — https://github.com/deloweProjects/Linc (© 2026
+deloweProjects)"); an optional `author: "deloweProjects"` field in both `hello` messages of the
+handshake (PROTOCOL.md › Handshake; older peers ignore it); the Windows exe's file properties
+(Company, Authors, Copyright in `Linc.Desktop.csproj`) and the installer's publisher; the Android
+manifest (`<meta-data android:name="app.linc.author" android:value="deloweProjects"/>`) and
+`BuildConfig.AUTHOR`.
+
+**What it is not.** It is not hidden, encrypted or obfuscated, it phones nowhere, tracks nothing,
+checks nothing and switches nothing off. Changing the values changes nothing about how Linc works.
+It is a signature, like the copyright line in a book: a fork that keeps it credits the author, and
+one that strips it has visibly removed it.
+
+**How to verify the fingerprint.** It is the SHA-256 of the UTF-8 statement, with no newline:
+
+```sh
+printf '%s' 'Linc by deloweProjects — https://github.com/deloweProjects/Linc' | sha256sum
+# 93b660d11f6717cfe67f72a92881210977685b4954a673cadf67e2e11358f281
+```
+
+```powershell
+# PowerShell 7
+[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('Linc by deloweProjects — https://github.com/deloweProjects/Linc'))).ToLower()
+```
+
+The phone's unit test `ProvenanceTest` checks the same thing, and that `BuildConfig.AUTHOR`
+matches. To see it in a build: open Logs and look at the first line, check the exe's Properties ›
+Details, or run `aapt dump xmltree <apk> AndroidManifest.xml | grep -A1 app.linc.author`.
+
+Keep the two Provenance files identical, and don't change the statement: the fingerprint is only
+useful if it stays the same.

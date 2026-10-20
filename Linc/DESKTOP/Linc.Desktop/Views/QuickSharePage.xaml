@@ -6,8 +6,8 @@
     xmlns:vm="using:Linc.Desktop.ViewModels"
     xmlns:views="using:Linc.Desktop.Views">
 
-    <ScrollViewer>
-        <StackPanel Padding="32" Spacing="16" MaxWidth="980" HorizontalAlignment="Stretch">
+    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
 
             <StackPanel Spacing="4">
                 <TextBlock Text="Share" Style="{StaticResource HeadlineText}" />

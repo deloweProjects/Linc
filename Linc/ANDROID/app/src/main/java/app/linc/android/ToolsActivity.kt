@@ -5,7 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import app.linc.android.ui.RemoteScreen
+import app.linc.android.ui.ToolsScreen
 import app.linc.android.ui.theme.LincTheme
 
 /**
@@ -18,7 +18,8 @@ class ToolsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             LincTheme {
-                RemoteScreen(
+                ToolsScreen(
+                    onSettings = null,
                     onBack = { finish() },
                     onMirror = { startActivity(Intent(this, MirrorActivity::class.java)) },
                 )

@@ -14,16 +14,28 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,10 +46,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import app.linc.android.service.ClipboardBridge
@@ -48,10 +65,13 @@ import app.linc.android.ui.HomeScreen
 import app.linc.android.ui.LincSymbols
 import app.linc.android.ui.LogsScreen
 import app.linc.android.ui.OnboardingScreen
-import app.linc.android.ui.RemoteScreen
+import app.linc.android.ui.ToolPage
+import app.linc.android.ui.ToolsNav
+import app.linc.android.ui.ToolsScreen
 import app.linc.android.ui.SettingsScreen
 import app.linc.android.ui.ShareScreen
 import app.linc.android.ui.UpdateRequiredScreen
+import app.linc.android.ui.theme.FloatingNav
 import app.linc.android.ui.theme.LincTheme
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -104,7 +124,7 @@ class MainActivity : ComponentActivity() {
 /** The four destinations (1.0.0.11, D-082). Settings is the gear in every top bar, not a tab. */
 private enum class Tab(val label: String, val icon: ImageVector) {
     Home("Home", LincSymbols.Home),
-    Remote("Tools", LincSymbols.Remote),
+    Remote("Control", LincSymbols.Remote),
     Clipboard("Clipboard", LincSymbols.Clipboard),
     Share("Share", LincSymbols.Share),
 }
@@ -138,6 +158,7 @@ fun LincApp() {
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var stack by rememberSaveable { mutableStateOf(listOf<String>()) }
     var backProgress by remember { mutableFloatStateOf(0f) }
+    val floatingNav by FloatingNav.flow(context).collectAsState()
     fun push(p: Pushed) { stack = stack + p.name }
     fun pop() { stack = stack.dropLast(1) }
     val openMirror = { context.startActivity(Intent(context, MirrorActivity::class.java)) }
@@ -193,14 +214,18 @@ fun LincApp() {
                 else -> Scaffold(
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     bottomBar = {
-                        NavigationBar {
-                            Tab.entries.forEach { t ->
-                                NavigationBarItem(
-                                    selected = tab == t,
-                                    onClick = { tab = t },
-                                    icon = { Icon(t.icon, contentDescription = null) },
-                                    label = { Text(t.label) },
-                                )
+                        if (floatingNav == true) {
+                            FloatingTabBar(selected = tab, onSelect = { tab = it })
+                        } else {
+                            NavigationBar {
+                                Tab.entries.forEach { t ->
+                                    NavigationBarItem(
+                                        selected = tab == t,
+                                        onClick = { tab = t },
+                                        icon = { Icon(t.icon, contentDescription = null) },
+                                        label = { Text(t.label) },
+                                    )
+                                }
                             }
                         }
                     },
@@ -217,21 +242,94 @@ fun LincApp() {
                                 onSettings = settings,
                                 onNavigate = { d ->
                                     tab = when (d) {
-                                        HomeDestination.Remote -> Tab.Remote
                                         HomeDestination.Share -> Tab.Share
                                         HomeDestination.Clipboard -> Tab.Clipboard
+                                        else -> {
+                                            ToolsNav.open(when (d) {
+                                                HomeDestination.Sound -> ToolPage.Sound
+                                                HomeDestination.Pc -> ToolPage.Pc
+                                                HomeDestination.Files -> ToolPage.Files
+                                                HomeDestination.Sync -> ToolPage.Sync
+                                                HomeDestination.Terminal -> ToolPage.Terminal
+                                                else -> ToolPage.Remote
+                                            })
+                                            Tab.Remote
+                                        }
                                     }
                                 },
                                 onMirror = openMirror,
                                 onSetUp = rerunSetup,
                             )
-                            Tab.Remote -> RemoteScreen(onSettings = settings, onMirror = openMirror)
+                            Tab.Remote -> ToolsScreen(onSettings = settings, onMirror = openMirror)
                             Tab.Clipboard -> ClipboardScreen(onSettings = settings)
                             Tab.Share -> ShareScreen(onSettings = settings)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The floating tab bar (Settings › Appearance › Floating navigation bar): a pill above the gesture
+ * bar, like the PC's floating dock. The open tab shows its icon and name; the others show the icon,
+ * with the name as its content description (TalkBack and the uishots script find tabs by it).
+ * It sits in the Scaffold's bottom slot, so pages are padded above it and nothing hides under it.
+ */
+@Composable
+private fun FloatingTabBar(selected: Tab, onSelect: (Tab) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(32.dp),
+            color = colors.surfaceContainer,
+            contentColor = colors.onSurfaceVariant,
+            shadowElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                Modifier.selectableGroup().padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Tab.entries.forEach { t -> FloatingTabItem(t, selected == t) { onSelect(t) } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.FloatingTabItem(tab: Tab, selected: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val tint = if (selected) colors.onSecondaryContainer else colors.onSurfaceVariant
+    Row(
+        Modifier
+            .then(if (selected) Modifier.widthIn(max = 200.dp) else Modifier.weight(1f))
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(if (selected) colors.secondaryContainer else Color.Transparent)
+            .selectable(selected = selected, onClick = onClick, role = Role.Tab)
+            .padding(horizontal = if (selected) 18.dp else 0.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(tab.icon, contentDescription = if (selected) null else tab.label, tint = tint)
+        if (selected) {
+            Text(
+                tab.label,
+                style = MaterialTheme.typography.labelLarge,
+                color = tint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 8.dp),
+            )
         }
     }
 }

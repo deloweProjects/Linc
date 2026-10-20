@@ -134,6 +134,14 @@ public sealed class MirrorService(ILogService log) : IMirrorService
         {
             startInfo.ArgumentList.Add(arg);
         }
+        // The phone keeps its own sound while the PC plays it too (scrcpy --audio-dup, Android 13+;
+        // older phones just mirror without sound). The owner: "it plays on pc with no hearable
+        // delay but stops play on phone". Outside BuildScrcpyArgs so the harness's byte-identity
+        // check of the saved settings stays as it was.
+        if (settings.AudioEnabled && string.IsNullOrWhiteSpace(settings.AudioSource))
+        {
+            startInfo.ArgumentList.Add("--audio-dup");
+        }
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.Exited += (_, _) => OnProcessExited(process);

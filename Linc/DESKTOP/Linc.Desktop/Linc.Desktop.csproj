@@ -31,13 +31,17 @@
     -->
     <!-- From 1.0.0.2 (display name 1.0.0-beta.2): numeric four-part versions, the same on both
          apps, because the update check ignores anything after a "-" (M20 A2). -->
-    <Version>1.0.0.16</Version>
-    <AssemblyVersion>1.0.0.16</AssemblyVersion>
-    <FileVersion>1.0.0.16</FileVersion>
-    <InformationalVersion>1.0.0.16</InformationalVersion>
+    <Version>1.0.0.17</Version>
+    <AssemblyVersion>1.0.0.17</AssemblyVersion>
+    <FileVersion>1.0.0.17</FileVersion>
+    <InformationalVersion>1.0.0.17</InformationalVersion>
     <Product>Linc</Product>
     <AssemblyTitle>Linc</AssemblyTitle>
-    <Company>Linc</Company>
+    <!-- Authorship, stated openly; the same values as Provenance.cs and NOTICE. release.ps1
+         only rewrites Version/AssemblyVersion/FileVersion/InformationalVersion. -->
+    <Company>deloweProjects</Company>
+    <Authors>deloweProjects</Authors>
+    <Copyright>© 2026 deloweProjects</Copyright>
     <Description>Linc — Android companion for Windows</Description>
   </PropertyGroup>
 

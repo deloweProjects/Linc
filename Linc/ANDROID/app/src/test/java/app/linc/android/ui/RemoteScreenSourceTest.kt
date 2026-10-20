@@ -53,10 +53,10 @@ class RemoteScreenSourceTest {
 
     @Test
     fun `toolbar items are disabled by their own gate, never removed`() {
-        requireExact("keyboard", "ToolbarItem(LincSymbols.Keyboard, \"Keyboard\", inputReady)")
-        requireExact("media", "ToolbarItem(LincSymbols.MusicNote, \"Media\", mediaReady)")
-        requireExact("present", "ToolbarItem(LincSymbols.Slideshow, \"Present\", inputReady)")
-        requireExact("power", "ToolbarItem(LincSymbols.PowerOff, \"Power\", controlsReady)")
+        requireExact("keyboard", "ActionButton(LincSymbols.Keyboard, \"Keyboard\", inputReady)")
+        requireExact("media", "ActionButton(LincSymbols.MusicNote, \"Media\", mediaReady)")
+        requireExact("present", "ActionButton(LincSymbols.Slideshow, \"Slides\", inputReady)")
+        requireExact("power", "ActionButton(LincSymbols.PowerOff, \"Power\", controlsReady)")
     }
 
     @Test

@@ -1,0 +1,37 @@
+# Finishes a published release by hand: packs its APK and installer into one 7z (for people low on
+# data), attaches it to the release, then posts the release to Telegram ("Upload release to
+# Telegram" sends the APK, installer, 7z and checksums). release.yml does the same two steps itself;
+# use this when a release run stopped after publishing (1.0.0.17: the run could not open its pull
+# request to main, so it stopped before the 7z and the Telegram post).
+name: Pack release and post it
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v1.0.0.17"
+        required: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: One 7z with the phone app and the PC installer
+        run: |
+          set -e
+          mkdir -p pack
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p '*.apk' -p 'Linc-Setup-*.exe' -D pack
+          ls -la pack
+          archive="Linc-${TAG#v}-phone-and-PC.7z"
+          7z a -t7z -m0=lzma2 -mx=9 -mfb=273 -md=256m -ms=on -mmt=2 "$archive" ./pack/*
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "$archive" --clobber
+
+      - name: Post the release to Telegram
+        run: gh workflow run telegram-upload.yml -R "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"

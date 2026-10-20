@@ -194,20 +194,9 @@
             </tb:TaskbarIcon.ContextFlyout>
         </tb:TaskbarIcon>
 
-        <!-- Global error banner, visible regardless of which page is open -->
-        <Border
-            Grid.Row="1"
-            Style="{StaticResource ExpressiveCard}"
-            Background="{ThemeResource ErrorContainerBrush}"
-            Margin="16,16,16,0"
-            Padding="16"
-            Visibility="{x:Bind Shell.HasError, Mode=OneWay}">
-            <TextBlock
-                Text="{x:Bind Shell.ErrorMessage, Mode=OneWay}"
-                Foreground="{ThemeResource OnErrorContainerBrush}"
-                FontSize="15"
-                TextWrapping="Wrap" />
-        </Border>
+        <!-- There is no full-width error banner any more (the owner, twice: "remove that red bar").
+             Link messages (lost, connecting, can't reach the companion app) are Shell.LinkNotice,
+             shown as one quiet line inside Home's phone card and the Device page's header. -->
 
         <!-- M17b B4: an OPTIONAL update. A dismissible card, same slot as the error banner so it
              shows regardless of the open page. Visibility binds to a BOOL, never to a string. -->
@@ -235,11 +224,19 @@
         <NavigationView
             Grid.Row="2"
             x:Name="Nav"
-            PaneDisplayMode="Left"
+            PaneDisplayMode="Auto"
+            ExpandedModeThresholdWidth="1000"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="True"
             SelectionChanged="OnNavSelectionChanged"
             Loaded="OnNavLoaded">
+            <!-- The window's backdrop (Mica + the phone's blurred wallpaper) shows through the
+                 pages. The side rail itself is frosted glass in the theme's colour, from the
+                 app-wide NavigationView*PaneBackground brushes in MaterialExpressive.xaml. -->
+            <NavigationView.Resources>
+                <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+                <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Home" Tag="Home">
                     <NavigationViewItem.Icon>
@@ -285,9 +282,39 @@
             <Frame x:Name="ContentFrame" />
         </NavigationView>
 
+        <!-- Add a phone: over the pages only (the title bar and the floating bar stay usable), on
+             the app's own backdrop — MainWindow hides the page frame while it is open. -->
         <views:OnboardingView
-            Grid.RowSpan="3"
+            Grid.Row="2"
             Visibility="{x:Bind Shell.IsOnboarding, Mode=OneWay}" />
+
+        <!-- The floating bar (Settings › Appearance › Navigation): the pages as icons in a glass
+             bar at the bottom; hovering one names it, the open page shows its name. Built from
+             Nav's own items in code, so the two can never list different pages. -->
+        <Border
+            x:Name="Dock"
+            Grid.Row="2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Margin="16,0,16,8"
+            Padding="6"
+            CornerRadius="28"
+            Background="{ThemeResource FrostedSurfaceBrush}"
+            BorderBrush="{ThemeResource OutlineVariantBrush}"
+            BorderThickness="1"
+            Translation="0,0,32"
+            Visibility="Collapsed">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+            <ScrollViewer
+                HorizontalScrollMode="Auto"
+                HorizontalScrollBarVisibility="Hidden"
+                VerticalScrollMode="Disabled"
+                VerticalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="DockItems" Orientation="Horizontal" Spacing="4" AutomationProperties.Name="Pages" />
+            </ScrollViewer>
+        </Border>
 
         <!-- M17b B4: a FORCED update. This blocks the app's FUNCTION, not the process — the title
              bar, the close button and the tray menu are all still live, so the user is never

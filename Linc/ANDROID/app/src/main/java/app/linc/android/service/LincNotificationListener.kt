@@ -41,6 +41,8 @@ class LincNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         instance = this
+        // Access just arrived (or Android re-bound us): the media bridge can start watching now.
+        MediaBridge.onAccessGranted()
     }
 
     override fun onListenerDisconnected() {

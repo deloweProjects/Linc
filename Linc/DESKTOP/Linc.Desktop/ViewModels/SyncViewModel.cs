@@ -61,6 +61,65 @@ public sealed partial class CallVm(CallEntry entry, IConnectionManager connectio
     private static string Cap(string s) => s.Length == 0 ? s : char.ToUpper(s[0]) + s[1..];
 }
 
+/// <summary>One folder pair card on the Sync page: a PC folder and a phone folder kept the same.</summary>
+public sealed partial class FolderPairVm(FolderPair pair, SyncViewModel owner) : ObservableObject
+{
+    private FolderPair _pair = pair;
+
+    public FolderPair Pair
+    {
+        get => _pair;
+        set
+        {
+            _pair = value;
+            OnPropertyChanged(string.Empty); // every shown field comes from the pair
+        }
+    }
+
+    public string Name => _pair.Name;
+    public string PcPath => _pair.PcPath;
+    public string PhonePath => _pair.PhonePath;
+    public string Direction => _pair.Direction;
+
+    // The end of a path says which folder it is; the full path is the tooltip.
+    public string PcShort => Short(_pair.PcPath, '\\');
+    public string PhoneShort => Short(_pair.PhonePath, '/');
+
+    private static string Short(string path, char sep)
+    {
+        var parts = path.TrimEnd('\\', '/').Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length <= 3 ? path : "…" + sep + string.Join(sep, parts[^2..]);
+    }
+
+    /// <summary>Between the two folders: ⇄ both ways, → PC to phone, ← phone to PC.</summary>
+    public string ArrowGlyph => _pair.Direction switch
+    {
+        FolderPair.ToPhone => "\uE72A",
+        FolderPair.ToPc => "\uE72B",
+        _ => "\uE8AB",
+    };
+
+    public string DirectionText => _pair.Direction switch
+    {
+        FolderPair.ToPhone => "PC → phone · the phone gets a copy",
+        FolderPair.ToPc => "Phone → PC · the PC gets a copy",
+        _ => "Both ways · the newer copy wins",
+    };
+
+    public double CardOpacity => _pair.Enabled ? 1.0 : 0.55;
+
+    public bool Enabled
+    {
+        get => _pair.Enabled;
+        set
+        {
+            if (value == _pair.Enabled) return;
+            Pair = _pair with { Enabled = value };
+            owner.SavePairs();
+        }
+    }
+}
+
 /// <summary>A conversation (all messages with one address), newest first in the list.</summary>
 public sealed partial class ConversationVm(string address) : ObservableObject
 {
@@ -111,9 +170,8 @@ public partial class SyncViewModel : ObservableObject
         LaneMessage = "";
         DialNumber = "";
         IncomingText = "";
-        FolderPcPath = registry.FolderSyncPcPath ?? "";
-        FolderPhonePath = registry.FolderSyncPhonePath;
         SyncStatus = engine.StatusText;
+        LoadPairs();
 
         // Assigning the properties runs their change-handlers, which persist the same
         // value back (harmless) and no-op PushConfig while disconnected.
@@ -123,6 +181,8 @@ public partial class SyncViewModel : ObservableObject
         CallsOn = registry.SyncLane("calls");
 
         _engine.StatusChanged += () => _dispatcher.TryEnqueue(() => SyncStatus = _engine.StatusText);
+        // v30: the phone's Sync page can change lanes and folders too; show what it set.
+        _registry.SyncSetupChanged += () => _dispatcher.TryEnqueue(OnSyncSetupChanged);
 
         _supervisor.StateChanged += () => _dispatcher.TryEnqueue(() =>
         {
@@ -271,36 +331,75 @@ public partial class SyncViewModel : ObservableObject
     public bool ShowPhotosInfo => PhotosOn;
     public bool ShowSyncBar => FoldersOn || PhotosOn;
 
-    public string PhotosInfo => $"New camera photos land in {PhotosDestination} (pull-only). Needs All-files access on the phone.";
+    public string PhotosInfo => $"New camera photos copy to {PhotosDestination}. Nothing goes back to the phone. Needs All-files access on the phone.";
 
-    /// <summary>The PC folder synced by the Folders lane; empty until the user picks one.</summary>
-    [ObservableProperty] public partial string FolderPcPath { get; set; }
-
-    /// <summary>The phone path synced by the Folders lane (default /sdcard/Download).</summary>
-    [ObservableProperty] public partial string FolderPhonePath { get; set; }
-
-    /// <summary>Last reconcile result from the engine, shown under the lane toggles.</summary>
+    /// <summary>Last reconcile result from the engine, shown under the folder pairs.</summary>
     [ObservableProperty] public partial string SyncStatus { get; set; }
 
     /// <summary>Where the Photos lane drops new camera shots (fixed, pull-only).</summary>
     public string PhotosDestination => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Linc", "Photos");
 
-    /// <summary>Called by the page's folder picker (UI concern stays in code-behind).</summary>
-    public void SetFolderPcPath(string path)
+    /// <summary>The Folders lane's pairs: each a PC folder and a phone folder kept the same.</summary>
+    public ObservableCollection<FolderPairVm> Pairs { get; } = [];
+
+    public bool HasNoPairs => Pairs.Count == 0;
+
+    private bool _saving;
+
+    private void LoadPairs()
     {
-        FolderPcPath = path;
-        SaveFolderPaths();
+        Pairs.Clear();
+        foreach (var pair in _registry.FolderPairs)
+        {
+            Pairs.Add(new FolderPairVm(pair, this));
+        }
+        OnPropertyChanged(nameof(HasNoPairs));
     }
 
-    partial void OnFolderPhonePathChanged(string value) => SaveFolderPaths();
-
-    private void SaveFolderPaths()
+    private void OnSyncSetupChanged()
     {
-        _registry.SaveFolderSyncPaths(
-            string.IsNullOrWhiteSpace(FolderPcPath) ? null : FolderPcPath,
-            string.IsNullOrWhiteSpace(FolderPhonePath) ? "/sdcard/Download" : FolderPhonePath);
-        _engine.Reconfigure();
+        if (_saving) return; // our own save; the list already shows it
+        FoldersOn = _registry.SyncLane("folders");
+        PhotosOn = _registry.SyncLane("photos");
+        MessagesOn = _registry.SyncLane("messages");
+        CallsOn = _registry.SyncLane("calls");
+        if (!_registry.FolderPairs.SequenceEqual(Pairs.Select(p => p.Pair)))
+        {
+            LoadPairs();
+        }
+    }
+
+    internal void SavePairs()
+    {
+        _saving = true;
+        try { _registry.SaveFolderPairs(Pairs.Select(p => p.Pair).ToList()); }
+        finally { _saving = false; }
+        OnPropertyChanged(nameof(HasNoPairs));
+    }
+
+    /// <summary>From the page's add/edit dialog: a new pair, or <paramref name="existing"/> changed.</summary>
+    public void SavePair(FolderPairVm? existing, string name, string pcPath, string phonePath, string direction)
+    {
+        name = string.IsNullOrWhiteSpace(name) ? FolderPair.NameFor(pcPath) : name.Trim();
+        phonePath = phonePath.Trim();
+        if (!phonePath.StartsWith('/')) phonePath = "/sdcard/" + phonePath;
+        direction = FolderPair.NormaliseDirection(direction);
+        if (existing is null)
+        {
+            Pairs.Add(new FolderPairVm(new FolderPair(FolderPair.NewId(), name, pcPath.Trim(), phonePath, direction), this));
+        }
+        else
+        {
+            existing.Pair = existing.Pair with { Name = name, PcPath = pcPath.Trim(), PhonePath = phonePath, Direction = direction };
+        }
+        SavePairs();
+    }
+
+    public void RemovePair(FolderPairVm pair)
+    {
+        Pairs.Remove(pair);
+        SavePairs();
     }
 
     [RelayCommand]

@@ -6,8 +6,9 @@
     xmlns:vm="using:Linc.Desktop.ViewModels"
     xmlns:views="using:Linc.Desktop.Views">
 
-    <ScrollViewer Padding="32">
-        <StackPanel Spacing="16" MaxWidth="720" HorizontalAlignment="Left">
+    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+        <!-- The page's centred column (PageLayout.Adaptive): the cards run its full width. -->
+        <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
             <TextBlock Text="Settings" Style="{StaticResource HeadlineText}" />
 
             <TextBlock
@@ -86,12 +87,19 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock
-                            Text="Save notifications on this PC so you can see them after they are dismissed elsewhere."
-                            Style="{StaticResource BodyText}" />
+                        <!-- The switch's own label always shows; only the explanation follows
+                             Settings › Show explanations (it used to be the label, so hiding
+                             explanations left a switch with no name). -->
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Keep notification history" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True"
+                                Text="Save notifications on this PC so you can see them after they are dismissed elsewhere."
+                                Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
                         <ToggleSwitch
                             Grid.Column="1"
                             OnContent="On" OffContent="Off"
+                            AutomationProperties.Name="Keep notification history"
                             IsOn="{x:Bind ViewModel.NotificationHistoryEnabled, Mode=TwoWay}" />
                     </Grid>
 
@@ -180,6 +188,175 @@
             <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
                 <StackPanel Spacing="12">
                     <TextBlock Text="Appearance" Style="{StaticResource TitleText}" />
+                    <StackPanel Spacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Navigation" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="Where the pages live: icons in a bar along the bottom (hover one to see its name), or down the left with their names." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <RadioButton GroupName="NavStyle" Content="Floating bar" IsChecked="{x:Bind ViewModel.FloatingNav, Mode=TwoWay}" />
+                            <RadioButton GroupName="NavStyle" Content="Side rail" IsChecked="{x:Bind ViewModel.SideRailNav, Mode=TwoWay}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Spacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Font" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="The typeface across Linc. Default is Windows&apos; own Segoe UI." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <!-- AppFonts.Keep: these previews stay in their own typefaces whatever the app uses. -->
+                        <RadioButtons MaxColumns="3" SelectedIndex="{x:Bind ViewModel.AppFontIndex, Mode=TwoWay}"
+                                      AutomationProperties.Name="Font" views:AppFonts.Keep="True">
+                            <RadioButton AutomationProperties.Name="Default font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="Segoe UI Variable Text" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Default" FontFamily="Segoe UI Variable Text" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Inter font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/Inter.ttf#Inter" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Inter" FontFamily="ms-appx:///Assets/Fonts/Inter.ttf#Inter" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Plus Jakarta Sans font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/PlusJakartaSans.ttf#Plus Jakarta Sans" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Plus Jakarta Sans" FontFamily="ms-appx:///Assets/Fonts/PlusJakartaSans.ttf#Plus Jakarta Sans" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Manrope font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/Manrope.ttf#Manrope" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Manrope" FontFamily="ms-appx:///Assets/Fonts/Manrope.ttf#Manrope" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Outfit font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Outfit" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                        </RadioButtons>
+                    </StackPanel>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Wallpaper as background" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="Your phone&apos;s wallpaper, blurred, behind everything. Off: the plain background, in your phone&apos;s colours, with solid cards." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.WallpaperBackdrop, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Clock on Home" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="The time and date on your phone&apos;s wallpaper, like its lock screen." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.HomeClock, Mode=TwoWay}" />
+                    </Grid>
+                    <StackPanel Spacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Clock style" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="How the clock on Home looks." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <RadioButtons MaxColumns="3" SelectedIndex="{x:Bind ViewModel.ClockStyleIndex, Mode=TwoWay}"
+                                      AutomationProperties.Name="Clock style">
+                            <RadioButton AutomationProperties.Name="Classic clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="Tuesday, 20 October" FontSize="7" FontWeight="Medium" Foreground="White" Opacity="0.92" HorizontalAlignment="Center" />
+                                            <TextBlock Text="9:41" FontSize="32" FontWeight="Light" CharacterSpacing="-40" Foreground="White" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Classic" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Bold clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="TUESDAY, 20 OCTOBER" FontSize="6" FontWeight="SemiBold" CharacterSpacing="160" Foreground="White" Opacity="0.92" HorizontalAlignment="Center" />
+                                            <TextBlock Text="9:41" FontSize="30" FontWeight="Bold" CharacterSpacing="-60" Foreground="White" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Bold" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Stacked clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <TextBlock FontSize="26" FontWeight="Medium" CharacterSpacing="-20" Foreground="White"
+                                                   TextAlignment="Center" LineStackingStrategy="BlockLineHeight" LineHeight="24"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Run Text="09" /><LineBreak /><Run Text="41" />
+                                        </TextBlock>
+                                    </Border>
+                                    <TextBlock Text="Stacked" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Serif clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="Tuesday, 20 October" FontSize="8" FontFamily="ms-appx:///Assets/Fonts/DMSerifDisplay.ttf#DM Serif Display" Foreground="White" Opacity="0.92" HorizontalAlignment="Center" />
+                                            <TextBlock Text="9:41" FontSize="32" FontFamily="ms-appx:///Assets/Fonts/DMSerifDisplay.ttf#DM Serif Display" CharacterSpacing="-10" Foreground="White" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Serif" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Minimal clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="1">
+                                            <TextBlock Text="9:41" FontSize="17" FontWeight="SemiLight" Foreground="White" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Tuesday, 20 October 2026" FontSize="8" Foreground="White" Opacity="0.85" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Minimal" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                        </RadioButtons>
+                    </StackPanel>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -281,7 +458,7 @@
                 Visibility="{x:Bind ViewModel.HasKnownDevices, Mode=OneWay}">
                 <StackPanel Spacing="12">
                     <TextBlock Text="Devices" Style="{StaticResource TitleText}" />
-                    <TextBlock
+                    <TextBlock views:Explain.IsHelp="True"
                         Style="{StaticResource BodyText}"
                         Text="Every phone paired with this PC. Open switches to it (and re-opens a closed tab); Remove unpairs it and deletes its saved copy — the same as Remove completely on its tab." />
                     <!-- M15c A2: the limit, stated where a phone gets added rather than after. -->
@@ -419,20 +596,61 @@
                 </StackPanel>
             </Border>
 
-            <!-- About (links shared with the phone's Settings → About: service/ProjectLinks.kt) -->
+            <!-- About (links shared with the phone's Settings → About: service/ProjectLinks.kt;
+                 authorship and third-party credits as in the repository's NOTICE). -->
             <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
-                <StackPanel Spacing="8">
+                <StackPanel Spacing="12">
                     <TextBlock Text="About" Style="{StaticResource TitleText}" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="{x:Bind ViewModel.AppVersionText, Mode=OneWay}" />
-                    <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap">
-                        <Run Text="Made by delowe (" /><Hyperlink NavigateUri="https://github.com/deloweProjects">@delow3</Hyperlink><Run Text=")." />
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Image
+                            Source="ms-appx:///Assets/linc.png"
+                            Width="48" Height="48"
+                            VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Linc" Style="{StaticResource TitleText}" />
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                IsTextSelectionEnabled="True"
+                                Text="{x:Bind ViewModel.AppVersionText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Style="{StaticResource BodyText}">
+                        <Run Text="Made by " /><Hyperlink NavigateUri="https://github.com/deloweProjects/Linc">deloweProjects</Hyperlink><Run Text=" (delowe, @delow3)." />
                     </TextBlock>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Style="{StaticResource BodyText}">
+                        <Run Text="Free and open source under the " /><Hyperlink NavigateUri="https://github.com/deloweProjects/Linc/blob/main/LICENSE">MIT License</Hyperlink><Run Text=". " /><Run Text="{x:Bind ViewModel.CopyrightText}" /><Run Text="." />
+                    </TextBlock>
+
+                    <!-- Two columns, so the links wrap instead of running off a narrow window. -->
+                    <Grid ColumnSpacing="8" RowSpacing="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <HyperlinkButton Content="Telegram channel" NavigateUri="https://t.me/LincApp" ToolTipService.ToolTip="News, new versions and help — t.me/LincApp" />
-                        <HyperlinkButton Content="Source code on GitHub" NavigateUri="https://github.com/deloweProjects/Linc" />
-                        <HyperlinkButton Content="Report a problem" NavigateUri="https://github.com/deloweProjects/Linc/issues" />
+                        <HyperlinkButton Grid.Column="1" Content="Source code on GitHub" NavigateUri="https://github.com/deloweProjects/Linc" />
+                        <HyperlinkButton Grid.Row="1" Content="Report a problem" NavigateUri="https://github.com/deloweProjects/Linc/issues" />
+                        <HyperlinkButton Grid.Row="1" Grid.Column="1" Content="Licences and notices" Command="{x:Bind ViewModel.OpenNoticesCommand}" ToolTipService.ToolTip="The licences of everything Linc ships with" />
+                    </Grid>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Built with" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="scrcpy (screen mirroring) — Apache License 2.0, © Genymobile and Romain Vimont" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="Android Debug Bridge (adb) — Apache License 2.0, © The Android Open Source Project" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="FFmpeg, SDL2 and libusb (used by scrcpy) — LGPL-2.1, zlib and LGPL-2.1" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="Quick Share protocol definitions — Apache License 2.0, © Google LLC" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="DM Serif Display, Inter, Manrope, Outfit and Plus Jakarta Sans fonts — SIL Open Font License 1.1" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text=".NET 8, Windows App SDK (WinUI 3), CommunityToolkit.Mvvm, AdvancedSharpAdbClient, H.NotifyIcon, SQLite and others — each under its own licence" />
                     </StackPanel>
                 </StackPanel>
             </Border>
