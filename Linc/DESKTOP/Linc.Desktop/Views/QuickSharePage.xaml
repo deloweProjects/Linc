@@ -6,7 +6,7 @@
     xmlns:vm="using:Linc.Desktop.ViewModels"
     xmlns:views="using:Linc.Desktop.Views">
 
-    <ScrollViewer>
+    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
         <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
 
             <StackPanel Spacing="4">
