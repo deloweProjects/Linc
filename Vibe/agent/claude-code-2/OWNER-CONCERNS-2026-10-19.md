@@ -323,3 +323,16 @@ state sent and received.
 
 - Sync folder pairs (v30) + Mirror PC in the Your PC card: done, CI green at `ad283a1`, **not sent
   to Telegram** — the owner said wait.
+
+## 13. Next: the phone as Play everywhere's source (agreed 2026-10-20, after the SoundSeeder look)
+
+Owner: "That's brilliant … remember to hide extra settings n keep surface safe n usable don't break stuff."
+- "Whose sound: This phone" in Play everywhere = the PC takes the phone's sound like Mirror screen
+  (scrcpy audio, **without** --audio-dup so the phone's speaker goes quiet), then Play everywhere
+  plays it on every output — PC speakers, PC Bluetooth, and back on the phone over channel 6 —
+  all on the PC's clock. ~0.2 s from play to sound; everything in step.
+- From SoundSeeder, under Advanced only: per-speaker offset −400…+400 ms in 10 ms steps (saved per
+  device), a Re-sync button, Smooth/Tight (buffer). Main surface unchanged: on/off, whose sound,
+  speakers, volume, Align.
+- "Phone sound on PC" outside Play everywhere stays as is (PhoneSoundOnPc, --audio-dup, no delay).
+- Update Vibe/agent/opencode-docs/SOUND.md in the same commit. Don't break PC→phone, which works.
