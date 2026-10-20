@@ -40,6 +40,12 @@ public partial class MirrorViewModel : ObservableObject
             {
                 _ = _mirror.StopAsync();
             }
+            // "Fill this monitor" resizes the phone's display for a session; one cut short (Linc
+            // closed or crashed, cable pulled) is put back as soon as the phone is here again.
+            if (_supervisor.State == LinkState.Connected && _supervisor.Device is { } connected)
+            {
+                _ = _mirror.RestoreLeftoverAsync(connected.Serial);
+            }
             OnPropertyChanged(nameof(CanMirror));
         });
 
@@ -79,7 +85,7 @@ public partial class MirrorViewModel : ObservableObject
 
     /// <summary>Selects the preset that matches the persisted MaxSize+BitRate exactly,
     /// or clears the selection when none matches (no "Custom" preset is invented — the
-    /// task says so explicitly).</summary>
+    /// task says so explicitly). Also refreshes the screen-shape and phone-sound choices.</summary>
     private void SyncSelectedPresetFromSettings()
     {
         var s = _registry.Mirror;
@@ -89,7 +95,75 @@ public partial class MirrorViewModel : ObservableObject
             _selectedPreset = match;
             OnPropertyChanged(nameof(SelectedPreset));
         }
+        var shape = ShapeToIndex(s.ScreenShape);
+        if (shape != _screenShapeIndex)
+        {
+            _screenShapeIndex = shape;
+            OnPropertyChanged(nameof(ScreenShapeIndex));
+        }
+        OnPropertyChanged(nameof(FillsMonitor));
+        if (s.MutePhone != _mutePhone)
+        {
+            _mutePhone = s.MutePhone;
+            OnPropertyChanged(nameof(MutePhone));
+        }
+        OnPropertyChanged(nameof(CanMutePhone));
     }
+
+    // ---- 1.0.0.18: screen shape and phone sound, on the card itself (saved as they change) ----
+
+    private static int ShapeToIndex(string? shape) => shape switch
+    {
+        MirrorSettings.ShapeMonitor => 1,
+        MirrorSettings.ShapeMonitorLandscape => 2,
+        _ => 0,
+    };
+
+    private int _screenShapeIndex;
+
+    /// <summary>0 = the phone's own shape, 1 = fill this monitor, 2 = fill this monitor turned
+    /// sideways. Bound to the ComboBox's SelectedIndex on the Device page.</summary>
+    public int ScreenShapeIndex
+    {
+        get => _screenShapeIndex;
+        set
+        {
+            if (value < 0 || value > 2 || !SetProperty(ref _screenShapeIndex, value))
+            {
+                return;
+            }
+            _registry.SaveMirror(_registry.Mirror with
+            {
+                ScreenShape = value switch
+                {
+                    1 => MirrorSettings.ShapeMonitor,
+                    2 => MirrorSettings.ShapeMonitorLandscape,
+                    _ => null,
+                },
+            });
+        }
+    }
+
+    public bool FillsMonitor => _registry.Mirror.FillsMonitor();
+
+    private bool _mutePhone;
+
+    /// <summary>The phone stays silent while its sound plays on this PC.</summary>
+    public bool MutePhone
+    {
+        get => _mutePhone;
+        set
+        {
+            if (SetProperty(ref _mutePhone, value))
+            {
+                _registry.SaveMirror(_registry.Mirror with { MutePhone = value });
+            }
+        }
+    }
+
+    /// <summary>Silencing the phone only means something when its sound plays here from the
+    /// default source ("mic" never plays on the phone; "output" already silences it).</summary>
+    public bool CanMutePhone => _registry.Mirror is { AudioEnabled: true } m && string.IsNullOrWhiteSpace(m.AudioSource);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]

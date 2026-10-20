@@ -275,6 +275,9 @@ public partial class MirrorSettingsViewModel : ObservableObject
             return;
         }
         ValidationMessage = null;
+        // The screen shape and phone-sound choices live on the card (MirrorViewModel) and save
+        // themselves; carry the current ones through so this Save never resets them.
+        var current = _registry.Mirror;
         var settings = new MirrorSettings(
             MaxSize: MaxSize,
             VideoBitRate: VideoBitRate,
@@ -285,7 +288,9 @@ public partial class MirrorSettingsViewModel : ObservableObject
             ShowTouches: ShowTouches,
             AudioEnabled: AudioEnabled,
             AudioBitRate: AudioBitRate,
-            AudioSource: AudioSource == AudioSourceDefault ? null : AudioSource);
+            AudioSource: AudioSource == AudioSourceDefault ? null : AudioSource,
+            MutePhone: current.MutePhone,
+            ScreenShape: current.ScreenShape);
         _saving = true;
         try
         {

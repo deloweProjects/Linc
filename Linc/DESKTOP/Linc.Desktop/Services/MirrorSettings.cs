@@ -28,8 +28,23 @@ public sealed record MirrorSettings(
     int AudioBitRate = 0,
     /// <summary><c>null</c> means "use the scrcpy default (output)" and omits
     /// <c>--audio-source</c>. Only <c>"output"</c> or <c>"mic"</c> are otherwise accepted.</summary>
-    string? AudioSource = null)
+    string? AudioSource = null,
+    /// <summary>1.0.0.18: the phone stays silent while its sound plays on this PC. <c>false</c>
+    /// keeps today's behaviour (scrcpy <c>--audio-dup</c>: both play). Only matters with
+    /// <see cref="AudioEnabled"/> on and the default <see cref="AudioSource"/>.</summary>
+    bool MutePhone = false,
+    /// <summary>1.0.0.18: <c>null</c> mirrors the phone's own screen shape (today's behaviour).
+    /// <see cref="ShapeMonitor"/> resizes the phone's display to this PC's monitor resolution
+    /// for the session and opens the mirror full screen, so landscape fills the monitor with no
+    /// black bars; <see cref="ShapeMonitorLandscape"/> also turns the phone sideways.</summary>
+    string? ScreenShape = null)
 {
+    public const string ShapeMonitor = "monitor";
+    public const string ShapeMonitorLandscape = "monitor-landscape";
+
+    /// <summary>A method, not a property, so it never lands in the saved settings JSON.</summary>
+    public bool FillsMonitor() => ScreenShape is ShapeMonitor or ShapeMonitorLandscape;
+
     public static readonly Regex BitRatePattern = new(@"^\d+[KM]$", RegexOptions.Compiled);
 
     /// <summary>
@@ -51,7 +66,9 @@ public sealed record MirrorSettings(
         ShowTouches: false,
         AudioEnabled: true,
         AudioBitRate: 0,
-        AudioSource: null);
+        AudioSource: null,
+        MutePhone: false,
+        ScreenShape: null);
 
     /// <summary>
     /// Pure validation of the user-editable numeric/string fields. Returns null when
@@ -62,7 +79,7 @@ public sealed record MirrorSettings(
     /// </summary>
     public static string? ValidateSettingsFields(
         int maxSize, string bitRate, int maxFps, string? crop,
-        string? audioSource = null, int audioBitRate = 0)
+        string? audioSource = null, int audioBitRate = 0, string? screenShape = null)
     {
         if (maxSize != 0 && (maxSize < 320 || maxSize > 4096))
         {
@@ -100,6 +117,10 @@ public sealed record MirrorSettings(
         if (audioBitRate != 0 && (audioBitRate < 32_000 || audioBitRate > 512_000))
         {
             return "Audio bit rate must be between 32,000 and 512,000 bits/s (or 0 to use the default).";
+        }
+        if (screenShape is not (null or ShapeMonitor or ShapeMonitorLandscape))
+        {
+            return "Screen shape must be the phone's own, or fill this monitor.";
         }
         return null;
     }

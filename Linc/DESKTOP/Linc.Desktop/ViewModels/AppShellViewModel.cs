@@ -230,6 +230,7 @@ public partial class AppShellViewModel : ObservableObject
             var log = App.Services.GetRequiredService<ILogService>();
             Task.Run(() => PcVoiceAccess.RestoreAllMics(log)).Wait(TimeSpan.FromSeconds(3));
             Task.Run(() => PcTabletMode.RestorePending(log)).Wait(TimeSpan.FromSeconds(3));
+            Task.Run(() => App.Services.GetRequiredService<IMirrorService>().Dispose()).Wait(TimeSpan.FromSeconds(8));
             Process.Start(new ProcessStartInfo(verifiedPath,
                 "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /NORESTART")
             { UseShellExecute = true });

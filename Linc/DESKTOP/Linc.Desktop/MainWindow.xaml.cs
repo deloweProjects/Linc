@@ -63,6 +63,8 @@ public sealed partial class MainWindow : Window
             Task.Run(() => PcVoiceAccess.RestoreAllMics(log)).Wait(TimeSpan.FromSeconds(3));
             // ...nor the display scaled up by Tablet mode (D-074).
             Task.Run(() => PcTabletMode.RestorePending(log)).Wait(TimeSpan.FromSeconds(3));
+            // ...nor the phone's screen resized by the mirror's Fill this monitor.
+            Task.Run(() => App.Services.GetRequiredService<IMirrorService>().Dispose()).Wait(TimeSpan.FromSeconds(8));
             TrayIcon.Dispose();
             Application.Current.Exit();
         });

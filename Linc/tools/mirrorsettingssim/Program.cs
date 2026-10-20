@@ -531,6 +531,88 @@ Console.WriteLine("\n[8/8] Checking DevicePage.xaml binds the audio toggle (sour
     }
 }
 
+// 9. 1.0.0.18: Silence the phone and Fill this monitor. Defaults add nothing (the byte-identity
+// rule); the new choices emit exactly their flags; the wm size maths and parsing hold.
+Console.WriteLine("\n[9/9] Checking Silence the phone / Fill this monitor...");
+{
+    void Check(bool ok, string pass, string fail)
+    {
+        Console.WriteLine(ok ? $"    PASS: {pass}" : $"    FAIL: {fail}");
+        if (!ok) failures.Add(fail);
+    }
+
+    var d = MirrorSettings.BalancedDefaults;
+    Check(!d.MutePhone && d.ScreenShape is null && !d.FillsMonitor(),
+        "BalancedDefaults: phone not silenced, the phone's own shape.",
+        "BalancedDefaults changed the new fields' defaults");
+
+    var muted = MirrorService.BuildScrcpyArgs("PIXEL7", d with { MutePhone = true });
+    Check(muted.SequenceEqual(MirrorService.BuildScrcpyArgs("PIXEL7", d)),
+        "MutePhone adds no scrcpy argument of its own (it only drops --audio-dup at launch).",
+        "MutePhone changed BuildScrcpyArgs");
+
+    foreach (var shape in new[] { MirrorSettings.ShapeMonitor, MirrorSettings.ShapeMonitorLandscape })
+    {
+        var fill = MirrorService.BuildScrcpyArgs("PIXEL7", d with { ScreenShape = shape });
+        var expected = new List<string> { "-s", "PIXEL7", "-b", "8M", "--window-title", "Linc", "--window-borderless", "--fullscreen", "--stay-awake" };
+        Check(fill.SequenceEqual(expected),
+            $"ScreenShape {shape}: full screen at native size: {string.Join(" ", fill)}",
+            $"ScreenShape {shape} args wrong: {string.Join(" ", fill)}");
+    }
+
+    Check(MirrorService.MonitorShapeFor(1080, 2400, 1920, 1080) == (1080, 1920),
+        "1080x2400 phone on a 1920x1080 monitor -> wm size 1080x1920.",
+        $"MonitorShapeFor 1920x1080 gave {MirrorService.MonitorShapeFor(1080, 2400, 1920, 1080)}");
+    Check(MirrorService.MonitorShapeFor(1080, 2400, 2560, 1440) == (1440, 2560),
+        "2560x1440 monitor -> wm size 1440x2560.",
+        $"MonitorShapeFor 2560x1440 gave {MirrorService.MonitorShapeFor(1080, 2400, 2560, 1440)}");
+    Check(MirrorService.MonitorShapeFor(1080, 2400, 3840, 2160) == (1440, 2560),
+        "4K monitor capped -> wm size 1440x2560.",
+        $"MonitorShapeFor 3840x2160 gave {MirrorService.MonitorShapeFor(1080, 2400, 3840, 2160)}");
+    Check(MirrorService.MonitorShapeFor(1080, 2400, 3440, 1440) == (1072, 2560),
+        "3440x1440 ultrawide capped, even numbers -> wm size 1072x2560.",
+        $"MonitorShapeFor 3440x1440 gave {MirrorService.MonitorShapeFor(1080, 2400, 3440, 1440)}");
+    Check(MirrorService.MonitorShapeFor(2560, 1600, 1920, 1080) == (1920, 1080),
+        "A landscape-natural tablet keeps landscape -> wm size 1920x1080.",
+        $"MonitorShapeFor tablet gave {MirrorService.MonitorShapeFor(2560, 1600, 1920, 1080)}");
+    Check(MirrorService.MonitorShapeFor(1080, 2400, 0, 0) == (0, 0),
+        "An unreadable monitor gives (0, 0): no resize.",
+        "MonitorShapeFor with no monitor did not give (0, 0)");
+
+    Check(MirrorService.ParseWmSize("Physical size: 1080x2400\n") == (1080, 2400, null),
+        "wm size parsed without an override.",
+        "ParseWmSize without override wrong");
+    Check(MirrorService.ParseWmSize("Physical size: 1080x2400\r\nOverride size: 1080x1920\r\n") == (1080, 2400, "1080x1920"),
+        "wm size parsed with an override (it is put back as it was).",
+        "ParseWmSize with override wrong");
+    Check(MirrorService.ParseWmSize("error: device offline") == (0, 0, null),
+        "adb errors parse as unreadable.",
+        "ParseWmSize accepted an error");
+
+    Check(MirrorSettings.ValidateSettingsFields(0, "8M", 0, null, null, 0, MirrorSettings.ShapeMonitorLandscape) is null
+          && MirrorSettings.ValidateSettingsFields(0, "8M", 0, null, null, 0, "stretch") is not null,
+        "ScreenShape validation accepts the known shapes and rejects others.",
+        "ScreenShape validation wrong");
+
+    var rtRoot = Path.Combine(Path.GetTempPath(), "Linc_mirrorsettingssim_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(rtRoot);
+    try
+    {
+        var reg = new DeviceRegistry(rtRoot);
+        reg.SavePairedDevice("TEST-SERIAL-M9", "Pixel 7");
+        var chosen = d with { MutePhone = true, ScreenShape = MirrorSettings.ShapeMonitor };
+        reg.SaveMirror(chosen);
+        var back = new DeviceRegistry(rtRoot).Mirror;
+        Check(back == chosen && !File.ReadAllText(Path.Combine(rtRoot, "settings.json")).Contains("FillsMonitor"),
+            "MutePhone and ScreenShape survive a save and reload (and nothing computed is saved).",
+            $"Round trip of the new fields failed: {back}");
+    }
+    finally
+    {
+        try { Directory.Delete(rtRoot, recursive: true); } catch { }
+    }
+}
+
 // Summary
 Console.WriteLine("\n=== SUMMARY ===");
 if (failures.Count == 0)

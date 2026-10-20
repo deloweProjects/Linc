@@ -510,6 +510,20 @@
                                 <TextBlock Text="{x:Bind Mirror.StatusText, Mode=OneWay}" Style="{StaticResource CaptionText}" />
                                 <TextBlock Text="{x:Bind Mirror.ErrorMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Foreground="{ThemeResource ErrorBrush}" Visibility="{x:Bind Mirror.HasError, Mode=OneWay}" />
 
+                                <!-- 1.0.0.18: screen shape and phone sound, on the card itself; they save as they change -->
+                                <ComboBox Header="Screen shape" HorizontalAlignment="Stretch" SelectedIndex="{x:Bind Mirror.ScreenShapeIndex, Mode=TwoWay}">
+                                    <x:String>The phone's own shape</x:String>
+                                    <x:String>Fill this monitor (no black bars)</x:String>
+                                    <x:String>Fill this monitor, phone turned sideways</x:String>
+                                </ComboBox>
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Text="Fill this monitor draws the phone's screen at this monitor's resolution and opens the mirror full screen, so landscape apps and videos fill it edge to edge. The phone's own size comes back when mirroring stops. Alt+F leaves full screen." />
+                                <ToggleSwitch Header="Silence the phone while mirroring" IsOn="{x:Bind Mirror.MutePhone, Mode=TwoWay}" IsEnabled="{x:Bind Mirror.CanMutePhone, Mode=OneWay}" />
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Text="On: the phone's sound plays only on this PC. Off: it plays on both. Needs Sound on this PC (below)." />
+                                <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Text="Screen shape and sound apply the next time mirroring starts." />
+
                                 <Expander Header="Mirror settings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                     <StackPanel Spacing="14" Padding="0,12,0,0">
                                         <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" Text="These apply the next time mirroring starts." />
@@ -535,7 +549,7 @@
                                             <ToggleSwitch Header="Sound on this PC" IsOn="{x:Bind MirrorSettings.AudioEnabled, Mode=TwoWay}" />
                                         </StackPanel>
                                         <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}"
-                                                   Text="With sound on, the phone's audio plays here while mirroring and the phone stays silent." />
+                                                   Text="With sound on, the phone's audio plays here while mirroring. To hear it only here, turn on Silence the phone while mirroring above." />
                                         <Grid ColumnSpacing="12" Visibility="{x:Bind MirrorSettings.AudioEnabled, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
