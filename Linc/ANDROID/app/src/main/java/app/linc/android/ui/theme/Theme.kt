@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import app.linc.android.service.Explanations
 import app.linc.android.ui.kit.LocalShowExplanations
@@ -52,10 +53,14 @@ fun LincTheme(
     val context = LocalContext.current
     val showExplanations by Explanations.flow(context).collectAsState(initial = Explanations.get(context))
     val wallpaper by WallpaperBackground.flow(context).collectAsState()
+    val font by AppFontSetting.flow(context).collectAsState()
     val scheme = lincColorScheme(darkTheme)
+    // Null (the Default font) leaves Material's stock typography exactly as it was.
+    val typography = remember(font) { lincTypography(font ?: AppFont.Default) }
     MaterialExpressiveTheme(
         colorScheme = if (wallpaper == true) scheme.frosted(darkTheme) else scheme,
         motionScheme = MotionScheme.expressive(),
+        typography = typography,
     ) {
         // See-through surfaces no longer match a scheme colour, so contentColorFor falls back to
         // LocalContentColor (black by default): say what text on them is.
