@@ -62,6 +62,15 @@ public static class PageLayout
         var max = GetMaxContentWidth(element);
         element.MaxWidth = max > 0 ? max : double.PositiveInfinity;
         element.HorizontalAlignment = HorizontalAlignment.Stretch;
+        // Inside a ScrollViewer the column is placed by what it ASKS for, not by the window: a
+        // page with little content (an empty Clipboard asked 847 px) was centred as 847 px wide,
+        // then stretched to its 1200 and ran off the right edge. So it asks for the whole view.
+        if (element.Parent is ScrollViewer scroller)
+        {
+            void Fit() { if (scroller.ViewportWidth > 0) element.Width = max > 0 ? Math.Min(max, scroller.ViewportWidth) : scroller.ViewportWidth; }
+            scroller.SizeChanged += (_, _) => Fit();
+            Fit();
+        }
     }
 
     private static void ApplyPadding(FrameworkElement element, double width)

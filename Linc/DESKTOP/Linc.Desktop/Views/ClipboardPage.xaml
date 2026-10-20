@@ -6,8 +6,8 @@
     xmlns:vm="using:Linc.Desktop.ViewModels"
     xmlns:views="using:Linc.Desktop.Views">
 
-    <ScrollViewer x:Name="Scroller" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel x:Name="Column" views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
+    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel views:PageLayout.Adaptive="True" Padding="32" Spacing="16">
 
             <!-- Search first; sending text to the phone sits behind its button (the owner). -->
             <Grid ColumnSpacing="8">
