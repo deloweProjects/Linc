@@ -20,6 +20,8 @@ android {
         // name; the update check compares these numbers, and a "-beta.N" suffix would be ignored.
         versionCode = 17
         versionName = "1.0.0.16"
+        // Authorship, stated openly (see Provenance.kt and NOTICE); informational only.
+        buildConfigField("String", "AUTHOR", "\"deloweProjects\"")
     }
 
     buildTypes {

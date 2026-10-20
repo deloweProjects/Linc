@@ -118,6 +118,11 @@
         android:theme="@style/Theme.Linc"
         android:supportsRtl="true">
 
+        <!-- Authorship, stated openly (Provenance.kt, NOTICE). Read by nothing; informational. -->
+        <meta-data
+            android:name="app.linc.author"
+            android:value="deloweProjects" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

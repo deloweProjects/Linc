@@ -280,6 +280,8 @@ public partial class App : Application
             {
                 // Toasts unavailable; the in-app notification center still works.
             }
+            // The first line of every run says what this is and who made it (Provenance.cs).
+            Services.GetRequiredService<ILogService>().Log(LogLevel.Info, Provenance.Banner(Provenance.Version));
             // M12g Part A3: a redirected data root must never be silent — a future session
             // debugging "my devices vanished" needs this line (same reasoning as D-057's guard).
             if (_parsedDataRoot is not null)

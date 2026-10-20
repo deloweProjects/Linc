@@ -173,6 +173,7 @@ class ConnectionWatch(private val context: Context) {
             val power = context.getSystemService(PowerManager::class.java)
             appendLine("Linc phone log — ${stamp.format(Date())}")
             appendLine("App: ${pkg?.versionName} (${pkg?.longVersionCode})")
+            appendLine("${app.linc.android.Provenance.banner(pkg?.versionName ?: "?")} (${app.linc.android.Provenance.COPYRIGHT})")
             appendLine("Phone: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Connection: ${CompanionStateHolder.state.value}")
             appendLine("Background connection setting: ${if (TransportStore.presenceEnabled(context)) "on" else "off"}")

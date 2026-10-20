@@ -339,6 +339,21 @@ public sealed partial class MainWindow : Window
         if (resources["SurfaceContainerBrush"] is SolidColorBrush card) card.Opacity = solid ? 1 : light ? 0.66 : 0.78;
         if (resources["SurfaceContainerHighBrush"] is SolidColorBrush high) high.Opacity = solid ? 1 : light ? 0.74 : 0.86;
         if (resources["FrostedSurfaceBrush"] is AcrylicBrush frost) frost.TintOpacity = solid ? 0.9 : light ? 0.42 : 0.55;
+        // Overlays (flyouts, menus, dialogs, the side rail): frosted glass in the theme's colour
+        // (ThemeSyncService retints it), a little denser over the plain look's solid cards.
+        double overlay = light ? (solid ? 0.72 : 0.6) : (solid ? 0.8 : 0.7);
+        foreach (var key in ThemeSyncService.OverlayBrushKeys)
+        {
+            switch (resources[key])
+            {
+                case AcrylicBrush acrylic:
+                    acrylic.TintOpacity = overlay;
+                    break;
+                case SolidColorBrush glaze:
+                    glaze.Opacity = overlay;
+                    break;
+            }
+        }
     }
 
     private sealed record WallpaperColours(

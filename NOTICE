@@ -1,0 +1,53 @@
+Linc
+Copyright © 2026 deloweProjects (delowe, @delow3)
+https://github.com/deloweProjects/Linc
+
+Linc — the Android companion app (Linc/ANDROID) and the Windows app (Linc/DESKTOP) — was created
+by deloweProjects and is released under the MIT License (see LICENSE). If you reuse or build on it,
+please keep this notice and the LICENSE file, and credit "Linc by deloweProjects" with a link to
+the repository above.
+
+Project fingerprint
+-------------------
+Both apps carry the same open authorship constants (app/linc/android/Provenance.kt and
+Linc.Desktop/Provenance.cs). The project fingerprint is the SHA-256 of the UTF-8 sentence
+"Linc by deloweProjects — https://github.com/deloweProjects/Linc":
+
+    93b660d11f6717cfe67f72a92881210977685b4954a673cadf67e2e11358f281
+
+Anyone can check it:
+
+    printf '%s' 'Linc by deloweProjects — https://github.com/deloweProjects/Linc' | sha256sum
+
+It is informational only. Nothing in Linc verifies it, enforces it or sends it anywhere, and Linc
+works the same without it. The apps show the author's name and this link in their own logs, and
+the handshake between the phone and the PC carries only the author's name.
+
+Third-party components
+----------------------
+Linc includes or builds on the following, each the property of its authors and used under its own
+licence:
+
+- scrcpy (Linc/SCRCPY) — Apache License 2.0, © Genymobile and Romain Vimont. Linc customizes only
+  the window presentation; see Linc/SCRCPY/NOTICE.md and Linc/SCRCPY/Default/LICENSE.
+- Android Debug Bridge (adb), shipped with the Windows app — Apache License 2.0, © The Android Open
+  Source Project.
+- FFmpeg, SDL2 and libusb (scrcpy's DLLs) — LGPL-2.1 / zlib / LGPL-2.1, unmodified and dynamically
+  linked.
+- Nearby Connections / Quick Share protocol definitions
+  (Linc/DESKTOP/Linc.Desktop/QuickShare/Proto) — Apache License 2.0, © Google LLC; see NOTICE.txt
+  in that folder.
+- Fonts, SIL Open Font License 1.1 (licence texts beside the fonts):
+  - Android (Linc/ANDROID/app/src/main/res/font; licences in app/src/main/assets/licenses):
+    DM Sans, Manrope, Outfit, Playfair Display.
+  - Windows (Linc/DESKTOP/Linc.Desktop/Assets/Fonts): DM Serif Display, Inter, Manrope, Outfit,
+    Plus Jakarta Sans.
+- Windows app runtime and libraries — .NET 8, Windows App SDK / WinUI 3, AdvancedSharpAdbClient,
+  CommunityToolkit.Mvvm, Microsoft.Data.Sqlite / SQLitePCLRaw / SQLite, H.NotifyIcon, Zeroconf,
+  Makaretu.Dns.Multicast, QRCoder, Vortice, Google.Protobuf and others: the full list with licences
+  is in Linc/installer/THIRD-PARTY-NOTICES.txt, which the installer ships.
+- Android libraries — AndroidX (Core, Lifecycle, Activity, Jetpack Compose, Material 3) and
+  kotlinx.serialization, Apache License 2.0.
+
+VB-CABLE (VB-Audio) is never bundled; Linc downloads VB-Audio's own installer only if the user
+chooses the phone-as-microphone feature and agrees.

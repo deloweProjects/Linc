@@ -108,9 +108,9 @@ public partial class SettingsViewModel : ObservableObject
         AdbPathText = adbServerHost.AdbPath ?? "Not found";
         ShellOutput = "";
         ShellCommand = "";
-        // M12 (B2.3): labelled so a beta tester can unambiguously report their version.
-        var appVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
-        AppVersionText = $"Linc {appVersion}";
+        // M12 (B2.3): labelled so a beta tester can unambiguously report their version. The
+        // full four-part version release.ps1 stamps: ToString(3) cut every release to "1.0.0".
+        AppVersionText = AboutVersion(System.Reflection.Assembly.GetExecutingAssembly().GetName().Version);
 
         _supervisor.StateChanged += () => _dispatcher.TryEnqueue(() =>
         {
@@ -133,6 +133,27 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string AppVersionText { get; set; }
+
+    /// <summary>Settings › About: "© 2026 deloweProjects", the same line as the exe's properties.</summary>
+    public string CopyrightText => Provenance.Copyright;
+
+    /// <summary>
+    /// "Version 1.0.0.17 (1.0.0-beta.17)". The display name is not stamped into the build, so it
+    /// follows the convention every release since 1.0.0.2 has used (release.ps1 -DisplayName,
+    /// Releases/RELEASE-NOTES.md): 1.0.0.N ships as "1.0.0-beta.N". Any other version shows bare,
+    /// rather than a guessed name.
+    /// </summary>
+    internal static string AboutVersion(System.Version? version)
+    {
+        if (version is null)
+        {
+            return "Version unknown";
+        }
+        var text = $"Version {version}";
+        return version is { Major: 1, Minor: 0, Build: 0, Revision: >= 2 }
+            ? $"{text} (1.0.0-beta.{version.Revision})"
+            : text;
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStatusMessage))]
@@ -592,6 +613,25 @@ public partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void ClearLogs() => _log.Clear();
+
+    /// <summary>
+    /// The licences of what Linc ships with: THIRD-PARTY-NOTICES.txt beside the exe (the installer
+    /// puts it there), or the repository's NOTICE when this copy came without it (the zip).
+    /// </summary>
+    [RelayCommand]
+    private void OpenNotices()
+    {
+        var local = Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.txt");
+        var target = File.Exists(local) ? local : $"{Provenance.Source}/blob/main/NOTICE";
+        try
+        {
+            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            _log.Log(LogLevel.Info, $"Couldn't open the third-party notices ({ex.GetType().Name}: {ex.Message})");
+        }
+    }
 
     [RelayCommand]
     private void OpenLogFolder()

@@ -54,6 +54,11 @@ The desktop always sends first.
 2. Phone → Desktop: `hello` (`replyTo` set) with `{"app": "linc-android", "appVersion": "0.1.0", "v": 3}` — the phone picks the highest version both sides support.
 3. If there is no overlap, the phone replies `error` with code `version-mismatch` and closes.
 
+**Optional `author` (1.0.0.17, no version gate).** Both `hello` payloads may carry
+`"author": "deloweProjects"` — open authorship information from each app's `Provenance` constants
+(`Provenance.kt` / `Provenance.cs`, see `NOTICE`). It is purely informational: neither side reads,
+checks or requires it, and an older peer ignores it under the unknown-fields rule above.
+
 Both sides must gate version-specific messages on the negotiated `v` (e.g. no clipboard traffic on a v0 link).
 
 No other message may be sent before the handshake completes.

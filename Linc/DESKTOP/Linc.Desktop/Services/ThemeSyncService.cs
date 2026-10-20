@@ -69,6 +69,28 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
         ["onErrorContainer"] = "OnErrorContainerBrush",
     };
 
+    /// <summary>
+    /// The overlay brushes in MaterialExpressive.xaml (WinUI's own keys, overridden app-wide):
+    /// flyouts, menus, ContentDialogs, ComboBox lists, tooltips, teaching tips and the
+    /// NavigationView side rail. Frosted glass in the theme's dynamic colour, as on the phone;
+    /// retinted here with the surfaceContainer role, density set by MainWindow.ToneSurfaces.
+    /// </summary>
+    public static readonly string[] OverlayBrushKeys =
+    {
+        "FlyoutPresenterBackground",
+        "MenuFlyoutPresenterBackground",
+        "CommandBarFlyoutBackground",
+        "ContentDialogBackground",
+        "ComboBoxDropDownBackground",
+        "AutoSuggestBoxSuggestionsListBackground",
+        "ToolTipBackgroundBrush",
+        "TeachingTipBackgroundBrush",
+        "TeachingTipTransientBackground",
+        "NavigationViewExpandedPaneBackground",
+        "NavigationViewDefaultPaneBackground",
+        "NavigationViewTopPaneBackground",
+    };
+
     public event Action? PaletteChanged;
     public event Action? WallpaperChanged;
 
@@ -89,6 +111,7 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
     private string? _wallpaperId;
     private Color? _dominant;
     private Color _baseSurface = Color.FromArgb(255, 0, 0, 0);
+    private Color _baseContainer = Color.FromArgb(255, 0x1F, 0x1F, 0x1F);
 
     public void Start(FrameworkElement root)
     {
@@ -99,6 +122,7 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
         _root = root;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         _baseSurface = BrushColor("SurfaceBrush") ?? Color.FromArgb(255, 0, 0, 0);
+        _baseContainer = BrushColor("SurfaceContainerBrush") ?? _baseContainer;
         supervisor.StatusUpdated += status => _dispatcher.TryEnqueue(() => OnStatusUpdated(status));
         // M18 B1: turning "Use my phone's colours" off re-derives immediately rather than waiting
         // for the next status. B4: this only rewrites brush COLORS on existing brush instances, so
@@ -115,6 +139,11 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
         // colors; re-apply the phone palette (and wallpaper accent) on top afterwards.
         root.ActualThemeChanged += (_, _) =>
         {
+            // The bases are local values by now, so they don't follow the flip by themselves:
+            // start from the new theme's shipped ramp, which the phone palette (Apply) replaces.
+            var neutral = DynamicPalette.Neutral(root.ActualTheme == ElementTheme.Dark);
+            _baseSurface = ToColor(neutral.Surface);
+            _baseContainer = ToColor(neutral.SurfaceContainer);
             _appliedFingerprint = "";
             Apply();
             ApplyWallpaperAccent();
@@ -330,13 +359,11 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
                     _baseSurface = color; // capture the neutral base before the wallpaper wash
                 }
             }
-            // The frosted acrylic follows the surfaceContainer role too.
-            if (role == "surfaceContainer" &&
-                Application.Current.Resources["FrostedSurfaceBrush"] is AcrylicBrush frost &&
-                TryParseHex(hex, out var frostColor))
+            // The frosted acrylic and the overlays follow the surfaceContainer role too
+            // (retinted in ApplyWallpaperAccent below, on top of this base).
+            if (role == "surfaceContainer" && TryParseHex(hex, out var frostColor))
             {
-                frost.TintColor = frostColor;
-                frost.FallbackColor = frostColor;
+                _baseContainer = frostColor;
             }
         }
         _appliedFingerprint = fingerprint;
@@ -415,6 +442,30 @@ public sealed class ThemeSyncService(IConnectionSupervisor supervisor, IConnecti
             var fullAlpha = isDark ? 0xCC : 0xDA;
             var alpha = (byte)Math.Clamp(fullAlpha * ScrimStrength, 0, 255);
             scrim.Color = Color.FromArgb(alpha, tinted.R, tinted.G, tinted.B);
+        }
+
+        // Frosted glass (the floating bar, Home's rail cards) and every overlay: the container
+        // colour, washed toward the wallpaper and clamped exactly like the surface above.
+        var glass = effective is { } wash
+            ? ClampAgainstText(Blend(_baseContainer, wash, DynamicPalette.MaxTint), isDark)
+            : _baseContainer;
+        if (Application.Current.Resources["FrostedSurfaceBrush"] is AcrylicBrush frost)
+        {
+            frost.TintColor = glass;
+            frost.FallbackColor = glass;
+        }
+        foreach (var key in OverlayBrushKeys)
+        {
+            switch (Application.Current.Resources[key])
+            {
+                case AcrylicBrush acrylic:
+                    acrylic.TintColor = glass;
+                    acrylic.FallbackColor = glass;
+                    break;
+                case SolidColorBrush glaze:
+                    glaze.Color = glass;
+                    break;
+            }
         }
     }
 

@@ -37,7 +37,11 @@
     <InformationalVersion>1.0.0.16</InformationalVersion>
     <Product>Linc</Product>
     <AssemblyTitle>Linc</AssemblyTitle>
-    <Company>Linc</Company>
+    <!-- Authorship, stated openly; the same values as Provenance.cs and NOTICE. release.ps1
+         only rewrites Version/AssemblyVersion/FileVersion/InformationalVersion. -->
+    <Company>deloweProjects</Company>
+    <Authors>deloweProjects</Authors>
+    <Copyright>© 2026 deloweProjects</Copyright>
     <Description>Linc — Android companion for Windows</Description>
   </PropertyGroup>
 

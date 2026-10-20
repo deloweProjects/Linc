@@ -112,6 +112,8 @@ public sealed class CompanionClient : IDisposable
             // D-088: which PC this is, so a phone that knows several can tell them apart and keep
             // to one at a time. Optional: older phones ignore it.
             ["pcId"] = PcId,
+            // Informational only (Provenance.cs); optional, older phones ignore it.
+            ["author"] = Provenance.Author,
             ["minV"] = ProtocolConstants.MinVersion,
             ["maxV"] = ProtocolConstants.Version,
         });

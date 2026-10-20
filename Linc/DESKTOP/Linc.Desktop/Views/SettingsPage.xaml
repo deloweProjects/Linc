@@ -596,20 +596,61 @@
                 </StackPanel>
             </Border>
 
-            <!-- About (links shared with the phone's Settings → About: service/ProjectLinks.kt) -->
+            <!-- About (links shared with the phone's Settings → About: service/ProjectLinks.kt;
+                 authorship and third-party credits as in the repository's NOTICE). -->
             <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
-                <StackPanel Spacing="8">
+                <StackPanel Spacing="12">
                     <TextBlock Text="About" Style="{StaticResource TitleText}" />
-                    <TextBlock
-                        Style="{StaticResource BodyText}"
-                        Text="{x:Bind ViewModel.AppVersionText, Mode=OneWay}" />
-                    <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap">
-                        <Run Text="Made by delowe (" /><Hyperlink NavigateUri="https://github.com/deloweProjects">@delow3</Hyperlink><Run Text=")." />
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Image
+                            Source="ms-appx:///Assets/linc.png"
+                            Width="48" Height="48"
+                            VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Linc" Style="{StaticResource TitleText}" />
+                            <TextBlock
+                                Style="{StaticResource BodyText}"
+                                IsTextSelectionEnabled="True"
+                                Text="{x:Bind ViewModel.AppVersionText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Style="{StaticResource BodyText}">
+                        <Run Text="Made by " /><Hyperlink NavigateUri="https://github.com/deloweProjects/Linc">deloweProjects</Hyperlink><Run Text=" (delowe, @delow3)." />
                     </TextBlock>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Style="{StaticResource BodyText}">
+                        <Run Text="Free and open source under the " /><Hyperlink NavigateUri="https://github.com/deloweProjects/Linc/blob/main/LICENSE">MIT License</Hyperlink><Run Text=". " /><Run Text="{x:Bind ViewModel.CopyrightText}" /><Run Text="." />
+                    </TextBlock>
+
+                    <!-- Two columns, so the links wrap instead of running off a narrow window. -->
+                    <Grid ColumnSpacing="8" RowSpacing="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <HyperlinkButton Content="Telegram channel" NavigateUri="https://t.me/LincApp" ToolTipService.ToolTip="News, new versions and help — t.me/LincApp" />
-                        <HyperlinkButton Content="Source code on GitHub" NavigateUri="https://github.com/deloweProjects/Linc" />
-                        <HyperlinkButton Content="Report a problem" NavigateUri="https://github.com/deloweProjects/Linc/issues" />
+                        <HyperlinkButton Grid.Column="1" Content="Source code on GitHub" NavigateUri="https://github.com/deloweProjects/Linc" />
+                        <HyperlinkButton Grid.Row="1" Content="Report a problem" NavigateUri="https://github.com/deloweProjects/Linc/issues" />
+                        <HyperlinkButton Grid.Row="1" Grid.Column="1" Content="Licences and notices" Command="{x:Bind ViewModel.OpenNoticesCommand}" ToolTipService.ToolTip="The licences of everything Linc ships with" />
+                    </Grid>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Built with" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="scrcpy (screen mirroring) — Apache License 2.0, © Genymobile and Romain Vimont" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="Android Debug Bridge (adb) — Apache License 2.0, © The Android Open Source Project" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="FFmpeg, SDL2 and libusb (used by scrcpy) — LGPL-2.1, zlib and LGPL-2.1" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="Quick Share protocol definitions — Apache License 2.0, © Google LLC" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="DM Serif Display, Inter, Manrope, Outfit and Plus Jakarta Sans fonts — SIL Open Font License 1.1" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text=".NET 8, Windows App SDK (WinUI 3), CommunityToolkit.Mvvm, AdvancedSharpAdbClient, H.NotifyIcon, SQLite and others — each under its own licence" />
                     </StackPanel>
                 </StackPanel>
             </Border>

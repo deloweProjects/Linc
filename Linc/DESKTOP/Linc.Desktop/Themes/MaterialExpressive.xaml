@@ -27,6 +27,9 @@
             <Color x:Key="MdError">#B3261E</Color>
             <Color x:Key="MdErrorContainer">#F9DEDC</Color>
             <Color x:Key="MdOnErrorContainer">#8C1D18</Color>
+            <!-- A ContentDialog's message area is painted with this over the dialog background;
+                 WinUI's own is opaque white, which hid the frosted dialog below (see Overlays). -->
+            <SolidColorBrush x:Key="ContentDialogTopOverlay" Color="#40FFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
             <Color x:Key="MdPrimary">#E6E6E6</Color>
@@ -47,6 +50,7 @@
             <Color x:Key="MdError">#F2B8B5</Color>
             <Color x:Key="MdErrorContainer">#8C1D18</Color>
             <Color x:Key="MdOnErrorContainer">#F9DEDC</Color>
+            <SolidColorBrush x:Key="ContentDialogTopOverlay" Color="#0DFFFFFF" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
@@ -79,6 +83,34 @@
         FallbackColor="{ThemeResource MdSurfaceContainer}"
         TintOpacity="0.55"
         TintLuminosityOpacity="0.6" />
+
+    <!--
+        Overlays, as on the phone: frosted glass tinted with the theme's dynamic colour, instead
+        of WinUI's plain grey/white/black. These override WinUI's own keys app-wide, so every
+        Flyout, menu, ContentDialog, ComboBox list, tooltip, teaching tip and the NavigationView
+        side rail (Settings › Appearance › Navigation: side rail) picks them up with no per-control
+        styling. ThemeSyncService retints them (TintColor/FallbackColor, or Color) with the
+        surfaceContainer role washed toward the wallpaper like the window surface
+        (ThemeSyncService.OverlayBrushKeys); MainWindow.ToneSurfaces sets their density per theme
+        and for Wallpaper as background off. The values here are the disconnected default.
+    -->
+    <AcrylicBrush x:Key="FlyoutPresenterBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="ContentDialogBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="ComboBoxDropDownBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="AutoSuggestBoxSuggestionsListBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="ToolTipBackgroundBrush" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="TeachingTipBackgroundBrush" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="TeachingTipTransientBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <!-- The side rail: Expanded (wide window, inline), Default (compact rail and its opened
+         overlay) and Top. -->
+    <AcrylicBrush x:Key="NavigationViewExpandedPaneBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="NavigationViewDefaultPaneBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <AcrylicBrush x:Key="NavigationViewTopPaneBackground" TintColor="{ThemeResource MdSurfaceContainer}" FallbackColor="{ThemeResource MdSurfaceContainer}" TintOpacity="0.65" TintLuminosityOpacity="0.85" />
+    <!-- MenuFlyout and CommandBarFlyout (text-box menus) already sit on a system acrylic backdrop
+         of their own (their popups are windowed, where in-app acrylic has nothing to blur), so
+         they get a translucent glaze of the same colour over it rather than a second acrylic. -->
+    <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="{ThemeResource MdSurfaceContainer}" Opacity="0.65" />
+    <SolidColorBrush x:Key="CommandBarFlyoutBackground" Color="{ThemeResource MdSurfaceContainer}" Opacity="0.65" />
 
     <!-- Scrim laid over the phone wallpaper in the Home widgets section so content stays
          legible: a "whitey fog" in light theme, a "shadow" in dark. ThemeSyncService

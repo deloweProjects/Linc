@@ -326,6 +326,8 @@ class SocketServer(
                 payload = buildJsonObject {
                     put("app", "linc-android")
                     put("appVersion", BuildConfig.VERSION_NAME)
+                    // Informational only (Provenance.kt); optional, older desktops ignore it.
+                    put("author", app.linc.android.Provenance.AUTHOR)
                     put("v", negotiated)
                     if (sessionToken != null) put("sessionToken", sessionToken)
                 },

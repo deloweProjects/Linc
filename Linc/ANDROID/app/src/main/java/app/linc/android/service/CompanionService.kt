@@ -10,7 +10,9 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import app.linc.android.BuildConfig
 import app.linc.android.MainActivity
+import app.linc.android.Provenance
 import app.linc.android.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +40,8 @@ class CompanionService : Service() {
     override fun onCreate() {
         super.onCreate()
         LogStore.init(this)
+        // The first line of every run says what this is and who made it (Provenance.kt).
+        LogStore.log(LogLevel.INFO, Provenance.banner(BuildConfig.VERSION_NAME))
         ClipboardHistoryStore.init(this)
         // The PC as a Direct Share target, named after it once it says its name (D-083).
         scope.launch {

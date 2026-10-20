@@ -230,11 +230,12 @@
             IsSettingsVisible="True"
             SelectionChanged="OnNavSelectionChanged"
             Loaded="OnNavLoaded">
-            <!-- The window's backdrop (Mica + the phone's blurred wallpaper) shows through. -->
+            <!-- The window's backdrop (Mica + the phone's blurred wallpaper) shows through the
+                 pages. The side rail itself is frosted glass in the theme's colour, from the
+                 app-wide NavigationView*PaneBackground brushes in MaterialExpressive.xaml. -->
             <NavigationView.Resources>
                 <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
                 <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
-                <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="Transparent" />
             </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Home" Tag="Home">
