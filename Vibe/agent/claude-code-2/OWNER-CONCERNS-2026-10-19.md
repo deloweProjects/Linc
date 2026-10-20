@@ -1,5 +1,9 @@
 # Owner concerns — 2026-10-19 (go through these first, in this order)
 
+> **Status 2026-10-20:** items 1–14 shipped in release 1.0.0.17 (see `Releases/RELEASE-NOTES.md`);
+> nothing here blocks new work. The owner's open complaint (phone sound quality) and later concerns
+> live in `Vibe/claude-notes/` (`CONCERNS.md`, `SOUND-QUALITY.md`).
+
 The owner's words, then what is known and what to do. Do not start new features before these.
 
 ## The rule behind all of it

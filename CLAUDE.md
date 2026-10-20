@@ -34,16 +34,16 @@ failure with its log rather than saying it was sent. Details: `telegram-uploader
   only installs an update signed with the same key. `release.yml` restores that key from the
   `ANDROID_DEBUG_KEYSTORE` secret (base64 of the owner's `%USERPROFILE%\.android\debug.keystore`,
   alias `androiddebugkey`, passwords `android`) and checks it against the released certificate,
-  SHA-256 `8182d31662613b85f418e3d8601997ff957d5b7104a1ddd25ad7eed9ecd9d969` (1.0.0.2-1.0.0.15).
+  SHA-256 `8182d31662613b85f418e3d8601997ff957d5b7104a1ddd25ad7eed9ecd9d969` (1.0.0.2-1.0.0.17).
   It stops without the secret, or with a different key, unless `allow_new_apk_key` is ticked.
   **Never commit a keystore**: the repo is public, and anyone holding the key can ship an "update"
   that installs over Linc with its SMS, call and notification access. The plan is to move to a
   Play Console upload key later.
 - `release.yml` also packs the APK and installer into one 7z on the release, and Telegram gets the
-  APK, installer, 7z and checksums (not the portable zip). Its last step opens and merges a pull
-  request to main, which needs Settings › Actions › "Allow GitHub Actions to create and approve pull
-  requests"; without it the run stops after publishing (1.0.0.17). Then merge to main by hand and
-  dispatch `release-pack.yml` ("Pack release and post it") on main with the tag, which adds the 7z
-  and posts to Telegram.
-- Check the newest tag on GitHub before choosing a version number. Releases have been cut from
-  `feature/quick-share-and-recognition`, ahead of `main`, so the version in `main` can lag.
+  APK, installer, 7z and checksums (not the portable zip). **Merge the work to main first and
+  dispatch `release.yml` on main**: from any other branch `release.ps1` tries to open a PR to main,
+  which the workflow token can't do (no `pull-requests: write`), so the run stops after publishing
+  (as 1.0.0.17 did). If that happens, merge to main by hand and dispatch `release-pack.yml` ("Pack
+  release and post it") on main with the tag: it adds the 7z and posts to Telegram.
+- Check the newest tag on GitHub before choosing a version number. Since 1.0.0.17 main holds the released code;
+  older releases were cut from feature branches.
