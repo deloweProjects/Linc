@@ -56,6 +56,7 @@ public partial class DeviceViewModel : ObservableObject
 
         _supervisor.StateChanged += () => _dispatcher.TryEnqueue(OnLinkStateChanged);
         _supervisor.StatusUpdated += status => _dispatcher.TryEnqueue(() => OnStatusUpdated(status));
+        if (_supervisor.LastStatus is { } last) OnStatusUpdated(last); // opened after the first probe (Home had 82 %, this page "—")
         _supervisor.ErrorRaised += message => _dispatcher.TryEnqueue(() => ErrorMessage = message);
         _supervisor.UsbDeviceNeedsConfirmation += device =>
             _dispatcher.TryEnqueue(() => OnUsbDeviceNeedsConfirmation(device));

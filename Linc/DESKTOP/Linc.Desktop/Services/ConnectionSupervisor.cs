@@ -42,6 +42,10 @@ public interface IConnectionSupervisor : IDisposable
     /// <summary>Fresh device status from the health loop. May fire on background threads.</summary>
     event Action<DeviceStatus>? StatusUpdated;
 
+    /// <summary>The newest status from the health loop (kept after a disconnect), or null before the first.
+    /// Pages opened later start from it instead of "—" until the next probe.</summary>
+    DeviceStatus? LastStatus => null;
+
     /// <summary>A user-facing message worth showing. May fire on background threads.</summary>
     event Action<string>? ErrorRaised;
 
@@ -177,6 +181,7 @@ public sealed class ConnectionSupervisor(
 
     public event Action? StateChanged;
     public event Action<DeviceStatus>? StatusUpdated;
+    public DeviceStatus? LastStatus { get; private set; }
     public event Action<string>? ErrorRaised;
     public event Action<DeviceData>? UsbDeviceNeedsConfirmation;
 
@@ -1065,6 +1070,7 @@ public sealed class ConnectionSupervisor(
                     LastRttMs = (int)stopwatch.ElapsedMilliseconds;
                     failures = 0;
                     _firstProbeFailureUtc = null;
+                    LastStatus = status;
                     StatusUpdated?.Invoke(status);
                 }
                 catch (LincException)
@@ -1319,7 +1325,8 @@ public sealed class ConnectionSupervisor(
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var status = await connection.GetStatusAsync(cts.Token);
-            StatusUpdated?.Invoke(status);
+            LastStatus = status;
+                    StatusUpdated?.Invoke(status);
         }
         catch (Exception ex) when (ex is LincException or OperationCanceledException)
         {

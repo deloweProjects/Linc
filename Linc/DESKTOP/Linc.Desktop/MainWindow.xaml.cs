@@ -223,7 +223,11 @@ public sealed partial class MainWindow : Window
                 }
                 // Light theme: a thinner white veil, or everything looks washed out.
                 double veil = root.ActualTheme == ElementTheme.Light ? 0.72 : 1.0;
-                tint.Opacity = veil * (soft is null ? (mica ? 0.55 : 0.7) : wide ? 0.5 : 0.58);
+                bool plain = !registry.WallpaperBackdrop;
+                // Wallpaper as background off: the plain look from before it (the owner: "use that
+                // prev normal background"): the theme's own colour, solid, and solid cards.
+                tint.Opacity = plain ? 1.0 : veil * (soft is null ? (mica ? 0.55 : 0.7) : wide ? 0.5 : 0.58);
+                ToneSurfaces(root.ActualTheme == ElementTheme.Light, plain);
             }
 
             async Task LoadAsync()
@@ -284,10 +288,10 @@ public sealed partial class MainWindow : Window
                 }
             }
 
+            Arrange();
             Reload();
             root.SizeChanged += (_, _) => Arrange();
-            root.ActualThemeChanged += (_, _) => { ToneSurfaces(root.ActualTheme == ElementTheme.Light); Arrange(); };
-            ToneSurfaces(root.ActualTheme == ElementTheme.Light);
+            root.ActualThemeChanged += (_, _) => Arrange();
             AppWindow.Changed += (_, args) =>
             {
                 if (args.DidPresenterChange) Arrange();
@@ -329,12 +333,12 @@ public sealed partial class MainWindow : Window
     /// Cards a touch more see-through in light theme: at dark theme's opacity, near-white cards
     /// over a white veil read as a wall of white (the owner: "reduce whiteness of stuff a lil bit").
     /// </summary>
-    private static void ToneSurfaces(bool light)
+    private static void ToneSurfaces(bool light, bool solid)
     {
         var resources = Application.Current.Resources;
-        if (resources["SurfaceContainerBrush"] is SolidColorBrush card) card.Opacity = light ? 0.66 : 0.78;
-        if (resources["SurfaceContainerHighBrush"] is SolidColorBrush high) high.Opacity = light ? 0.74 : 0.86;
-        if (resources["FrostedSurfaceBrush"] is AcrylicBrush frost) frost.TintOpacity = light ? 0.42 : 0.55;
+        if (resources["SurfaceContainerBrush"] is SolidColorBrush card) card.Opacity = solid ? 1 : light ? 0.66 : 0.78;
+        if (resources["SurfaceContainerHighBrush"] is SolidColorBrush high) high.Opacity = solid ? 1 : light ? 0.74 : 0.86;
+        if (resources["FrostedSurfaceBrush"] is AcrylicBrush frost) frost.TintOpacity = solid ? 0.9 : light ? 0.42 : 0.55;
     }
 
     private sealed record WallpaperColours(

@@ -759,3 +759,10 @@ matches `USAGE_MEDIA` only, and its non-duplicating mix ignores the app's captur
 take audio focus or show "Playing from your PC". Per-speaker offsets stay `device.manualMs` (the phone's
 Advanced page now offers −400…+400 ms in 10 ms steps; the PC still accepts ±500) and Smooth / Tight sets
 `marginMs` to 150 / 0; both were already in v26 and are saved per device in `audio-everywhere.json`.
+
+### Optional status field (no version bump): `dndAccess`
+
+`status` (the health probe's reply) may carry `dndAccess: bool`: whether the phone has given Linc
+Do Not Disturb access (`NotificationManager.isNotificationPolicyAccessGranted`), which `dnd.set` and
+`sound.set` need. The PC greys Ring / Vibrate / Silent and says where to allow it when it is
+`false`; absent (older phones) counts as allowed, as before.

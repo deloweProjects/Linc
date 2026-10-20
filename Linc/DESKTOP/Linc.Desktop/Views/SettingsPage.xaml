@@ -245,7 +245,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Spacing="2">
                             <TextBlock Text="Wallpaper as background" Style="{StaticResource BodyText}" />
-                            <TextBlock views:Explain.IsHelp="True" Text="Your phone&apos;s wallpaper, blurred, behind everything. Home shows it sharp, at its real shape." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                            <TextBlock views:Explain.IsHelp="True" Text="Your phone&apos;s wallpaper, blurred, behind everything. Off: the plain background, in your phone&apos;s colours, with solid cards." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.WallpaperBackdrop, Mode=TwoWay}" />

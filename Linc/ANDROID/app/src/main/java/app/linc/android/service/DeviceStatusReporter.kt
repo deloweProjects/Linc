@@ -174,6 +174,9 @@ object DeviceStatusReporter {
             readDndEnabled(context)?.let { put("dndEnabled", it) } ?: put("dndEnabled", JsonNull)
             // v8: ringer mode + wallpaper thumbnail id (absent without the grant — D-021).
             readSoundMode(context)?.let { put("soundMode", it) }
+            // Optional: whether Linc may change DND / the ringer, so the PC greys those buttons.
+            runCatching { context.getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted }
+                .getOrNull()?.let { put("dndAccess", it) }
             WallpaperProvider.currentId(context)?.let { put("wallpaperId", it) }
             if (wifi != null) {
                 put("wifiSignalLevel", wifi.first)

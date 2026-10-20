@@ -336,15 +336,16 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <ToggleButton HorizontalAlignment="Stretch" CornerRadius="20,6,6,20" BorderThickness="0" Padding="0,10"
-                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundNormal, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind Home.SoundControlsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundNormal, Mode=OneWay}"
                                                   Command="{x:Bind Home.SetSoundCommand}" CommandParameter="normal" Content="Ring" />
                                     <ToggleButton Grid.Column="1" HorizontalAlignment="Stretch" CornerRadius="6" BorderThickness="0" Padding="0,10"
-                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundVibrate, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind Home.SoundControlsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundVibrate, Mode=OneWay}"
                                                   Command="{x:Bind Home.SetSoundCommand}" CommandParameter="vibrate" Content="Vibrate" />
                                     <ToggleButton Grid.Column="2" HorizontalAlignment="Stretch" CornerRadius="6,20,20,6" BorderThickness="0" Padding="0,10"
-                                                  IsHitTestVisible="{x:Bind Home.QuickActionsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundSilent, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind Home.SoundControlsEnabled, Mode=OneWay}" views:ChoiceButton.IsChoice="True" IsChecked="{x:Bind Home.IsSoundSilent, Mode=OneWay}"
                                                   Command="{x:Bind Home.SetSoundCommand}" CommandParameter="silent" Content="Silent" />
                                 </Grid>
+                                <TextBlock Text="{x:Bind Home.DndAccessHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Visibility="{x:Bind Home.ShowDndAccessHint, Mode=OneWay}" />
                                 <TextBlock Text="{x:Bind Home.QuickActionMessage, Mode=OneWay}" Style="{StaticResource CaptionText}" Visibility="{x:Bind Home.HasQuickActionMessage, Mode=OneWay}" />
                             </StackPanel>
                         </Border>

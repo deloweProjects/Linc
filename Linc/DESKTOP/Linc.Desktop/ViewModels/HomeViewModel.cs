@@ -1619,21 +1619,41 @@ RefreshGradient();
         OnPropertyChanged(nameof(LinkAddress));
         OnPropertyChanged(nameof(HasLinkAddress));
         OnPropertyChanged(nameof(QuickActionsEnabled));
+        OnPropertyChanged(nameof(SoundControlsEnabled));
+        OnPropertyChanged(nameof(ShowDndAccessHint));
         OnPropertyChanged(nameof(ScreenshotEnabled));
         OnPropertyChanged(nameof(ShowAdbHint));
         if (!IsConnected)
         {
-            BatteryText = "—";
-            SignalText = "—";
+            // The last battery and Wi-Fi the phone sent, greyed, rather than "—" (owner concerns).
+            if (_supervisor.LastStatus is { } last) OnStatusUpdated(last, fromProbe: false);
+            else
+            {
+                BatteryText = "—";
+                SignalText = "—";
+            }
         }
+        OnPropertyChanged(nameof(StatusOpacity));
     }
 
-    private void OnStatusUpdated(DeviceStatus status)
+    /// <summary>The battery / Wi-Fi line: full while connected, greyed while it shows the last known values.</summary>
+    public double StatusOpacity => IsConnected ? 1.0 : 0.5;
+
+    private void OnStatusUpdated(DeviceStatus status) => OnStatusUpdated(status, fromProbe: true);
+
+    private void OnStatusUpdated(DeviceStatus status, bool fromProbe)
     {
         BatteryText = status.Charging ? $"{status.Battery}% ⚡" : $"{status.Battery}%";
         SignalText = status.WifiSignalLevel is { } level
             ? $"Wi-Fi {SignalWord(level)}"
             : "Not on Wi-Fi";
+        if (!fromProbe) return; // last known values only: don't replay DND and the rest
+        if (_dndAccess != status.DndAccess)
+        {
+            _dndAccess = status.DndAccess;
+            OnPropertyChanged(nameof(SoundControlsEnabled));
+            OnPropertyChanged(nameof(ShowDndAccessHint));
+        }
         if (status.DndEnabled is { } dnd)
         {
             IsDndOn = dnd;
@@ -1728,6 +1748,15 @@ RefreshGradient();
 
     /// <summary>Ring/DND need protocol v7 (an updated phone app); mirror/screenshot need ADB (until M17).</summary>
     public bool QuickActionsEnabled => IsConnected && _supervisor.Device is { Companion.V: >= 7 };
+
+    private bool? _dndAccess;
+
+    /// <summary>Ring / Vibrate / Silent: greyed when the phone says Linc has no Do Not Disturb access.</summary>
+    public bool SoundControlsEnabled => QuickActionsEnabled && _dndAccess != false;
+
+    public bool ShowDndAccessHint => IsConnected && _dndAccess == false;
+
+    public string DndAccessHint => "To change these from here, allow Linc on the phone: Settings › Notifications › Do Not Disturb access.";
     public bool ScreenshotEnabled => IsConnected && _connection.HasAdb;
 
     /// <summary>On a direct (no-ADB) link, tell the user what turning debugging on would unlock.</summary>
