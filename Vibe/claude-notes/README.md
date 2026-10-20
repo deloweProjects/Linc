@@ -5,6 +5,7 @@ Notes from the Claude Code cloud sessions that built 1.0.0.10–1.0.0.17 with th
 
 | Read | For |
 |---|---|
+| `linc-tools/PLAN.md`, `linc-tools/TOOLS.md` | **The next task:** the Tools page plus ADB-only connection, fully designed |
 | `HANDOFF.md` | **Start here.** State, what was built, how releases/tests/Telegram work, traps |
 | `WORKING-WITH-THE-OWNER.md` | How the owner talks and what they expect; their hard rules |
 | `CONCERNS.md` | What isn't proven yet and what I'd look at first |
