@@ -198,6 +198,46 @@
                             <RadioButton GroupName="NavStyle" Content="Side rail" IsChecked="{x:Bind ViewModel.SideRailNav, Mode=TwoWay}" />
                         </StackPanel>
                     </StackPanel>
+                    <StackPanel Spacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Font" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="The typeface across Linc. Default is Windows&apos; own Segoe UI." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <!-- AppFonts.Keep: these previews stay in their own typefaces whatever the app uses. -->
+                        <RadioButtons MaxColumns="3" SelectedIndex="{x:Bind ViewModel.AppFontIndex, Mode=TwoWay}"
+                                      AutomationProperties.Name="Font" views:AppFonts.Keep="True">
+                            <RadioButton AutomationProperties.Name="Default font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="Segoe UI Variable Text" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Default" FontFamily="Segoe UI Variable Text" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Inter font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/Inter.ttf#Inter" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Inter" FontFamily="ms-appx:///Assets/Fonts/Inter.ttf#Inter" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Plus Jakarta Sans font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/PlusJakartaSans.ttf#Plus Jakarta Sans" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Plus Jakarta Sans" FontFamily="ms-appx:///Assets/Fonts/PlusJakartaSans.ttf#Plus Jakarta Sans" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Manrope font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/Manrope.ttf#Manrope" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Manrope" FontFamily="ms-appx:///Assets/Fonts/Manrope.ttf#Manrope" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Outfit font">
+                                <StackPanel Spacing="0" MinWidth="96">
+                                    <TextBlock Text="Aa" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="24" FontWeight="SemiBold" />
+                                    <TextBlock Text="Outfit" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                        </RadioButtons>
+                    </StackPanel>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -222,6 +262,101 @@
                         <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.HomeClock, Mode=TwoWay}" />
                     </Grid>
+                    <StackPanel Spacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Clock style" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="How the clock on Home looks." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <RadioButtons MaxColumns="3" SelectedIndex="{x:Bind ViewModel.ClockStyleIndex, Mode=TwoWay}"
+                                      AutomationProperties.Name="Clock style">
+                            <RadioButton AutomationProperties.Name="Classic clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="Tuesday, 20 October" FontSize="7" FontWeight="Medium" Foreground="White" Opacity="0.92" HorizontalAlignment="Center" />
+                                            <TextBlock Text="9:41" FontSize="32" FontWeight="Light" CharacterSpacing="-40" Foreground="White" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Classic" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Bold clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="TUESDAY, 20 OCTOBER" FontSize="6" FontWeight="SemiBold" CharacterSpacing="160" Foreground="White" Opacity="0.92" HorizontalAlignment="Center" />
+                                            <TextBlock Text="9:41" FontSize="30" FontWeight="Bold" CharacterSpacing="-60" Foreground="White" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Bold" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Stacked clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <TextBlock FontSize="26" FontWeight="Medium" CharacterSpacing="-20" Foreground="White"
+                                                   TextAlignment="Center" LineStackingStrategy="BlockLineHeight" LineHeight="24"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Run Text="09" /><LineBreak /><Run Text="41" />
+                                        </TextBlock>
+                                    </Border>
+                                    <TextBlock Text="Stacked" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Serif clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="Tuesday, 20 October" FontSize="8" FontFamily="ms-appx:///Assets/Fonts/DMSerifDisplay.ttf#DM Serif Display" Foreground="White" Opacity="0.92" HorizontalAlignment="Center" />
+                                            <TextBlock Text="9:41" FontSize="32" FontFamily="ms-appx:///Assets/Fonts/DMSerifDisplay.ttf#DM Serif Display" CharacterSpacing="-10" Foreground="White" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Serif" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton AutomationProperties.Name="Minimal clock">
+                                <StackPanel Spacing="4">
+                                    <Border Width="116" Height="68" CornerRadius="14">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF3A3A3A" Offset="0" />
+                                                <GradientStop Color="#FF121212" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="1">
+                                            <TextBlock Text="9:41" FontSize="17" FontWeight="SemiLight" Foreground="White" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Tuesday, 20 October 2026" FontSize="8" Foreground="White" Opacity="0.85" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Minimal" FontSize="12" />
+                                </StackPanel>
+                            </RadioButton>
+                        </RadioButtons>
+                    </StackPanel>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

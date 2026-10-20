@@ -287,8 +287,13 @@ public partial class App : Application
                 Services.GetRequiredService<ILogService>().Log(
                     LogLevel.Info, $"Store root redirected via --data-root: {_parsedDataRoot}");
             }
+            // Settings › Appearance › Font: set before the window is built so its controls start in
+            // the chosen font; the default font leaves everything exactly as it was.
+            var fontRegistry = Services.GetRequiredService<IDeviceRegistry>();
+            Linc.Desktop.Views.AppFonts.ApplyResource(fontRegistry.AppFont);
             _window = new MainWindow();
             MainWindowInstance = _window;
+            Linc.Desktop.Views.AppFonts.Attach(_window, fontRegistry);
             // D-057: the cable driver and the mic-restore note live under the store root, which
             // only the registry resolves.
             var storeRoot = Services.GetRequiredService<IDeviceRegistry>().RootPath;

@@ -304,6 +304,36 @@ public partial class SettingsViewModel : ObservableObject
         set { _registry.SaveWallpaperBackdrop(value); OnPropertyChanged(); }
     }
 
+    /// <summary>Settings › Appearance › Clock style, in the order the radio buttons list them; the first is the default.</summary>
+    private static readonly string[] ClockStyleKeys = ["classic", "bold", "stacked", "serif", "minimal"];
+
+    /// <summary>Settings › Appearance › Font, in the order the radio buttons list them; the first is Windows' own.</summary>
+    private static readonly string[] AppFontKeys = ["default", "inter", "jakarta", "manrope", "outfit"];
+
+    /// <summary>Settings › Appearance › Clock style: how the clock on Home is drawn.</summary>
+    public int ClockStyleIndex
+    {
+        get => Math.Max(0, Array.IndexOf(ClockStyleKeys, _registry.ClockStyle));
+        set
+        {
+            if (value < 0 || value >= ClockStyleKeys.Length) return; // -1 while the list rebuilds
+            _registry.SaveClockStyle(ClockStyleKeys[value]);
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Settings › Appearance › Font: the app's typeface; the first is Windows' own, unchanged.</summary>
+    public int AppFontIndex
+    {
+        get => Math.Max(0, Array.IndexOf(AppFontKeys, _registry.AppFont));
+        set
+        {
+            if (value < 0 || value >= AppFontKeys.Length) return;
+            _registry.SaveAppFont(AppFontKeys[value]);
+            OnPropertyChanged();
+        }
+    }
+
     // ---- M19 C3: auto-update ----
     //
     // There is no address to configure any more: the manifest lives in Linc's own repository at

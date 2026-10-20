@@ -23,7 +23,13 @@
 
     <!-- Home is the one page without the 1200 px column cap (MaxContentWidth 0): a dashboard of
          two resizable panes that wants the whole window; its widgets centre themselves. -->
-    <Grid views:PageLayout.Adaptive="True" views:PageLayout.MaxContentWidth="0" Padding="24,24,24,24" ColumnSpacing="0">
+    <!-- Home shrinks to fit a small window instead of cramming (FitScale): laid out at its design
+         size and drawn scaled down. The ScrollViewer only ever scrolls once it is shrunk all the
+         way, as a last resort; above the design size the scale is 1 and nothing changes. -->
+    <ScrollViewer x:Name="HomeScroller" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollMode="Auto" VerticalScrollBarVisibility="Auto">
+    <views:FitScale x:Name="HomeFit">
+    <Grid x:Name="HomeRoot" views:PageLayout.Adaptive="True" views:PageLayout.MaxContentWidth="0" Padding="24,24,24,24" ColumnSpacing="0">
         <Grid.ColumnDefinitions>
             <!-- Widgets a bit wider by default; both panes user-resizable via the splitter. -->
             <ColumnDefinition x:Name="LeftColumn" Width="720" MinWidth="320" />
@@ -98,13 +104,19 @@
                     </Border.Background>
                 </Border>
 
-                <!-- Clock (Settings › Appearance › Clock on Home), lock-screen style; HomePage ticks it. -->
-                <StackPanel x:Name="Clock" Padding="24,40,24,8" HorizontalAlignment="Center">
-                    <TextBlock x:Name="ClockDate" HorizontalAlignment="Center" FontSize="15" FontWeight="Medium"
+                <!-- Clock (Settings › Appearance › Clock on Home), lock-screen style; HomePage ticks it.
+                     Settings › Appearance › Clock style restyles it (HomePage.ApplyClockStyle); these
+                     values are the Classic style, the one it shipped with. -->
+                <Grid x:Name="Clock" Padding="24,40,24,8" HorizontalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="ClockDate" Grid.Row="0" HorizontalAlignment="Center" FontSize="15" FontWeight="Medium"
                                Foreground="White" Opacity="0.92" />
-                    <TextBlock x:Name="ClockTime" HorizontalAlignment="Center" FontSize="104" FontWeight="Light"
+                    <TextBlock x:Name="ClockTime" Grid.Row="1" HorizontalAlignment="Center" FontSize="104" FontWeight="Light"
                                Foreground="White" CharacterSpacing="-40" />
-                </StackPanel>
+                </Grid>
 
                 <!-- The phone's card, frosted glass on its own wallpaper. -->
                 <Border Grid.Row="2" Margin="12" Padding="20,18" CornerRadius="30"
@@ -304,46 +316,70 @@
                         </Border>
 
                         <!-- Media widget: always there while the section is on (the owner: keep the music
-                             widget on Home); with nothing playing it says so and its buttons rest. -->
-                        <Border Style="{StaticResource FrostedCard}" Padding="16,14"
+                             widget on Home); with nothing playing it says so and its buttons rest.
+                             With album art, the cover itself is the card: decoded tiny and drawn large
+                             (the app's own soft blur, as the wallpaper backdrop does), under a dark
+                             scrim, with light text and controls (HomePage.ApplyMediaArt). Without art
+                             the art layers are collapsed and the card is the plain frosted one. -->
+                        <Border Style="{StaticResource FrostedCard}" Padding="0"
                                 Visibility="{x:Bind ViewModel.ShowMediaWidget, Mode=OneWay}">
-                            <StackPanel Spacing="10">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Width="52" Height="52" CornerRadius="12" VerticalAlignment="Center" Background="{ThemeResource SecondaryContainerBrush}">
-                                        <Grid>
-                                            <FontIcon Glyph="&#xE8D6;" FontSize="18" Foreground="{ThemeResource OnSecondaryContainerBrush}" Visibility="{x:Bind ViewModel.HasNoMediaArt, Mode=OneWay}" />
-                                            <Border CornerRadius="12" Visibility="{x:Bind ViewModel.HasMediaArt, Mode=OneWay}">
-                                                <Image Source="{x:Bind ViewModel.MediaArt, Mode=OneWay}" Stretch="UniformToFill" />
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{x:Bind ViewModel.MediaTitle, Mode=OneWay}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{x:Bind ViewModel.MediaSubtitle, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            <Grid>
+                                <!-- A brush, not an Image: it fills the card without adding to its height. -->
+                                <Border IsHitTestVisible="False" Visibility="{x:Bind ViewModel.HasMediaArt, Mode=OneWay}">
+                                    <Border.Background>
+                                        <ImageBrush ImageSource="{x:Bind ViewModel.MediaArtSoft, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border.Background>
+                                </Border>
+                                <Border IsHitTestVisible="False" CornerRadius="{StaticResource ShapeExtraLarge}"
+                                        BorderBrush="#26FFFFFF" BorderThickness="1"
+                                        Visibility="{x:Bind ViewModel.HasMediaArt, Mode=OneWay}">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0.35,1">
+                                            <GradientStop Color="#59000000" Offset="0" />
+                                            <GradientStop Color="#8C000000" Offset="0.55" />
+                                            <GradientStop Color="#B8000000" Offset="1" />
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+
+                                <StackPanel x:Name="MediaContent" Spacing="10" Padding="16,14">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Width="52" Height="52" CornerRadius="12" VerticalAlignment="Center" Background="{ThemeResource SecondaryContainerBrush}">
+                                            <Grid>
+                                                <FontIcon Glyph="&#xE8D6;" FontSize="18" Foreground="{ThemeResource OnSecondaryContainerBrush}" Visibility="{x:Bind ViewModel.HasNoMediaArt, Mode=OneWay}" />
+                                                <Border CornerRadius="12" Visibility="{x:Bind ViewModel.HasMediaArt, Mode=OneWay}">
+                                                    <Image Source="{x:Bind ViewModel.MediaArt, Mode=OneWay}" Stretch="UniformToFill" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                            <TextBlock x:Name="MediaTitleText" Text="{x:Bind ViewModel.MediaTitle, Mode=OneWay}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock x:Name="MediaSubtitleText" Text="{x:Bind ViewModel.MediaSubtitle, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <StackPanel Spacing="2" Visibility="{x:Bind ViewModel.HasSeek, Mode=OneWay}">
+                                        <Slider x:Name="SeekSlider" Minimum="0" Maximum="{x:Bind ViewModel.MediaDurationMs, Mode=OneWay}" Value="{x:Bind ViewModel.MediaPositionMs, Mode=OneWay}" IsThumbToolTipEnabled="False" />
+                                        <TextBlock x:Name="MediaTimeTextBlock" Text="{x:Bind ViewModel.MediaTimeText, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
                                     </StackPanel>
-                                </Grid>
 
-                                <StackPanel Spacing="2" Visibility="{x:Bind ViewModel.HasSeek, Mode=OneWay}">
-                                    <Slider x:Name="SeekSlider" Minimum="0" Maximum="{x:Bind ViewModel.MediaDurationMs, Mode=OneWay}" Value="{x:Bind ViewModel.MediaPositionMs, Mode=OneWay}" IsThumbToolTipEnabled="False" />
-                                    <TextBlock Text="{x:Bind ViewModel.MediaTimeText, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                        <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.PreviousTrackCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Previous track">
+                                            <FontIcon Glyph="&#xE892;" FontSize="13" />
+                                        </Button>
+                                        <Button x:Name="MediaPlayButton" Width="44" Height="44" Padding="0" CornerRadius="22" Background="{ThemeResource PrimaryBrush}" BorderThickness="0" Command="{x:Bind ViewModel.PlayPauseCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Play / pause">
+                                            <FontIcon x:Name="MediaPlayGlyph" Glyph="{x:Bind ViewModel.PlayPauseGlyph, Mode=OneWay}" FontSize="15" Foreground="{ThemeResource OnPrimaryBrush}" />
+                                        </Button>
+                                        <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.NextTrackCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Next track">
+                                            <FontIcon Glyph="&#xE893;" FontSize="13" />
+                                        </Button>
+                                    </StackPanel>
                                 </StackPanel>
-
-                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.PreviousTrackCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Previous track">
-                                        <FontIcon Glyph="&#xE892;" FontSize="13" />
-                                    </Button>
-                                    <Button Width="44" Height="44" Padding="0" CornerRadius="22" Background="{ThemeResource PrimaryBrush}" BorderThickness="0" Command="{x:Bind ViewModel.PlayPauseCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Play / pause">
-                                        <FontIcon Glyph="{x:Bind ViewModel.PlayPauseGlyph, Mode=OneWay}" FontSize="15" Foreground="{ThemeResource OnPrimaryBrush}" />
-                                    </Button>
-                                    <Button Background="Transparent" BorderThickness="0" Width="36" Height="36" Padding="0" Command="{x:Bind ViewModel.NextTrackCommand}" IsEnabled="{x:Bind ViewModel.HasMedia, Mode=OneWay}" ToolTipService.ToolTip="Next track">
-                                        <FontIcon Glyph="&#xE893;" FontSize="13" />
-                                    </Button>
-                                </StackPanel>
-                            </StackPanel>
+                            </Grid>
                         </Border>
 
                         <!-- Recent photos strip (v10): thumbnails over bulk, click pulls the full image. -->
@@ -976,4 +1012,6 @@
             </Border>
         </Border>
     </Grid>
+    </views:FitScale>
+    </ScrollViewer>
 </Page>

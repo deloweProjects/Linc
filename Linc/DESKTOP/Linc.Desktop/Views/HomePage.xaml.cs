@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Input;
+using FontWeights = Microsoft.UI.Text.FontWeights;
 
 namespace Linc.Desktop.Views;
 
@@ -48,11 +50,17 @@ public sealed partial class HomePage : Page
         ApplyGradient();
         ApplyPaneOrder();
         ApplyAppsHeight();
+        ApplyMediaArt();
+        HomeFit.Host = HomeScroller;
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(HomeViewModel.GradientTop) or nameof(HomeViewModel.GradientBottom))
             {
                 ApplyGradient();
+            }
+            else if (e.PropertyName is nameof(HomeViewModel.HasMediaArt))
+            {
+                ApplyMediaArt();
             }
             else if (e.PropertyName is nameof(HomeViewModel.HasNoVisibleDevice))
             {
@@ -61,7 +69,7 @@ public sealed partial class HomePage : Page
             else if (e.PropertyName is nameof(HomeViewModel.PanesSwapped))
             {
                 ApplyPaneOrder();
-                if (_narrow) ApplyWidth(ActualWidth);
+                if (_narrow) ApplyWidth(LayoutWidth);
             }
             else if (e.PropertyName is nameof(HomeViewModel.AppsPaneHeight)
                      or nameof(HomeViewModel.ShowApps))
@@ -74,7 +82,9 @@ public sealed partial class HomePage : Page
         };
 
         // A small window gets one pane at a time (the owner: "isn't adjusting to small windows").
-        SizeChanged += (_, e) => ApplyWidth(e.NewSize.Width);
+        // HomeRoot, not the page: inside FitScale it is laid out at Home's own (unscaled) size,
+        // which is what every width rule below is written against.
+        HomeRoot.SizeChanged += (_, e) => ApplyWidth(e.NewSize.Width);
         WidgetsPane.SizeChanged += (_, e) => ApplyStageLayout(e.NewSize.Width);
 
         // The clock on the stage: ticks while Home is on screen, follows Settings › Appearance.
@@ -152,6 +162,7 @@ public sealed partial class HomePage : Page
     {
         bool show = _registry.HomeClock;
         Clock.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        ApplyClockStyle();
         if (show)
         {
             TickClock();
@@ -166,8 +177,151 @@ public sealed partial class HomePage : Page
     private void TickClock()
     {
         var now = DateTime.Now;
-        ClockTime.Text = now.ToString("t");
-        ClockDate.Text = now.ToString("dddd, d MMMM");
+        if (_clockStyle == "stacked")
+        {
+            // Hours over minutes, in the culture's own 12/24-hour habit, without AM/PM.
+            bool h24 = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern.Contains('H');
+            ClockTime.Text = now.ToString(h24 ? "HH" : "hh") + "\n" + now.ToString("mm");
+        }
+        else
+        {
+            ClockTime.Text = now.ToString("t");
+        }
+        var date = now.ToString(_clockStyle == "minimal" ? "dddd, d MMMM yyyy" : "dddd, d MMMM");
+        ClockDate.Text = _clockStyle == "bold" ? date.ToUpper() : date;
+    }
+
+    // ---- Clock styles (Settings › Appearance › Clock style) ----
+
+    /// <summary>The style the clock was last drawn in; "classic" is the one it shipped with.</summary>
+    private string _clockStyle = "classic";
+
+    private static FontFamily? _serifFont;
+
+    /// <summary>A bundled OFL display serif (Assets/Fonts), lock-screen elegant, lining figures.</summary>
+    private static FontFamily SerifFont =>
+        _serifFont ??= new FontFamily("ms-appx:///Assets/Fonts/DMSerifDisplay.ttf#DM Serif Display");
+
+    /// <summary>
+    /// Restyles the stage clock. Every style starts from Classic — the values in the XAML — so
+    /// switching styles can never leave one style's leftovers on another. Sizes follow the stage:
+    /// the larger figure beside the widgets, the smaller one when the stage sits on top.
+    /// </summary>
+    private void ApplyClockStyle()
+    {
+        var style = _registry.ClockStyle;
+        bool beside = _stageBeside ?? true;
+
+        // Classic: the date above, the time large and thin, the app's own font.
+        ClockTime.ClearValue(TextBlock.FontFamilyProperty);
+        ClockTime.ClearValue(TextBlock.LineHeightProperty);
+        ClockTime.ClearValue(TextBlock.LineStackingStrategyProperty);
+        ClockTime.ClearValue(TextBlock.TextAlignmentProperty);
+        ClockTime.FontWeight = FontWeights.Light;
+        ClockTime.CharacterSpacing = -40;
+        ClockDate.ClearValue(TextBlock.FontFamilyProperty);
+        ClockDate.FontSize = 15;
+        ClockDate.FontWeight = FontWeights.Medium;
+        ClockDate.CharacterSpacing = 0;
+        ClockDate.Opacity = 0.92;
+        Grid.SetRow(ClockDate, 0);
+        Grid.SetRow(ClockTime, 1);
+        double size = beside ? 104 : 68;
+
+        switch (style)
+        {
+            case "bold":
+                // Heavy and tight, the date small, spaced capitals.
+                size = beside ? 96 : 64;
+                ClockTime.FontWeight = FontWeights.Bold;
+                ClockTime.CharacterSpacing = -60;
+                ClockDate.FontSize = 12;
+                ClockDate.FontWeight = FontWeights.SemiBold;
+                ClockDate.CharacterSpacing = 160;
+                break;
+            case "stacked":
+                // Hours above minutes, large; the lines pulled together.
+                size = beside ? 112 : 64;
+                ClockTime.FontWeight = FontWeights.Medium;
+                ClockTime.CharacterSpacing = -20;
+                ClockTime.TextAlignment = Microsoft.UI.Xaml.TextAlignment.Center;
+                ClockTime.LineStackingStrategy = Microsoft.UI.Xaml.LineStackingStrategy.BlockLineHeight;
+                ClockTime.LineHeight = Math.Round(size * 0.92);
+                break;
+            case "serif":
+                // An elegant display serif, like a lock screen.
+                size = beside ? 108 : 70;
+                ClockTime.FontFamily = SerifFont;
+                ClockTime.FontWeight = FontWeights.Normal;
+                ClockTime.CharacterSpacing = -10;
+                ClockDate.FontFamily = SerifFont;
+                ClockDate.FontSize = 18;
+                ClockDate.FontWeight = FontWeights.Normal;
+                break;
+            case "minimal":
+                // A small time with the long date under it.
+                size = beside ? 46 : 38;
+                ClockTime.FontWeight = FontWeights.SemiLight;
+                ClockTime.CharacterSpacing = 0;
+                ClockDate.FontSize = 16;
+                ClockDate.FontWeight = FontWeights.Normal;
+                ClockDate.Opacity = 0.85;
+                Grid.SetRow(ClockTime, 0);
+                Grid.SetRow(ClockDate, 1);
+                break;
+        }
+        ClockTime.FontSize = size;
+
+        if (_clockStyle != style)
+        {
+            _clockStyle = style;
+            TickClock(); // the text's shape changes with the style (stacked, capitals, the year)
+        }
+    }
+
+    // ---- Now playing over its album art ----
+
+    /// <summary>
+    /// With album art, the media card shows the cover softly blurred under a dark scrim (XAML), so
+    /// its text and controls turn light: the default ones by a Dark theme on the card's content,
+    /// the ones painted with the app's palette brushes explicitly. Without art, today's look:
+    /// every value goes back to the brush the XAML gives it.
+    /// </summary>
+    private void ApplyMediaArt()
+    {
+        bool art = ViewModel.HasMediaArt;
+        var res = Application.Current.Resources;
+        MediaContent.RequestedTheme = art ? ElementTheme.Dark : ElementTheme.Default;
+        // The title has no brush of its own in the XAML (it inherits one, which a theme on the
+        // card wouldn't change), so it is told outright and handed back to inheritance after.
+        if (art)
+        {
+            MediaTitleText.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
+        }
+        else
+        {
+            MediaTitleText.ClearValue(TextBlock.ForegroundProperty);
+        }
+        MediaSubtitleText.Foreground = art
+            ? new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xD9, 0xFF, 0xFF, 0xFF))
+            : (Brush)res["OnSurfaceVariantBrush"];
+        MediaTimeTextBlock.Foreground = art
+            ? new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xB3, 0xFF, 0xFF, 0xFF))
+            : (Brush)res["OnSurfaceVariantBrush"];
+        MediaPlayButton.Background = art
+            ? new SolidColorBrush(Microsoft.UI.Colors.White)
+            : (Brush)res["PrimaryBrush"];
+        MediaPlayGlyph.Foreground = art
+            ? new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x14, 0x14, 0x14))
+            : (Brush)res["OnPrimaryBrush"];
+        if (art)
+        {
+            SeekSlider.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
+        }
+        else
+        {
+            SeekSlider.ClearValue(Control.ForegroundProperty);
+        }
     }
 
     /// <summary>The stage's width beside the widgets (the owner: "a bit bigger"; was 340).</summary>
@@ -194,7 +348,7 @@ public sealed partial class HomePage : Page
         Grid.SetColumnSpan(Stage, beside ? 1 : 2);
         Stage.Width = beside ? StageWidth : double.NaN;
         Stage.VerticalAlignment = beside ? VerticalAlignment.Stretch : VerticalAlignment.Top;
-        ClockTime.FontSize = beside ? 104 : 68;
+        ApplyClockStyle(); // the clock's size follows the stage's place
         Grid.SetRow(WidgetsArea, beside ? 0 : 1);
         Grid.SetColumn(WidgetsArea, beside ? 1 : 0);
         Grid.SetRowSpan(WidgetsArea, beside ? 2 : 1);
@@ -337,9 +491,13 @@ public sealed partial class HomePage : Page
         get
         {
             if (_widgetsWidth is { } dragged) return dragged;
-            var available = ActualWidth - 48 /* page padding */ - 14 /* splitter */;
+            var available = LayoutWidth - 48 /* page padding */ - 14 /* splitter */;
             if (available <= 0) return 720;
-            return Math.Clamp(available * 0.6, WidgetsMinWidth, Math.Max(WidgetsMinWidth, available - PanelMinWidth));
+            // About three fifths — but never short of room for the stage beside the widgets while
+            // the activity panel still keeps its minimum, so a just-too-narrow window (which
+            // FitScale shrinks to exactly this) keeps the stage beside rather than piling it on top.
+            var share = Math.Max(available * 0.6, Math.Min(StageBesideWidth, available - PanelMinWidth));
+            return Math.Clamp(share, WidgetsMinWidth, Math.Max(WidgetsMinWidth, available - PanelMinWidth));
         }
     }
 
@@ -360,6 +518,9 @@ public sealed partial class HomePage : Page
 
     private const double NarrowWidth = 820;
     private bool _narrow;
+
+    /// <summary>Home's own width, in its unscaled units (see FitScale); the page's is the window's.</summary>
+    private double LayoutWidth => HomeRoot.ActualWidth;
     private bool _narrowShowsPanel;
 
     private void ApplyWidth(double width)
@@ -396,13 +557,13 @@ public sealed partial class HomePage : Page
     private void OnShowWidgets(object sender, RoutedEventArgs e)
     {
         _narrowShowsPanel = false;
-        ApplyWidth(ActualWidth);
+        ApplyWidth(LayoutWidth);
     }
 
     private void OnShowPanel(object sender, RoutedEventArgs e)
     {
         _narrowShowsPanel = true;
-        ApplyWidth(ActualWidth);
+        ApplyWidth(LayoutWidth);
     }
 
     private void ApplyPaneOrder()
@@ -427,7 +588,7 @@ public sealed partial class HomePage : Page
         var column = WidgetsColumn;
         // Dragging right widens the widgets pane when it sits on the left, narrows it when swapped.
         var delta = ViewModel.PanesSwapped ? -e.Delta.Translation.X : e.Delta.Translation.X;
-        var available = ActualWidth - 48 /* page padding */ - Splitter.ActualWidth;
+        var available = LayoutWidth - 48 /* page padding */ - Splitter.ActualWidth;
         var max = Math.Max(WidgetsMinWidth, available - PanelMinWidth);
         var width = Math.Clamp(column.ActualWidth + delta, WidgetsMinWidth, max);
         _widgetsWidth = width;

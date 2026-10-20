@@ -372,6 +372,7 @@ public partial class HomeViewModel : ObservableObject
         AppsMessage = "";
 
         MediaArt = null;
+        MediaArtSoft = null;
         QuickActionMessage = "";
         BatteryText = "—";
         SignalText = "—";
@@ -1829,6 +1830,16 @@ RefreshGradient();
     public bool HasMediaArt => MediaArt is not null;
     public bool HasNoMediaArt => MediaArt is null;
 
+    /// <summary>
+    /// The same album art decoded only <see cref="SoftArtWidth"/> px across: drawn across the
+    /// whole media card it is a soft blur of the cover (the trick the wallpaper backdrop uses).
+    /// Set together with <see cref="MediaArt"/>, cleared with it.
+    /// </summary>
+    [ObservableProperty]
+    public partial BitmapImage? MediaArtSoft { get; set; }
+
+    private const int SoftArtWidth = 16;
+
     partial void OnMediaArtChanged(BitmapImage? value)
     {
         OnPropertyChanged(nameof(HasMediaArt));
@@ -1899,6 +1910,7 @@ RefreshGradient();
         {
             _artId = artId;
             MediaArt = null;
+            MediaArtSoft = null;
             if (artId is not null)
             {
                 _ = LoadMediaArtAsync(artId);
@@ -1925,10 +1937,25 @@ RefreshGradient();
 
     private async Task LoadMediaArtAsync(string artId)
     {
-        var image = await FetchImageAsync("albumArt", artId);
-        if (_artId == artId) // still the current track
+        try
         {
-            MediaArt = image;
+            var bytes = await _connection.FetchBulkAsync("albumArt", artId, CancellationToken.None);
+            if (bytes is not { Length: > 0 } || _artId != artId)
+            {
+                return;
+            }
+            var image = await ToImageAsync(bytes);
+            var soft = await ToImageAsync(bytes, SoftArtWidth);
+            if (_artId == artId) // still the current track
+            {
+                // Soft first: HasMediaArt (which shows the art layers) follows MediaArt.
+                MediaArtSoft = soft;
+                MediaArt = image;
+            }
+        }
+        catch (Exception)
+        {
+            // Cosmetic only, like every other image fetch here: the card keeps its plain look.
         }
     }
 
@@ -1997,12 +2024,16 @@ RefreshGradient();
     }
 
     /// <summary>Fetches PNG bytes over the bulk channel and decodes them; null on any failure.</summary>
-    private static async Task<BitmapImage> ToImageAsync(byte[] bytes)
+    private static async Task<BitmapImage> ToImageAsync(byte[] bytes, int decodeWidth = 0)
     {
         using var stream = new InMemoryRandomAccessStream();
         await stream.WriteAsync(bytes.AsBuffer());
         stream.Seek(0);
         var image = new BitmapImage();
+        if (decodeWidth > 0)
+        {
+            image.DecodePixelWidth = decodeWidth; // set before the source, or it decodes full size
+        }
         await image.SetSourceAsync(stream);
         return image;
     }

@@ -76,7 +76,9 @@ try
     }
 
     // ---- Home at other window sizes ------------------------------------------------------------
-    foreach (var (w, h) in new[] { (1600, 1000), (1000, 820), (760, 900) })
+    // The last two are the "shrinks instead of cramming" checks (Views/FitScale); appended so the
+    // earlier shots keep their numbers.
+    foreach (var (w, h) in new[] { (1600, 1000), (1000, 820), (760, 900), (1600, 900), (1280, 800) })
     {
         Resize(hwnd, w, h);
         Thread.Sleep(2500);

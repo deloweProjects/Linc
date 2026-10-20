@@ -160,11 +160,25 @@ public interface IDeviceRegistry
     /// <summary>Settings → Appearance → Wallpaper as background. Default on: the phone's wallpaper, blurred, behind the app.</summary>
     bool WallpaperBackdrop { get; }
 
+    /// <summary>
+    /// Settings → Appearance → Clock style: how the Home clock is drawn (see
+    /// <c>Views.ClockStyles</c>). Default "classic", the thin large clock the app shipped with.
+    /// </summary>
+    string ClockStyle { get; }
+
+    /// <summary>
+    /// Settings → Appearance → Font: the app's font (see <c>Views.AppFonts</c>). Default
+    /// "default", Windows' own Segoe UI Variable, untouched.
+    /// </summary>
+    string AppFont { get; }
+
     void SaveFloatingNav(bool floating);
     void SaveHomeClock(bool show);
     void SaveWallpaperBackdrop(bool show);
+    void SaveClockStyle(string style);
+    void SaveAppFont(string font);
 
-    /// <summary>Raised after any of <see cref="SaveFloatingNav"/>, <see cref="SaveHomeClock"/>, <see cref="SaveWallpaperBackdrop"/>.</summary>
+    /// <summary>Raised after any of <see cref="SaveFloatingNav"/>, <see cref="SaveHomeClock"/>, <see cref="SaveWallpaperBackdrop"/>, <see cref="SaveClockStyle"/>, <see cref="SaveAppFont"/>.</summary>
     event Action? AppearanceChanged;
 
     /// <summary>
@@ -332,7 +346,11 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // field above it; missing reads back as on, the look the app ships with.
         bool? FloatingNav = null,
         bool? HomeClock = null,
-        bool? WallpaperBackdrop = null);
+        bool? WallpaperBackdrop = null,
+        // Clock style and app font: appended at the end like every field above it; missing reads
+        // back as "classic" / "default", the look the app shipped with.
+        string? ClockStyle = null,
+        string? AppFont = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -504,6 +522,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 FloatingNav = settings?.FloatingNav ?? true;
                 HomeClock = settings?.HomeClock ?? true;
                 WallpaperBackdrop = settings?.WallpaperBackdrop ?? true;
+                ClockStyle = Blank(settings?.ClockStyle) ?? "classic";
+                AppFont = Blank(settings?.AppFont) ?? "default";
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -733,11 +753,37 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public bool FloatingNav { get; private set; } = true;
     public bool HomeClock { get; private set; } = true;
     public bool WallpaperBackdrop { get; private set; } = true;
+    public string ClockStyle { get; private set; } = "classic";
+    public string AppFont { get; private set; } = "default";
     public event Action? AppearanceChanged;
 
     public void SaveFloatingNav(bool floating) => SaveAppearance(FloatingNav, floating, v => FloatingNav = v);
     public void SaveHomeClock(bool show) => SaveAppearance(HomeClock, show, v => HomeClock = v);
     public void SaveWallpaperBackdrop(bool show) => SaveAppearance(WallpaperBackdrop, show, v => WallpaperBackdrop = v);
+
+    public void SaveClockStyle(string style)
+    {
+        style = Blank(style) ?? "classic";
+        if (ClockStyle == style)
+        {
+            return;
+        }
+        ClockStyle = style;
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
+
+    public void SaveAppFont(string font)
+    {
+        font = Blank(font) ?? "default";
+        if (AppFont == font)
+        {
+            return;
+        }
+        AppFont = font;
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
 
     private void SaveAppearance(bool current, bool value, Action<bool> set)
     {
@@ -850,7 +896,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
                 null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
                 ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding,
-                FloatingNav, HomeClock, WallpaperBackdrop)));
+                FloatingNav, HomeClock, WallpaperBackdrop, ClockStyle, AppFont)));
         }
         catch (IOException)
         {
