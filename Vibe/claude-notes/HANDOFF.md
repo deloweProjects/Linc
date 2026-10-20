@@ -14,6 +14,21 @@ Read next in this folder:
 
 ---
 
+## 0. NEXT TASK: build Linc Tools (set by the owner, 2026-10-20)
+
+The owner's next job for the incoming session is a new PC page, **Tools** ("ADB with a face"), and
+**ADB-only connection** ("Linc should connect just by ADB pairing, no need to open Linc on the
+phone"). It is fully designed:
+- **`linc-tools/PLAN.md`**: the architecture (`IAdbShell`, ADB-only mode, the page), design rules,
+  build order in 7 phases, testing.
+- **`linc-tools/TOOLS.md`**: every tool: surface, hidden extras, exact commands, parsing, danger
+  tier, gating, and the never-offer list.
+- **Mockup:** <https://claude.ai/artifact/NpTpEcrzv6RYnZAifctNPh> (Type, Apps, Health, Rescue).
+  Ask the owner whether it is approved before building the visuals; the plan holds either way.
+
+Start with PLAN.md §4 Phase 1. Ship the ADB-only change (Phase 2) on a `test-build/adb-only` branch
+for the owner to try before anything else depends on it.
+
 ## 1. State right now
 
 - **Released:** `v1.0.0.17` ("1.0.0-beta.17"), 2026-10-20, protocol **v31**.
