@@ -25,7 +25,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -70,6 +69,7 @@ import app.linc.android.service.PcApp
 import app.linc.android.service.PcHistory
 import app.linc.android.service.PcInfoState
 import app.linc.android.service.PcTools
+import app.linc.android.ui.kit.LincAlertDialog
 import app.linc.android.ui.kit.ConnectedChoice
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
@@ -242,7 +242,7 @@ fun PcScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) {
     }
 
     ending?.let { app ->
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { ending = null },
             title = { Text("End ${app.name}?") },
             text = { Text("Linc asks it to close first, as its window's X would; if it doesn't within 3 seconds it is ended, and anything unsaved in it is lost.") },

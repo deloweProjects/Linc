@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -65,6 +64,7 @@ import androidx.core.content.edit
 import app.linc.android.service.Explanations
 import app.linc.android.service.PcFileEntry
 import app.linc.android.service.PcTools
+import app.linc.android.ui.kit.LincAlertDialog
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
 import app.linc.android.ui.kit.LincScaffold
@@ -72,6 +72,9 @@ import app.linc.android.ui.kit.SectionHeader
 import app.linc.android.ui.kit.rememberNotify
 import app.linc.android.ui.kit.segmentOf
 import app.linc.android.ui.kit.segmentShape
+import app.linc.android.ui.theme.OverlayKind
+import app.linc.android.ui.theme.overlayBorder
+import app.linc.android.ui.theme.overlayContainerColor
 import java.text.DateFormat
 import java.util.Date
 
@@ -193,7 +196,7 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
                     Box {
                         if (grid) GridItem(e, onClick = { open(e) }, onLongClick = { menuFor = e })
                         else ListItem(e, segmentOf(index, entries.size), onClick = { open(e) }, onMore = { menuFor = e })
-                        DropdownMenu(expanded = menuFor == e, onDismissRequest = { menuFor = null }) {
+                        DropdownMenu(expanded = menuFor == e, onDismissRequest = { menuFor = null }, containerColor = overlayContainerColor(OverlayKind.Menu), border = overlayBorder()) {
                             if (!e.dir) DropdownMenuItem(text = { Text("Download to this phone") }, leadingIcon = { Icon(LincSymbols.Download, null) },
                                 onClick = { menuFor = null; PcTools.download(context, e); notify("Downloading to Download/Linc…") })
                             DropdownMenuItem(text = { Text("Open on the PC") }, leadingIcon = { Icon(LincSymbols.OpenInNew, null) },
@@ -212,7 +215,7 @@ fun PcFilesScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null
     if (newFolder) NameDialog("New folder", "New folder", "Make") { name -> newFolder = false; name?.let { PcTools.makeFolder(listing.path, it) } }
     renaming?.let { e -> NameDialog("Rename", e.name, "Rename") { name -> renaming = null; if (name != null && name != e.name) PcTools.rename(e.path, name) } }
     deleting?.let { e ->
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { deleting = null },
             icon = { Icon(LincSymbols.Delete, contentDescription = null) },
             title = { Text("Delete ${e.name}?") },
@@ -405,7 +408,7 @@ private fun extension(name: String): String? = name.substringAfterLast('.', "").
 @Composable
 private fun NameDialog(title: String, initial: String, confirm: String, onDone: (String?) -> Unit) {
     var name by remember { mutableStateOf(initial) }
-    AlertDialog(
+    LincAlertDialog(
         onDismissRequest = { onDone(null) },
         title = { Text(title) },
         text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true) },

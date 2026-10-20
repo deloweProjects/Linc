@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,7 +23,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -52,6 +50,8 @@ import app.linc.android.service.FolderPair
 import app.linc.android.service.PcTools
 import app.linc.android.service.SyncRemote
 import app.linc.android.service.SyncStore
+import app.linc.android.ui.kit.LincAlertDialog
+import app.linc.android.ui.kit.LincBottomSheet
 import app.linc.android.ui.kit.BlockedState
 import app.linc.android.ui.kit.ConnectedChoice
 import app.linc.android.ui.kit.EmptyState
@@ -253,7 +253,7 @@ private fun PairEditor(existing: FolderPair?, onDismiss: () -> Unit, onSave: (Fo
     var pickPc by remember { mutableStateOf(false) }
     var pickPhone by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    LincBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Kit.gutter).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(if (existing == null) "Add a folder to sync" else "Edit ${existing.name}", style = MaterialTheme.typography.headlineSmall)
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true,
@@ -326,7 +326,7 @@ private fun FolderBrowser(
     onUse: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    LincAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

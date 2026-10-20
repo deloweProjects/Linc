@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -59,6 +58,7 @@ import app.linc.android.service.SmsProvider
 import app.linc.android.service.TransportStore
 import app.linc.android.service.UpdateCheck
 import app.linc.android.service.UpdateSettings
+import app.linc.android.ui.kit.LincAlertDialog
 import app.linc.android.ui.kit.Chevron
 import app.linc.android.ui.kit.ConnectedChoice
 import app.linc.android.ui.kit.Kit
@@ -260,7 +260,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
             item {
                 SettingsGroup(rows = listOf(
                     { s -> SettingsRow("Linc for Android", s, LincSymbols.Smartphone, value = "Version ${BuildConfig.VERSION_NAME}") },
-                    { s -> SettingsRow("Developer", s, LincSymbols.Info, value = "${ProjectLinks.DEVELOPER} (${ProjectLinks.DEVELOPER_HANDLE})",
+                    { s -> SettingsRow("Developer", s, LincSymbols.Info, value = "deloweProjects (${ProjectLinks.DEVELOPER}, ${ProjectLinks.DEVELOPER_HANDLE})",
                         onClick = { openLink(context, ProjectLinks.DEVELOPER_GITHUB) }) },
                     { s -> SettingsRow("Telegram channel", s, LincSymbols.Send, supporting = "News, new versions and help — t.me/LincApp",
                         onClick = { openLink(context, ProjectLinks.TELEGRAM) }, trailing = { Chevron() }) },
@@ -296,7 +296,7 @@ private fun GrantRow(
 /** The font choices, each name drawn in its own font (headings' font for the serif pairing). */
 @Composable
 private fun FontDialog(current: AppFont, onPick: (AppFont) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
+    LincAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Font") },
         text = {

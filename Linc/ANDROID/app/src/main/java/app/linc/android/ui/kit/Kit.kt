@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.linc.android.service.Explanations
 import app.linc.android.ui.LincSymbols
+import app.linc.android.ui.theme.frostedCardBorder
 import kotlinx.coroutines.launch
 
 // The component kit (1.0.0.11, D-082; Vibe/agent/design/android-m3e.md §3). Every screen is built
@@ -325,6 +326,7 @@ fun SettingsRow(
     Surface(
         shape = segmentShape(segment),
         color = segmentColor(),
+        border = frostedCardBorder(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(

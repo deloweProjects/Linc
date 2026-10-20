@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.RadioButton
@@ -22,6 +21,7 @@ import app.linc.android.service.PcControl
 import app.linc.android.service.PcMediaControl
 import app.linc.android.service.PcMediaStore
 import app.linc.android.service.PcTools
+import app.linc.android.ui.kit.LincAlertDialog
 import app.linc.android.ui.kit.SettingsGroup
 import app.linc.android.ui.kit.SettingsRow
 import app.linc.android.ui.kit.Segment
@@ -414,7 +414,7 @@ fun SoundScreen(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null) 
     }
 
     if (explainPhone) {
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { explainPhone = false },
             icon = { Icon(LincSymbols.GraphicEq, contentDescription = null) },
             title = { Text("Play this phone's sound everywhere") },

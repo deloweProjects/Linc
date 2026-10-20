@@ -56,6 +56,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import app.linc.android.ui.theme.OverlayKind
+import app.linc.android.ui.theme.overlayBorder
+import app.linc.android.ui.theme.overlayContainerColor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -160,7 +163,9 @@ private fun ToolsRail(
 ) {
     val width by animateDpAsState(if (expanded) RAIL_EXPANDED else RAIL_COLLAPSED, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "railWidth")
     Surface(
-        color = if (floating) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        // Over the wallpaper the floating panel is frosted glass tinted with the theme, with an edge.
+        color = if (floating) overlayContainerColor(OverlayKind.Panel) else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = if (floating) overlayBorder() else null,
         shape = if (floating) RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp) else RoundedCornerShape(0.dp),
         shadowElevation = if (floating) 6.dp else 0.dp,
         modifier = Modifier.width(width).fillMaxHeight(),

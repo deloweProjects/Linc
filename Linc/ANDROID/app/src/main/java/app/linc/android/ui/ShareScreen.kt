@@ -34,14 +34,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -71,6 +69,8 @@ import app.linc.android.service.ShareSender
 import app.linc.android.service.ShareStore
 import app.linc.android.service.Transfer
 import app.linc.android.service.TransferState
+import app.linc.android.ui.kit.LincAlertDialog
+import app.linc.android.ui.kit.LincBottomSheet
 import app.linc.android.ui.kit.EmptyState
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
@@ -311,7 +311,7 @@ private fun ShareContent(
     }
     if (confirmDelete) {
         val count = chosen.size
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { confirmDelete = false },
             icon = { Icon(LincSymbols.Delete, contentDescription = null) },
             title = { Text(if (count == 1) "Delete ${chosen.first().name}?" else "Delete $count files?") },
@@ -457,7 +457,7 @@ private fun TransferRow(t: Transfer) {
 private fun TextShareSheet(overLinc: Boolean, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var text by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    LincBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Kit.gutter).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Send text or a link", style = MaterialTheme.typography.headlineSmall)
             HelperText(if (overLinc) "A link opens on your PC; text lands on its clipboard." else "Sent with Quick Share.")

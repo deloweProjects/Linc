@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -53,6 +52,8 @@ import app.linc.android.service.ClipboardSettings
 import app.linc.android.service.CompanionStateHolder
 import app.linc.android.service.CompanionStateHolder.ServiceState
 import app.linc.android.service.Explanations
+import app.linc.android.ui.kit.LincAlertDialog
+import app.linc.android.ui.kit.LincBottomSheet
 import app.linc.android.ui.kit.EmptyState
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
@@ -120,7 +121,7 @@ private fun ClipboardContent(
         val notify = rememberNotify()
         val shown = ClipHistory.search(items, query)
         if (composing) {
-            androidx.compose.material3.ModalBottomSheet(onDismissRequest = { composing = false }) {
+            LincBottomSheet(onDismissRequest = { composing = false }) {
                 Column(Modifier.padding(bottom = 24.dp)) {
                     Composer(
                         text = draft,
@@ -207,7 +208,7 @@ private fun ClipboardContent(
     }
 
     if (confirmClear) {
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { confirmClear = false },
             icon = { Icon(LincSymbols.ClearAll, contentDescription = null) },
             title = { Text("Clear the clipboard history?") },

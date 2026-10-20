@@ -57,6 +57,10 @@ fun LincTheme(
     val scheme = lincColorScheme(darkTheme)
     // Null (the Default font) leaves Material's stock typography exactly as it was.
     val typography = remember(font) { lincTypography(font ?: AppFont.Default) }
+    // Overlays (sheets, dialogs, menus, the Tools panel) read this to stay solid enough to read
+    // over the wallpaper; see overlayContainerColor.
+    val windowBlur = rememberWindowBlur(active = wallpaper == true)
+    val frost = remember(wallpaper, darkTheme, scheme, windowBlur) { Frost(wallpaper == true, darkTheme, scheme, windowBlur) }
     MaterialExpressiveTheme(
         colorScheme = if (wallpaper == true) scheme.frosted(darkTheme) else scheme,
         motionScheme = MotionScheme.expressive(),
@@ -66,9 +70,10 @@ fun LincTheme(
         // LocalContentColor (black by default): say what text on them is.
         CompositionLocalProvider(
             LocalShowExplanations provides showExplanations,
+            LocalFrost provides frost,
             androidx.compose.material3.LocalContentColor provides scheme.onSurface,
         ) {
-            if (wallpaper == true) WallpaperBackdrop(darkTheme, scheme.surface, content) else content()
+            if (wallpaper == true) WallpaperBackdrop(darkTheme, scheme, content) else content()
         }
     }
 }

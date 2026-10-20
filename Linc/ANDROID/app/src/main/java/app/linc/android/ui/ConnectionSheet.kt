@@ -21,7 +21,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +36,7 @@ import app.linc.android.service.CompanionStateHolder.ServiceState
 import app.linc.android.service.MirrorControl
 import app.linc.android.service.MirrorSession
 import app.linc.android.service.ReconnectSignal
+import app.linc.android.ui.kit.LincBottomSheet
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.Kit
 import app.linc.android.ui.kit.SettingsGroup
@@ -65,7 +65,7 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    LincBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(Kit.groupGap)) {
             Text("Connection", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = Kit.gutter))
             SettingsGroup(rows = listOfNotNull(

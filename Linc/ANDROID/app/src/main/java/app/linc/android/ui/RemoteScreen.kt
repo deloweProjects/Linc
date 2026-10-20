@@ -46,7 +46,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,7 +60,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -114,6 +112,8 @@ import app.linc.android.service.PcVoiceAccess
 import app.linc.android.service.PresentationControl
 import app.linc.android.service.PresentationKeys
 import app.linc.android.service.TrackpadGestures
+import app.linc.android.ui.kit.LincAlertDialog
+import app.linc.android.ui.kit.LincBottomSheet
 import app.linc.android.ui.kit.BlockedState
 import app.linc.android.ui.kit.ConnectedChoice
 import app.linc.android.ui.kit.HelperText
@@ -488,7 +488,7 @@ private fun RemoteSheetHost(sheet: RemoteSheet, onDismiss: () -> Unit, content: 
     // Full height for every sheet; the keyboard's sheet also rides above the phone's keyboard
     // (its insets include the IME), so its keys sit right on top of the keys being typed.
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    LincBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
         contentWindowInsets = {
@@ -991,7 +991,7 @@ internal fun PowerSheet(blockedReason: String?) {
 
     confirm?.let { action ->
         val restart = action == "restart"
-        AlertDialog(
+        LincAlertDialog(
             onDismissRequest = { confirm = null },
             icon = { Icon(if (restart) LincSymbols.Restart else LincSymbols.PowerOff, contentDescription = null) },
             title = { Text(if (restart) "Restart the PC?" else "Shut down the PC?") },

@@ -23,7 +23,6 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -58,6 +57,7 @@ import app.linc.android.service.PcVoiceAccess
 import app.linc.android.service.ProjectLinks
 import app.linc.android.service.TransportStore
 import app.linc.android.service.VoiceAccessState
+import app.linc.android.ui.kit.LincBottomSheet
 import app.linc.android.ui.kit.BlockedState
 import app.linc.android.ui.kit.HelperText
 import app.linc.android.ui.kit.HeroCard
@@ -245,7 +245,7 @@ private fun HomeContent(
     if (connectionSheet) ConnectionSheet(onDismiss = { connectionSheet = false })
     if (powerSheet) {
         // The PC's power, from Home: lock, sleep, restart, shut down, and its brightness.
-        ModalBottomSheet(onDismissRequest = { powerSheet = false }) {
+        LincBottomSheet(onDismissRequest = { powerSheet = false }) {
             Column(
                 Modifier.fillMaxWidth().padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(Kit.groupGap),
@@ -253,7 +253,7 @@ private fun HomeContent(
         }
     }
     if (voiceSheet) {
-        ModalBottomSheet(onDismissRequest = { voiceSheet = false }) {
+        LincBottomSheet(onDismissRequest = { voiceSheet = false }) {
             Column(
                 Modifier.fillMaxWidth().padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(Kit.groupGap),
