@@ -83,7 +83,8 @@ jobs:
           path: Linc/ANDROID/app/build/outputs/apk/debug
 
       # As build.yml: Beta.pubxml wants exactly one VC++ redist under a VS Community path.
-      # Framework-dependent: the PC needs the .NET 8 Desktop Runtime installed once (a branch
+      # Framework-dependent: the PC needs the .NET 8 Desktop Runtime installed once (or a newer
+      # one: RollForward=Major runs on .NET 9/10 when 8 isn't there) (a branch
       # whose name contains "runtime" also posts Microsoft's installer), and every test build
       # after that is a fraction of the size. Windows App SDK stays bundled.
       - name: Publish desktop app (Beta, uses the installed .NET 8)
@@ -95,7 +96,7 @@ jobs:
           $redist = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC'
           New-Item -ItemType Directory -Force $redist | Out-Null
           New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
-          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:Configuration=Release -p:Platform=x64 -v:m
+          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:RollForward=Major -p:Configuration=Release -p:Platform=x64 -v:m
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # One file for both apps, squeezed hard (the owner: "put in 1 file then compress bro like a

@@ -89,7 +89,7 @@ jobs:
           $redist = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC'
           New-Item -ItemType Directory -Force $redist | Out-Null
           New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
-          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:Configuration=Release -p:Platform=x64 -v:m
+          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:RollForward=Major -p:Configuration=Release -p:Platform=x64 -v:m
 
       - name: Build the fake phone
         run: dotnet build Linc\tools\uishots\uishots.csproj -c Release -v:m

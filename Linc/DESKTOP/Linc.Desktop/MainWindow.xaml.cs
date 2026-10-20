@@ -165,13 +165,28 @@ public sealed partial class MainWindow : Window
             var (glowA, glowAStop) = Glow(new Windows.Foundation.Point(0.12, 0.22));
             var (glowB, glowBStop) = Glow(new Windows.Foundation.Point(0.88, 0.8));
 
-            var portraitImage = new Image { Stretch = Stretch.UniformToFill, Opacity = 0.92, IsHitTestVisible = false };
-            var (fadeLeft, fadeLeftStop) = Fade(fromLeft: true);
-            var (fadeRight, fadeRightStop) = Fade(fromLeft: false);
-            var portrait = new Grid { HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
-            portrait.Children.Add(portraitImage);
-            portrait.Children.Add(fadeLeft);
-            portrait.Children.Add(fadeRight);
+            // The centred wallpaper fades to nothing at its sides through a mask, so no edge shows
+            // (fading it into one average colour per side left a visible outline: the owner's "clear
+            // edge of the portrait wallpaper").
+            var portrait = new Border { HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
+            var compositor = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(portrait).Compositor;
+            var portraitSurface = compositor.CreateSurfaceBrush();
+            portraitSurface.Stretch = Microsoft.UI.Composition.CompositionStretch.UniformToFill;
+            var edgeMask = compositor.CreateLinearGradientBrush();
+            edgeMask.StartPoint = new System.Numerics.Vector2(0, 0.5f);
+            edgeMask.EndPoint = new System.Numerics.Vector2(1, 0.5f);
+            edgeMask.ColorStops.Add(compositor.CreateColorGradientStop(0f, Microsoft.UI.Colors.Transparent));
+            edgeMask.ColorStops.Add(compositor.CreateColorGradientStop(0.3f, Microsoft.UI.Colors.White));
+            edgeMask.ColorStops.Add(compositor.CreateColorGradientStop(0.7f, Microsoft.UI.Colors.White));
+            edgeMask.ColorStops.Add(compositor.CreateColorGradientStop(1f, Microsoft.UI.Colors.Transparent));
+            var maskedPortrait = compositor.CreateMaskBrush();
+            maskedPortrait.Source = portraitSurface;
+            maskedPortrait.Mask = edgeMask;
+            var portraitVisual = compositor.CreateSpriteVisual();
+            portraitVisual.Brush = maskedPortrait;
+            portraitVisual.Opacity = 0.92f;
+            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetElementChildVisual(portrait, portraitVisual);
+            Windows.Storage.Streams.InMemoryRandomAccessStream? portraitStream = null;
 
             var sides = new Grid { Background = sideWash, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
             sides.Children.Add(new Border { Background = glowA, Opacity = 0.75, IsHitTestVisible = false });
@@ -199,14 +214,16 @@ public sealed partial class MainWindow : Window
                 bool wide = soft is not null && aspect is > 0 and < 0.9 && (maximised || root.ActualWidth >= WideBackdropWidth);
                 fill.Source = wide ? null : soft;
                 fill.Visibility = soft is not null && !wide ? Visibility.Visible : Visibility.Collapsed;
-                portraitImage.Source = wide ? soft : null;
                 sides.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
                 if (wide && root.ActualHeight > 0)
                 {
-                    portrait.Width = Math.Min(root.ActualWidth, root.ActualHeight * aspect);
-                    fadeLeft.Width = fadeRight.Width = portrait.Width * 0.24;
+                    // A little wider than the picture, so the faded sides overlap the colour wash.
+                    portrait.Width = Math.Min(root.ActualWidth, root.ActualHeight * aspect * 1.35);
+                    portraitVisual.Size = new System.Numerics.Vector2((float)portrait.Width, (float)root.ActualHeight);
                 }
-                tint.Opacity = soft is null ? (mica ? 0.55 : 0.7) : wide ? 0.5 : 0.58;
+                // Light theme: a thinner white veil, or everything looks washed out.
+                double veil = root.ActualTheme == ElementTheme.Light ? 0.72 : 1.0;
+                tint.Opacity = veil * (soft is null ? (mica ? 0.55 : 0.7) : wide ? 0.5 : 0.58);
             }
 
             async Task LoadAsync()
@@ -234,6 +251,14 @@ public sealed partial class MainWindow : Window
                     await image.SetSourceAsync(stream);
                 }
                 if (mine != generation) return; // a newer wallpaper or setting won
+                var portraitBytes = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+                await portraitBytes.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+                portraitBytes.Seek(0);
+                portraitStream?.Dispose();
+                portraitStream = portraitBytes; // kept while the surface loads from it
+                // Decoded small and drawn large: the same soft blur as the full-bleed fill.
+                portraitSurface.Surface = LoadedImageSurface.StartLoadFromStream(portraitBytes,
+                    new Windows.Foundation.Size(SoftWallpaperWidth * 2, SoftWallpaperWidth * 4));
                 soft = image;
                 aspect = sample?.Aspect ?? 0;
                 if (sample is { } colours)
@@ -243,8 +268,6 @@ public sealed partial class MainWindow : Window
                     rightStop.Color = colours.Right;
                     glowAStop.Color = colours.TopLeft;
                     glowBStop.Color = colours.BottomRight;
-                    fadeLeftStop.Color = colours.Left;
-                    fadeRightStop.Color = colours.Right;
                 }
                 Arrange();
             }
@@ -263,6 +286,8 @@ public sealed partial class MainWindow : Window
 
             Reload();
             root.SizeChanged += (_, _) => Arrange();
+            root.ActualThemeChanged += (_, _) => { ToneSurfaces(root.ActualTheme == ElementTheme.Light); Arrange(); };
+            ToneSurfaces(root.ActualTheme == ElementTheme.Light);
             AppWindow.Changed += (_, args) =>
             {
                 if (args.DidPresenterChange) Arrange();
@@ -300,24 +325,16 @@ public sealed partial class MainWindow : Window
         return (brush, inner);
     }
 
-    /// <summary>The centred wallpaper's edge, fading into the side colour so it has no hard border.</summary>
-    private static (Border Edge, GradientStop Outer) Fade(bool fromLeft)
+    /// <summary>
+    /// Cards a touch more see-through in light theme: at dark theme's opacity, near-white cards
+    /// over a white veil read as a wall of white (the owner: "reduce whiteness of stuff a lil bit").
+    /// </summary>
+    private static void ToneSurfaces(bool light)
     {
-        var outer = new GradientStop { Offset = 0 };
-        var brush = new LinearGradientBrush
-        {
-            StartPoint = new Windows.Foundation.Point(fromLeft ? 0 : 1, 0.5),
-            EndPoint = new Windows.Foundation.Point(fromLeft ? 1 : 0, 0.5),
-        };
-        brush.GradientStops.Add(outer);
-        brush.GradientStops.Add(new GradientStop { Offset = 1, Color = Microsoft.UI.Colors.Transparent });
-        var edge = new Border
-        {
-            HorizontalAlignment = fromLeft ? HorizontalAlignment.Left : HorizontalAlignment.Right,
-            Background = brush,
-            IsHitTestVisible = false,
-        };
-        return (edge, outer);
+        var resources = Application.Current.Resources;
+        if (resources["SurfaceContainerBrush"] is SolidColorBrush card) card.Opacity = light ? 0.66 : 0.78;
+        if (resources["SurfaceContainerHighBrush"] is SolidColorBrush high) high.Opacity = light ? 0.74 : 0.86;
+        if (resources["FrostedSurfaceBrush"] is AcrylicBrush frost) frost.TintOpacity = light ? 0.42 : 0.55;
     }
 
     private sealed record WallpaperColours(
@@ -746,6 +763,7 @@ public sealed partial class MainWindow : Window
     private void UpdateDockLift()
     {
         double lift = 0;
+        bool watchTaskbar = false;
         try
         {
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -766,7 +784,16 @@ public sealed partial class MainWindow : Window
                          && (maximised || bottom >= info.rcMonitor.Bottom - 2)
                          && TaskbarAutoHidesAtBottom())
                 {
-                    lift = AutoHideTaskbarLift;
+                    // Only while it is actually showing: an auto-hide taskbar slides in and out, and
+                    // a bar lifted all the time sat far too high (the owner: "supposed to be
+                    // reactive, go high when the taskbar is open, then lower"). Watched while it
+                    // can appear.
+                    watchTaskbar = true;
+                    if (FindWindow("Shell_TrayWnd", null) is var tray && tray != IntPtr.Zero
+                        && GetWindowRect(tray, out var bar) && bar.Top < info.rcMonitor.Bottom - 6)
+                    {
+                        lift = Math.Min(Math.Max(0, bottom - bar.Top) / scale, AutoHideTaskbarLift + 24);
+                    }
                 }
             }
         }
@@ -774,9 +801,30 @@ public sealed partial class MainWindow : Window
         {
             lift = 0; // no shell to ask: leave the bar where it is
         }
+        WatchTaskbar(watchTaskbar);
         if (Math.Abs(lift - _dockLift) < 0.5) return;
         _dockLift = lift;
         LayoutDock();
+    }
+
+    private DispatcherTimer? _taskbarWatch;
+
+    /// <summary>Checks the auto-hide taskbar a few times a second while it could cover the bar.</summary>
+    private void WatchTaskbar(bool on)
+    {
+        if (on)
+        {
+            if (_taskbarWatch is null)
+            {
+                _taskbarWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+                _taskbarWatch.Tick += (_, _) => UpdateDockLift();
+            }
+            if (!_taskbarWatch.IsEnabled) _taskbarWatch.Start();
+        }
+        else
+        {
+            _taskbarWatch?.Stop();
+        }
     }
 
     private static bool TaskbarAutoHidesAtBottom()
@@ -834,6 +882,13 @@ public sealed partial class MainWindow : Window
 
     [DllImport("shell32.dll")]
     private static extern UIntPtr SHAppBarMessage(uint message, ref APPBARDATA data);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindow(string className, string? windowName);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs e)
     {
