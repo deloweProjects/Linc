@@ -15,3 +15,4 @@
 • PC: the centred wallpaper has no visible edge; light theme is less white; the floating bar only rises while the taskbar is showing
 • PC: the new Linc takes over from the old one in the tray (before, the old one kept running and you saw the old app)
 • Phone: the wallpaper background really shows now
+• Clipboard (phone and PC): search comes first; sending text to the other device is behind a "Send to PC" / "Send to phone" button
