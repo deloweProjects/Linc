@@ -336,3 +336,14 @@ Owner: "That's brilliant … remember to hide extra settings n keep surface safe
   speakers, volume, Align.
 - "Phone sound on PC" outside Play everywhere stays as is (PhoneSoundOnPc, --audio-dup, no delay).
 - Update Vibe/agent/opencode-docs/SOUND.md in the same commit. Don't break PC→phone, which works.
+
+## 14. Six more asks (2026-10-20) — every new option off / current-by-default
+
+Owner: "I hope none of this will break n thing."
+1. Terminal: no wrapping — run the PC console wide, swipe sideways to see long lines (like Termux).
+2. PC Home in a smaller window: shrink the stage, phone card and widgets to fit instead of
+   cramming / cutting off.
+3. Phone: floating navigation bar, as a setting (off by default).
+4. PC Home Now playing: album art as the widget's softened background, matching the other cards.
+5. Clock styles for the Home clock, chosen in Settings (default = today's clock).
+6. Font choice for both apps: a few classy OFL fonts bundled; default = today's font.
