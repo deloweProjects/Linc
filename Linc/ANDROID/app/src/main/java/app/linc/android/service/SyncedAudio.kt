@@ -110,7 +110,7 @@ object SyncedAudio {
                     }
                     continue
                 }
-                val index = codec.dequeueInputBuffer(20_000)
+                val index = codec.dequeueInputBuffer(DECODE_WAIT_US)
                 if (index >= 0) {
                     codec.getInputBuffer(index)?.apply { clear(); put(frame.data) }
                     codec.queueInputBuffer(index, 0, frame.data.size, frame.timestampUs, 0)
@@ -149,16 +149,16 @@ object SyncedAudio {
         if (clock.ready) {
             val now = nowUs()
             val age = clock.toPc(now) - block.captureUs
-            if (age >= arrivalUs || now - arrivalAt > 5_000_000) { arrivalUs = maxOf(0L, age); arrivalAt = now }
+            if (age >= arrivalUs || now - arrivalAt > WORST_ARRIVAL_US) { arrivalUs = maxOf(0L, age); arrivalAt = now }
         }
         val delay = AudioEverywhere.delayUs
-        for (o in outputsSnapshot()) o.engine.enqueue(block, delay + 1_000_000)
+        for (o in outputsSnapshot()) o.engine.enqueue(block, delay + OVERFILL_US)
     }
 
     /** Learn the PC's clock afresh (quick probes again) and put every output back on target: "Re-sync". */
     fun resync() {
         if (!streaming) return
-        fastProbeUntilUs = nowUs() + 3_000_000
+        fastProbeUntilUs = nowUs() + EXTRA_PROBING_US
         clock.reset()
         for (o in outputsSnapshot()) o.engine.realign()
     }
@@ -178,12 +178,12 @@ object SyncedAudio {
                 buffer.putInt(CLOCK_MAGIC).putInt(0).putLong(nowUs())
                 synchronized(output) { output.write(buffer.array()); output.flush() }
                 val now = nowUs()
-                if (clock.ready && now - lastLog > 30_000_000) {
+                if (clock.ready && now - lastLog > LOG_EVERY_US) {
                     lastLog = now
                     LogStore.log(LogLevel.INFO, "Play everywhere: PC clock to within ${clock.uncertaintyUs / 1000.0} ms, drifting ${"%.0f".format(clock.driftPpm)} ppm")
                     AudioEverywhere.reportClock(clock.uncertaintyUs, clock.driftPpm)
                 }
-                Thread.sleep(if (now - started < 5_000_000 || now < fastProbeUntilUs) 200 else 1_000)
+                Thread.sleep(if (now - started < EARLY_PROBES_US || now < fastProbeUntilUs) 200 else 1_000)
             }
         } catch (_: InterruptedException) {
         } catch (e: Exception) {
@@ -192,6 +192,14 @@ object SyncedAudio {
     }
 
     private const val CLOCK_MAGIC = 0x4C434C4B // "LCLK"
+
+    // Timings (µs).
+    private const val DECODE_WAIT_US = 20_000L // the longest wait for a free decoder input buffer
+    private const val EARLY_PROBES_US = 5_000_000L // probe quickly for this long after the sound starts
+    private const val LOG_EVERY_US = 30_000_000L // how often the clock's state goes in the log
+    private const val OVERFILL_US = 1_000_000L // how far past the target an output may queue sound
+    private const val WORST_ARRIVAL_US = 5_000_000L // how long the worst arrival time is kept
+    private const val EXTRA_PROBING_US = 3_000_000L // quick probes after "Re-sync"
 }
 
 /** An output the mixer wants playing: which device, how loud, how late it hides. */
