@@ -12,8 +12,11 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -56,12 +59,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -166,7 +173,7 @@ fun TerminalHome(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null)
                 }
             }
             item {
-                HelperText("Runs on the PC as you, with your files and programs — the same as opening it there. Pinch to change the text size.",
+                HelperText("Runs on the PC as you, with your files and programs — the same as opening it there. Pinch to change the text size; swipe sideways to see the rest of long lines.",
                     modifier = Modifier.padding(horizontal = Kit.gutter))
             }
         }
@@ -178,7 +185,8 @@ fun TerminalHome(onBack: (() -> Unit)? = null, onSettings: (() -> Unit)? = null)
 /**
  * One shell, full screen: the console drawn in this phone's colours, the phone's keyboard typing
  * straight into it, and Termux's two rows of extra keys (Esc, Tab, Ctrl, Alt, arrows, Home, End,
- * Page Up/Down) in Material's shapes. Pinch to zoom, drag to scroll back.
+ * Page Up/Down) in Material's shapes. Pinch to zoom, drag up and down to scroll back, sideways to see
+ * the rest of long lines (the console is [WIDE_COLS] wide, not wrapped to the phone).
  * [shell] null re-attaches to the one already running.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -197,6 +205,10 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
     var ctrl by remember { mutableStateOf(false) }
     var alt by remember { mutableStateOf(false) }
     var scrollBack by remember { mutableIntStateOf(0) }
+    // Sideways: the console is wider than the phone (WIDE_COLS), so lines don't wrap; a sideways drag pans it.
+    var panX by remember { mutableFloatStateOf(0f) }
+    var lastPanAt by remember { mutableStateOf(0L) } // when the user last panned; the cursor isn't followed for a moment after
+    var follow by remember { mutableIntStateOf(0) } // bumped to bring the cursor into view now
 
     val colors = MaterialTheme.colorScheme
     val dark = colors.surface.luminance() < 0.5f
@@ -218,6 +230,7 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
         if (alt) out = "\u001b" + out
         ctrl = false; alt = false
         scrollBack = 0
+        lastPanAt = 0L; follow++ // typing: show where it goes
         PcTools.type(out)
     }
     fun showKeyboard() {
@@ -265,10 +278,35 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
                 val metrics = paint.fontMetrics
                 val cellH = (metrics.descent - metrics.ascent) * 1.08f
                 val pad = with(density) { 10.dp.toPx() }
-                // The width alone sets the columns: the keyboard only takes height (imePadding above), so
-                // opening or closing it changes the rows and never re-wraps the text.
-                val cols = ((constraints.maxWidth - 2 * pad) / cellW).toInt().coerceIn(20, 300)
+                // The PC's console is wide (WIDE_COLS, or the screen's width if that is more), so long lines
+                // stay whole and are seen by panning sideways, not wrapped onto the next line. Pinching changes
+                // the cell size, and so the rows, but not the columns (unless the screen fits more than WIDE_COLS).
+                // The keyboard only takes height (imePadding above), so it changes the rows and never the columns.
+                val viewW = constraints.maxWidth.toFloat()
+                val screenCols = ((viewW - 2 * pad) / cellW).toInt()
+                val cols = maxOf(WIDE_COLS, screenCols).coerceIn(20, 300)
                 val rows = ((constraints.maxHeight - 2 * pad) / cellH).toInt().coerceIn(5, 200)
+                val contentW = 2 * pad + cols * cellW
+                val maxPan = (contentW - viewW).coerceAtLeast(0f)
+                val px = panX.coerceIn(0f, maxPan)
+                val maxPanNow by rememberUpdatedState(maxPan)
+
+                // Bring the cursor's column into view: on typing at once, on output once the user has
+                // stopped panning for a moment (FOLLOW_IDLE_MS), and never while scrolled back.
+                LaunchedEffect(version, follow) {
+                    if (scrollBack > 0) return@LaunchedEffect
+                    val idle = System.currentTimeMillis() - lastPanAt
+                    if (idle < FOLLOW_IDLE_MS) kotlinx.coroutines.delay(FOLLOW_IDLE_MS - idle)
+                    val col = synchronized(PcTools.screen) { PcTools.screen.cursorCol }
+                    val x = pad + col * cellW
+                    val margin = 4 * cellW
+                    val cur = panX.coerceIn(0f, maxPan)
+                    panX = when {
+                        x < cur -> (x - margin).coerceIn(0f, maxPan)
+                        x + cellW > cur + viewW -> (x + cellW + margin - viewW).coerceIn(0f, maxPan)
+                        else -> cur
+                    }
+                }
 
                 // The invisible view the keyboard types into; the console is drawn over it.
                 AndroidView(
@@ -297,25 +335,55 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
 
                 val fg = colors.onSurface
                 val cursor = colors.primary
+                val track = colors.onSurfaceVariant
                 val lineH by rememberUpdatedState(cellH) // the pinch changes it; the gesture below outlives one size
                 Canvas(
                     Modifier.fillMaxSize()
                         .pointerInput(Unit) { detectTapGestures(onTap = { showKeyboard() }) }
                         .pointerInput(Unit) {
-                            var dragged = 0f // pixels dragged and not yet a whole line
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                if (zoom != 1f) {
-                                    // Pinch: the text size, and with it the columns and rows (the PC's console follows).
-                                    fontSp = (fontSp * zoom).coerceIn(MIN_FONT, MAX_FONT)
-                                    dragged = 0f
-                                } else if (pan.y != 0f) {
-                                    dragged += pan.y
-                                    val steps = (dragged / lineH).toInt()
-                                    if (steps != 0) {
-                                        dragged -= steps * lineH
-                                        val max = synchronized(PcTools.screen) { PcTools.screen.scrollbackSize }
-                                        scrollBack = (scrollBack + steps).coerceIn(0, max)
+                            // One finger: past the touch slop, the drag's main direction decides — sideways pans,
+                            // up and down scrolls back through the history. Two fingers: a pinch, the text size.
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var mode = 0 // 0 undecided, 1 sideways, 2 up/down, 3 pinch
+                                var moved = Offset.Zero // dragged before the direction was decided
+                                var dragged = 0f // pixels dragged up/down and not yet a whole line
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.none { it.pressed }) break
+                                    val fingers = event.changes.count { it.pressed }
+                                    if (fingers >= 2) {
+                                        mode = 3
+                                        val zoom = event.calculateZoom()
+                                        if (zoom != 1f && zoom.isFinite() && zoom > 0f) {
+                                            val before = fontSp
+                                            fontSp = (fontSp * zoom).coerceIn(MIN_FONT, MAX_FONT)
+                                            panX = (panX * (fontSp / before)).coerceAtLeast(0f) // keep roughly the same columns in view
+                                        }
+                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        continue
                                     }
+                                    if (mode == 3) continue // one finger left after a pinch: nothing until it lifts
+                                    var pan = event.calculatePan()
+                                    if (mode == 0) {
+                                        moved += pan
+                                        if (moved.getDistance() < viewConfiguration.touchSlop) continue
+                                        mode = if (abs(moved.x) > abs(moved.y)) 1 else 2
+                                        pan = moved
+                                    }
+                                    if (mode == 1) {
+                                        panX = (panX.coerceIn(0f, maxPanNow) - pan.x).coerceIn(0f, maxPanNow)
+                                        lastPanAt = System.currentTimeMillis()
+                                    } else {
+                                        dragged += pan.y
+                                        val steps = (dragged / lineH).toInt()
+                                        if (steps != 0) {
+                                            dragged -= steps * lineH
+                                            val max = synchronized(PcTools.screen) { PcTools.screen.scrollbackSize }
+                                            scrollBack = (scrollBack + steps).coerceIn(0, max)
+                                        }
+                                    }
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
                                 }
                             }
                         }
@@ -329,6 +397,8 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
                     }
                     val first = (lines.size - rows - scrollBack).coerceAtLeast(0)
                     val canvas = drawContext.canvas.nativeCanvas
+                    canvas.save()
+                    canvas.translate(-px, 0f) // the columns panned off to the left
                     for (r in 0 until rows) {
                         val line = lines.getOrNull(first + r) ?: break
                         val y = pad + r * cellH
@@ -365,6 +435,18 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
                         paint.color = cursor.copy(alpha = 0.75f).toArgb()
                         canvas.drawRect(x, y, x + cellW, y + cellH, paint)
                     }
+                    canvas.restore()
+                    // A thin bar along the bottom: how much of the width is in view, and where.
+                    if (maxPan > 0f) {
+                        val barH = 3.dp.toPx()
+                        val barY = size.height - barH - 3.dp.toPx()
+                        val inset = 12.dp.toPx()
+                        val trackW = size.width - 2 * inset
+                        val thumbW = (trackW * viewW / contentW).coerceIn(24.dp.toPx().coerceAtMost(trackW), trackW)
+                        val thumbX = inset + (trackW - thumbW) * (px / maxPan)
+                        drawRoundRect(track.copy(alpha = 0.12f), Offset(inset, barY), Size(trackW, barH), CornerRadius(barH / 2))
+                        drawRoundRect(track.copy(alpha = 0.55f), Offset(thumbX, barY), Size(thumbW, barH), CornerRadius(barH / 2))
+                    }
                 }
                 if (!ready) {
                     HelperText("Connect the PC, and update Linc on it, to open a terminal.", kind = Explanations.Kind.Blocked,
@@ -372,13 +454,16 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
                 } else if (started && !open && shell == null) {
                     Button(onClick = onClose, modifier = Modifier.align(Alignment.Center)) { Text("The shell has closed") }
                 }
-                if (scrollBack > 0) {
-                    Surface(onClick = { scrollBack = 0 }, shape = RoundedCornerShape(16.dp), color = colors.secondaryContainer,
+                val cursorCol = remember(version) { synchronized(PcTools.screen) { PcTools.screen.cursorCol } }
+                val cursorX = pad + cursorCol * cellW
+                val cursorOff = cursorX < px || cursorX + cellW > px + viewW
+                if (scrollBack > 0 || (open && cursorOff)) {
+                    Surface(onClick = { scrollBack = 0; lastPanAt = 0L; panX = 0f; follow++ }, shape = RoundedCornerShape(16.dp), color = colors.secondaryContainer,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(LincSymbols.ArrowDown, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Back to the bottom", style = MaterialTheme.typography.labelLarge)
+                            Text(if (scrollBack > 0) "Back to the bottom" else "Back to the cursor", style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
@@ -568,3 +653,7 @@ class TerminalInputView(context: Context) : View(context) {
 private const val KEY_FONT = "terminal_font_sp"
 private const val MIN_FONT = 6f
 private const val MAX_FONT = 24f
+/** The PC console's width at the least: wide enough that lines stay whole, panned sideways on the phone. */
+private const val WIDE_COLS = 160
+/** How long after a sideways pan before new output brings the cursor back into view. */
+private const val FOLLOW_IDLE_MS = 1500L
