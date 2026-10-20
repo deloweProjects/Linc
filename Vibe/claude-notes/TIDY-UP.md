@@ -4,6 +4,11 @@ Much of 1.0.0.12 to 1.0.0.17 was written quickly by parallel helpers without a l
 builds in CI, and the owner says it works, but these corners should be cleaned before features pile
 on top. ✔ = re-checked by hand. Line numbers drift; search for the names.
 
+**Leave as they are (the owner's request):** the order and names of the two timing-constant
+groups, in `SyncedAudio.kt` (`DECODE_WAIT_US` … `EXTRA_PROBING_US`) and in `PcAudioStreamer.cs`
+(`DiscontinuityUs` … `EncoderMinBufferBytes`). Don't sort, merge or rename them during any tidy-up;
+retune the values freely.
+
 **Order:** the cheap, safe items first. The big refactors only with the UI test plus the
 sims/unit tests green before and after, and **never mixed with feature work**.
 

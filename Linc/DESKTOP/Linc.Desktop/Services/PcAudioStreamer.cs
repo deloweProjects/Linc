@@ -68,6 +68,14 @@ public sealed class PcAudioStreamer : IDisposable
     public const int ClockProbeBytes = 16;
     public const int ClockReplyBytes = 24;
 
+    // Capture and send timings.
+    private const int DiscontinuityUs = 5_000; // a packet this far off the timeline starts it afresh
+    private const int EaseDivisor = 64; // the timeline moves this fraction of the way to each packet's stamp
+    private const int LateFlushUs = 30_000; // send a part-filled block once the PC has been quiet this long
+    private const int OrderlyStopMs = 1000; // how long Dispose waits for each thread
+    private const int WriterWaitMs = 250; // the writer's idle wake-up
+    private const int EncoderMinBufferBytes = 8192; // the smallest output buffer handed to the AAC encoder
+
     /// <summary>Raised once when the stream ends (the phone hung up, or capture failed).</summary>
     public event Action<string>? Ended;
 
@@ -176,13 +184,13 @@ public sealed class PcAudioStreamer : IDisposable
                         // A packet that doesn't follow on (the PC was silent in between, or
                         // WASAPI says so): finish the block being filled, and start the timeline
                         // afresh from this packet's stamp.
-                        if (!timelineSet || (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0 || Math.Abs(packetUs - timelineUs) > 5_000)
+                        if (!timelineSet || (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0 || Math.Abs(packetUs - timelineUs) > DiscontinuityUs)
                         {
                             Flush();
                             timelineUs = packetUs;
                             timelineSet = true;
                         }
-                        else timelineUs += (packetUs - timelineUs) / 64;
+                        else timelineUs += (packetUs - timelineUs) / EaseDivisor;
                         for (uint f = 0; f < frames; f++)
                         {
                             if (filled == 0) blockStartUs = (long)timelineUs;
@@ -197,7 +205,7 @@ public sealed class PcAudioStreamer : IDisposable
                 }
                 // The PC went quiet mid-block (loopback then sends nothing at all): send what
                 // there is now, rather than holding the end of a sound until the next one starts.
-                if (filled > 0 && PcClock.NowUs() - timelineUs > 30_000) Flush();
+                if (filled > 0 && PcClock.NowUs() - timelineUs > LateFlushUs) Flush();
                 token.WaitHandle.WaitOne(5);
             }
         }
@@ -250,7 +258,7 @@ public sealed class PcAudioStreamer : IDisposable
         {
             while (!token.IsCancellationRequested)
             {
-                if (!_pending.Wait(250, token)) continue;
+                if (!_pending.Wait(WriterWaitMs, token)) continue;
                 byte[] packet;
                 lock (_queue)
                 {
@@ -329,10 +337,10 @@ public sealed class PcAudioStreamer : IDisposable
         if (_disposed) return;
         _disposed = true;
         _stopping.Cancel();
-        _capture.Join(1000);
-        _writer.Join(1000);
+        _capture.Join(OrderlyStopMs);
+        _writer.Join(OrderlyStopMs);
         try { _channel.Dispose(); } catch { }
-        _clockReader?.Join(1000); // its blocking read ends when the channel closes
+        _clockReader?.Join(OrderlyStopMs); // its blocking read ends when the channel closes
         _pending.Dispose();
         _stopping.Dispose();
     }
@@ -446,7 +454,7 @@ public sealed class PcAudioStreamer : IDisposable
                 if (!provides)
                 {
                     Check(MFCreateSample(out own), "MFCreateSample");
-                    Check(MFCreateMemoryBuffer((int)Math.Max(info.cbSize, 8192), out ownBuffer), "MFCreateMemoryBuffer");
+                    Check(MFCreateMemoryBuffer((int)Math.Max(info.cbSize, EncoderMinBufferBytes), out ownBuffer), "MFCreateMemoryBuffer");
                     own.AddBuffer(ownBuffer);
                 }
                 var output = new MFT_OUTPUT_DATA_BUFFER { dwStreamID = 0, pSample = own! };
