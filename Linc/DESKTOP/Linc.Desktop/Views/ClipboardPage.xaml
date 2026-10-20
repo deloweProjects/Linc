@@ -62,9 +62,15 @@
                 </Button>
             </Grid>
 
-            <AutoSuggestBox QueryIcon="Find" PlaceholderText="Search the history"
-                            Text="{x:Bind ViewModel.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            AutomationProperties.Name="Search the clipboard history" />
+            <!-- A plain TextBox, not an AutoSuggestBox: with the AutoSuggestBox the page measured wider
+                 than the window and the column ran off the right edge (UI test, concerns-5). -->
+            <Grid>
+                <TextBox PlaceholderText="Search the history" Padding="36,6,10,6"
+                         Text="{x:Bind ViewModel.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         AutomationProperties.Name="Search the clipboard history" />
+                <FontIcon Glyph="&#xE721;" FontSize="14" Opacity="0.7" Margin="12,0,0,0"
+                          HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" />
+            </Grid>
 
             <InfoBar IsOpen="{x:Bind ViewModel.HasMessage, Mode=TwoWay}" Severity="Informational"
                      Message="{x:Bind ViewModel.Message, Mode=OneWay}" />
