@@ -179,7 +179,7 @@ and spec: `Vibe/claude-notes/linc-tools/`.
 | **Capture** | Screenshot to Pictures\Linc\Screenshots (Open · Copy · Show in folder); Record up to 3 min to Videos\Linc; More: clean status bar, show touches, quality. |
 | **Health** | Battery (level, charging, watts, temperature), phone temperature, storage, live CPU and memory graphs, busy apps with Stop, Phone details (Copy all). Refreshes every 3 s while open. |
 | **System** | Dark mode, Stay awake, Animations, Screen timeout, Brightness, Text size; More: Wi-Fi, mobile data, Bluetooth, airplane, location, battery saver, night light (Wi-Fi off / airplane on ask first over wireless); Restart, Recovery, Power off. |
-| **Commands** | Search ~170 everyday adb commands by what they do ("install app", "screen size", "wifi"), fill in the parameters, see the exact command, then Run or Copy. Values are quoted or checked; deletes only inside the phone's storage; nothing that weakens the phone's security. |
+| **Commands** | Search 331 everyday adb commands by what they do ("install app", "screen size", "wifi"), fill in the parameters, see the exact command, then Run or Copy. Values are quoted or checked; deletes only inside the phone's storage; nothing that weakens the phone's security. |
 | **Console** (Advanced) | Type adb shell commands yourself: history, Copy output, a warning and one confirm for risky commands. |
 
 ## Provenance (who made Linc, and how anyone can check)

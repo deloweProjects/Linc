@@ -17,7 +17,7 @@ Read next in this folder:
 ## 0. Linc Tools: built 2026-10-21 (Phase 1 + sections), not yet released
 
 The Tools page exists: Type, Rescue, Apps, Capture, Health, System, **Commands** (the owner's
-searchable catalogue of ~170 adb commands with parameters, Run and Copy) and Console. It finds
+searchable catalogue of 331 adb commands with parameters, Run and Copy) and Console. It finds
 phones straight from adb (`AdbShell.DevicesAsync`), so it already works without the companion app;
 the rest of Linc still needs the app to say "connected" (Phase 2 below, not started). Not built yet:
 Inspector, Logs, Macros, the ADB-only connection, debloat, retiring Settings' shell box. Tests:

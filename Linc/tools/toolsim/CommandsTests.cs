@@ -8,7 +8,8 @@ internal static class CommandsTests
     public static void Run(Action<bool, string> check)
     {
         var all = CommandCatalog.All;
-        check(all.Count >= 100, $"the catalogue has {all.Count} commands (at least 100)");
+        check(all.Count >= 290, $"the catalogue has {all.Count} commands (at least 290)");
+        check(all.Select(e => e.Title).Distinct().Count() == all.Count, "every command title is unique");
         check(all.Select(e => e.Id).Distinct().Count() == all.Count, "every command id is unique");
         check(all.All(e => e.Title.Length > 0 && e.Description.Length > 0 && e.Keywords.Length > 0
                            && CommandCatalog.Categories.Contains(e.Category)), "every command has a title, description, keywords and a known category");
@@ -175,6 +176,32 @@ internal static class CommandsTests
         check(First("screenshot") == "screenshot", $"\"screenshot\" finds the screenshot first ({First("screenshot")})");
         check(First("ip") == "ip-address", $"\"ip\" finds the IP address first ({First("ip")})");
         check(CommandCatalog.Search("pm uninstall").Any(e => e.Id == "uninstall"), "the command itself is searchable");
+        // The second half of the catalogue (1.0.0.19) is just as findable.
+        (string Query, string[] Ids)[] more =
+        [
+            ("nfc", ["nfc"]), ("dns", ["dns-show"]), ("signal", ["wifi-signal", "mobile-signal"]), ("cpu", ["cpu-speed", "chip"]),
+            ("refresh rate", ["refresh-rate"]), ("doze", ["doze-state", "doze-now"]), ("md5", ["file-md5"]),
+            ("default browser", ["set-default-browser"]), ("keyboard", ["keyboard-list"]), ("selinux", ["selinux"]),
+            ("kernel", ["kernel"]), ("hotspot", ["hotspot-status"]), ("checksum", ["file-md5", "file-sha256"]),
+            ("bold", ["bold-text"]), ("scroll down", ["scroll-down"]), ("battery health", ["battery-health"]),
+        ];
+        foreach (var (query, ids) in more)
+        {
+            check(ids.Contains(First(query)), $"\"{query}\" finds {string.Join(" or ", ids)} first ({First(query)})");
+        }
+        // Commands that change things for an app refuse the phone's own core apps.
+        check(CommandCatalog.Fill(all.First(e => e.Id == "app-bucket-set"), new Dictionary<string, string> { ["package"] = "com.android.systemui", ["bucket"] = "restricted" }) is null,
+            "restricting a core app is refused");
+        check(CommandCatalog.Fill(all.First(e => e.Id == "app-cache-folder"), new Dictionary<string, string> { ["package"] = "com.x/../../" }) is null,
+            "the cache folder only takes a real package name");
+        var dns = CommandCatalog.Fill(all.First(e => e.Id == "dns-set"), new Dictionary<string, string> { ["host"] = "dns.google" });
+        check(dns?.Shell == "settings put global private_dns_mode hostname && settings put global private_dns_specifier dns.google", "private DNS takes one host name");
+        check(CommandCatalog.Fill(all.First(e => e.Id == "dns-set"), new Dictionary<string, string> { ["host"] = "x; reboot" }) is null, "a DNS host can't carry more command");
+        var level = CommandCatalog.Fill(all.First(e => e.Id == "log-level"), new Dictionary<string, string> { ["level"] = "E" });
+        check(level?.Shell == "logcat -d -t 300 '*:'E", "the log level goes in after the quoted *:");
+        var grep = CommandCatalog.Fill(all.First(e => e.Id == "log-search"), new Dictionary<string, string> { ["text"] = "-v" });
+        check(grep?.Shell is { } g && g.Contains("-e '-v'"), "a search word that looks like an option stays a word");
+
         check(CommandCatalog.Search("zzzz nothing").Count == 0, "a search with no match is empty");
         check(CommandCatalog.Search("", CommandCatalog.Power).All(e => e.Category == CommandCatalog.Power)
               && CommandCatalog.Search("", null).Count == all.Count, "an empty search lists the category, or everything");
