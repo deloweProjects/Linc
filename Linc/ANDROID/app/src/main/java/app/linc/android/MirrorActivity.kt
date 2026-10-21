@@ -313,8 +313,17 @@ class MirrorActivity : ComponentActivity() {
         }
 
         override fun setMutePc(on: Boolean) {
+            if (on && !PcSpeaker.ready()) {
+                toast("Muting the PC needs a newer Linc on the PC.")
+                touched()
+                return
+            }
             MirrorSettings.setMutePc(this@MirrorActivity, on)
-            if (MirrorSettings.audio(this@MirrorActivity)) {
+            if (on && !MirrorSettings.audio(this@MirrorActivity)) {
+                // "Mute PC" means "play it here only", so it brings the sound here if it was off.
+                MirrorSettings.setAudio(this@MirrorActivity, true)
+                startPcSound()
+            } else if (MirrorSettings.audio(this@MirrorActivity)) {
                 if (on) {
                     // The PC stops the plain stream at once, then speaker mode starts its own.
                     stopPcSound()
@@ -449,14 +458,14 @@ class MirrorActivity : ComponentActivity() {
         handler.postDelayed(closePanel, PANEL_IDLE_MS)
     }
 
-    /** True while PC Remote itself turned the PC's speaker mode on ("Mute the PC while here"). */
+    /** True while PC Remote itself turned the PC's speaker mode on (the panel's "Mute PC" button). */
     private var speakerByRemote = false
 
     /** "Mute the PC" was just turned off: start the plain stream once speaker mode is off. */
     private var startPlainWhenSpeakerOff = false
 
     /**
-     * The PC's sound on the phone. With "Mute the PC while here" the PC moves its sound onto the
+     * The PC's sound on the phone. With "Mute PC" the PC moves its sound onto the
      * phone (speaker mode) so only the phone plays; otherwise the plain stream plays here and on
      * the PC. Speaker mode someone else turned on (the Sound page, Play everywhere) is left alone.
      */
@@ -584,6 +593,9 @@ class MirrorActivity : ComponentActivity() {
                 if (speakerByRemote && state.error != null) {
                     speakerByRemote = false
                     MirrorControl.audio(true) // sound on both, as before
+                    // The button shows the truth: the PC isn't muted, so it goes back to "Mute PC".
+                    MirrorSettings.setMutePc(this@MirrorActivity, false)
+                    refreshUi()
                     PcSpeaker.explain(state.error)?.let { toast(it) }
                 }
             }

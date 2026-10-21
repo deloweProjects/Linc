@@ -90,13 +90,16 @@ don't get lost.")
     on both.
   - The flag is added in `MirrorService.LaunchLocked`, outside `BuildScrcpyArgs`, so the
     saved-settings byte-identity check (`tools/mirrorsettingssim`) is unchanged.
-- **Phone mirrors the PC** (PC Remote): the panel's **"Mute the PC while here"** (`mirror_mute_pc`,
-  off by default) asks the PC for speaker mode (`pc.speaker.set`, v25) instead of the plain
+- **Phone mirrors the PC** (PC Remote): the panel's **Mute PC** button (in the PC row, next to
+  Sound; `mirror_mute_pc`, off by default) asks the PC for speaker mode (`pc.speaker.set`, v25) instead of the plain
   `pc.audio.start`. The PC's sound then moves onto the phone through the virtual cable.
   - Leaving PC Remote turns speaker mode off **only if PC Remote turned it on**
     (`MirrorActivity.speakerByRemote`). Speaker mode from the Sound page, or Play everywhere, is
     left alone.
-  - Turning the switch off waits for `pc.speaker.state {on:false}` before asking for the plain
+  - Tapping it while the sound is off turns the sound on as well (it means "play it here only").
+    An older PC (below v25) gets a toast instead. If speaker mode fails (no virtual cable), the
+    sound plays on both, the setting goes back off and the toast says why.
+  - Turning it off waits for `pc.speaker.state {on:false}` before asking for the plain
     stream. The PC handles `pc.speaker.set` on a background task, so the two requests could
     otherwise cross.
   - With no cable (`error: no-cable`), it falls back to the plain stream (sound on both) and says

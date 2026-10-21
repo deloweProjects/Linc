@@ -330,14 +330,6 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                 Switch(checked = state.autoKeyboard, onCheckedChange = actions::setAutoKeyboard)
             }
 
-            // Sound: only one device plays (the owner); both at once is Play everywhere.
-            if (state.soundAvailable && state.soundOn && state.mutePcAvailable) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Mute the PC while here", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    Switch(checked = state.mutePc, onCheckedChange = actions::setMutePc)
-                }
-            }
-
             // Microphone: which one the PC hears — Voice Access, calls, dictation — while in here.
             Section(if (state.micLive) "Microphone · phone is live" else "Microphone")
             Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
@@ -360,6 +352,11 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
                 key("sound") {
                     if (state.soundAvailable) Toggle(state.soundOn, if (state.soundOn) LincSymbols.VolumeUp else LincSymbols.VolumeOff,
                         if (state.soundOn) "Sound" else "Muted") { actions.sound() }
+                }
+                // Sound on the phone only: one device plays (the owner); both at once is Play everywhere.
+                key("mutepc") {
+                    if (state.soundAvailable) Toggle(state.soundOn && state.mutePc, LincSymbols.Speaker,
+                        if (state.soundOn && state.mutePc) "PC muted" else "Mute PC") { actions.setMutePc(!(state.soundOn && state.mutePc)) }
                 }
                 key("voice") { if (state.voiceAccessAvailable) Toggle(state.voiceAccessOn, LincSymbols.VoiceAccess, "Voice Access") { actions.voiceAccess() } }
                 if (state.displays > 1) Toggle(false, LincSymbols.Display, "Display") { actions.display() }
