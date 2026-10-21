@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The Tools page's pretend phone (App.xaml.cs --fake-adb): canned adb answers. -->
+    <!-- The Tools page's pretend phone (the app's fake-adb switch, App.xaml.cs): canned adb answers. -->
     <None Include="fake-adb\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
