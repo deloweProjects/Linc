@@ -102,12 +102,13 @@ public partial class MirrorViewModel : ObservableObject
             OnPropertyChanged(nameof(ScreenShapeIndex));
         }
         OnPropertyChanged(nameof(FillsMonitor));
-        if (s.MutePhone != _mutePhone)
+        var sound = SoundToIndex(s);
+        if (sound != _soundIndex)
         {
-            _mutePhone = s.MutePhone;
-            OnPropertyChanged(nameof(MutePhone));
+            _soundIndex = sound;
+            OnPropertyChanged(nameof(SoundIndex));
         }
-        OnPropertyChanged(nameof(CanMutePhone));
+        OnPropertyChanged(nameof(SoundOnPc));
     }
 
     // ---- 1.0.0.18: screen shape and phone sound, on the card itself (saved as they change) ----
@@ -146,24 +147,30 @@ public partial class MirrorViewModel : ObservableObject
 
     public bool FillsMonitor => _registry.Mirror.FillsMonitor();
 
-    private bool _mutePhone;
+    // The owner: sound comes out of one device while mirroring, chosen here; both at once is
+    // what Play everywhere is for. 0 = on this PC (the phone silent: no --audio-dup),
+    // 1 = on the phone (the PC silent: --no-audio). An older "both" setting (sound here with
+    // MutePhone off) shows as 0 and becomes "this PC only" when picked.
+    private static int SoundToIndex(MirrorSettings s) => s.AudioEnabled ? 0 : 1;
 
-    /// <summary>The phone stays silent while its sound plays on this PC.</summary>
-    public bool MutePhone
+    private int _soundIndex;
+
+    /// <summary>Bound to the Sound ComboBox's SelectedIndex on the Device page.</summary>
+    public int SoundIndex
     {
-        get => _mutePhone;
+        get => _soundIndex;
         set
         {
-            if (SetProperty(ref _mutePhone, value))
+            if (value < 0 || value > 1 || !SetProperty(ref _soundIndex, value))
             {
-                _registry.SaveMirror(_registry.Mirror with { MutePhone = value });
+                return;
             }
+            _registry.SaveMirror(_registry.Mirror with { AudioEnabled = value == 0, MutePhone = true });
         }
     }
 
-    /// <summary>Silencing the phone only means something when its sound plays here from the
-    /// default source ("mic" never plays on the phone; "output" already silences it).</summary>
-    public bool CanMutePhone => _registry.Mirror is { AudioEnabled: true } m && string.IsNullOrWhiteSpace(m.AudioSource);
+    /// <summary>The phone's sound plays on this PC (the audio source and bit rate apply).</summary>
+    public bool SoundOnPc => _registry.Mirror.AudioEnabled;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]

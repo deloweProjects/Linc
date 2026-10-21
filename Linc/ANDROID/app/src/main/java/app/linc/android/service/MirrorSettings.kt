@@ -55,6 +55,18 @@ object MirrorSettings {
             .edit().putBoolean(KEY_AUDIO, on).apply()
     }
 
+    /**
+     * Mute the PC while PC Remote plays its sound here: the PC's sound moves onto the phone
+     * (speaker mode, v25) instead of playing on both. Off by default; needs the PC's virtual cable.
+     */
+    fun mutePc(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_MUTE_PC, false)
+
+    fun setMutePc(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_MUTE_PC, on).apply()
+    }
+
     /** Raise a keyboard by itself when a text field is focused on the PC. On by default. */
     fun autoKeyboard(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AUTO_KB, true)
@@ -97,4 +109,5 @@ object MirrorSettings {
     private const val KEY_FLOATING_KB = "mirror_floating_keyboard"
     private const val KEY_POINTER = "mirror_pointer_mode"
     private const val KEY_AUDIO = "mirror_audio"
+    private const val KEY_MUTE_PC = "mirror_mute_pc"
 }

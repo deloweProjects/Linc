@@ -29,10 +29,12 @@ public sealed record MirrorSettings(
     /// <summary><c>null</c> means "use the scrcpy default (output)" and omits
     /// <c>--audio-source</c>. Only <c>"output"</c> or <c>"mic"</c> are otherwise accepted.</summary>
     string? AudioSource = null,
-    /// <summary>1.0.0.18: the phone stays silent while its sound plays on this PC. <c>false</c>
-    /// keeps today's behaviour (scrcpy <c>--audio-dup</c>: both play). Only matters with
-    /// <see cref="AudioEnabled"/> on and the default <see cref="AudioSource"/>.</summary>
-    bool MutePhone = false,
+    /// <summary>1.0.0.18: the phone stays silent while its sound plays on this PC (the default,
+    /// scrcpy's own behaviour). <c>false</c> adds <c>--audio-dup</c> so both play; the Device
+    /// page no longer offers that (the owner: one device plays, Play everywhere for both), but a
+    /// saved <c>false</c> is honoured. Only matters with <see cref="AudioEnabled"/> on and the
+    /// default <see cref="AudioSource"/>.</summary>
+    bool MutePhone = true,
     /// <summary>1.0.0.18: <c>null</c> mirrors the phone's own screen shape (today's behaviour).
     /// <see cref="ShapeMonitor"/> resizes the phone's display to this PC's monitor resolution
     /// for the session and opens the mirror full screen, so landscape fills the monitor with no
@@ -67,7 +69,7 @@ public sealed record MirrorSettings(
         AudioEnabled: true,
         AudioBitRate: 0,
         AudioSource: null,
-        MutePhone: false,
+        MutePhone: true,
         ScreenShape: null);
 
     /// <summary>

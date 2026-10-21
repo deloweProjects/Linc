@@ -94,6 +94,10 @@ class RemoteUiState {
     var clickRing by mutableStateOf(false)
     var soundAvailable by mutableStateOf(false)
     var soundOn by mutableStateOf(true)
+    /** The PC can move its sound onto the phone (speaker mode, v25). */
+    var mutePcAvailable by mutableStateOf(false)
+    /** The PC's speakers stay quiet while its sound plays here. */
+    var mutePc by mutableStateOf(false)
     var voiceAccessAvailable by mutableStateOf(false)
     var voiceAccessOn by mutableStateOf(false)
     var tabletAvailable by mutableStateOf(false)
@@ -119,6 +123,7 @@ interface RemoteActions {
     fun setAutoKeyboard(on: Boolean)
     fun setClickRing(on: Boolean)
     fun sound()
+    fun setMutePc(on: Boolean)
     fun voiceAccess()
     fun tabletMode()
     fun setPhoneMic(phone: Boolean)
@@ -323,6 +328,14 @@ private fun Panel(state: RemoteUiState, actions: RemoteActions, icon: ImageVecto
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Pop up on text fields", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(checked = state.autoKeyboard, onCheckedChange = actions::setAutoKeyboard)
+            }
+
+            // Sound: only one device plays (the owner); both at once is Play everywhere.
+            if (state.soundAvailable && state.soundOn && state.mutePcAvailable) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Mute the PC while here", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Switch(checked = state.mutePc, onCheckedChange = actions::setMutePc)
+                }
             }
 
             // Microphone: which one the PC hears — Voice Access, calls, dictation — while in here.

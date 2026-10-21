@@ -542,13 +542,13 @@ Console.WriteLine("\n[9/9] Checking Silence the phone / Fill this monitor...");
     }
 
     var d = MirrorSettings.BalancedDefaults;
-    Check(!d.MutePhone && d.ScreenShape is null && !d.FillsMonitor(),
-        "BalancedDefaults: phone not silenced, the phone's own shape.",
+    Check(d.MutePhone && d.ScreenShape is null && !d.FillsMonitor(),
+        "BalancedDefaults: the phone silent while its sound plays here (the owner: one device plays), the phone's own shape.",
         "BalancedDefaults changed the new fields' defaults");
 
-    var muted = MirrorService.BuildScrcpyArgs("PIXEL7", d with { MutePhone = true });
-    Check(muted.SequenceEqual(MirrorService.BuildScrcpyArgs("PIXEL7", d)),
-        "MutePhone adds no scrcpy argument of its own (it only drops --audio-dup at launch).",
+    var both = MirrorService.BuildScrcpyArgs("PIXEL7", d with { MutePhone = false });
+    Check(both.SequenceEqual(MirrorService.BuildScrcpyArgs("PIXEL7", d)),
+        "MutePhone changes no BuildScrcpyArgs argument (it only decides --audio-dup at launch).",
         "MutePhone changed BuildScrcpyArgs");
 
     foreach (var shape in new[] { MirrorSettings.ShapeMonitor, MirrorSettings.ShapeMonitorLandscape })

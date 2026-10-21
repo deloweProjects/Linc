@@ -78,11 +78,29 @@ don't get lost.")
   PC" switch, the Device page): it keeps `--audio-dup` and is not delayed. Section 1a is the one
   that silences the phone and plays in step. The switch is disabled while 1a runs.
 
-## 3. Mirror screen's sound (scrcpy)
+## 3. Mirror screen's sound (scrcpy), and Mirror PC's (1.0.0.18)
 
-`MirrorService` adds `--audio-dup` at launch when audio is on and no source is set, so the phone
-keeps its sound while the PC plays it. It's added outside `BuildScrcpyArgs` so the saved-settings
-byte-identity check (tools/mirrorsettingssim) is unchanged.
+- **The owner's rule: one device plays while mirroring; both at once is Play everywhere.**
+- **PC mirrors the phone:** Device › Phone screen › **Sound** has two options.
+  - *On this PC* (default): `AudioEnabled` on, `MutePhone` on. There is no `--audio-dup`, so the
+    phone goes quiet.
+  - *On the phone*: `AudioEnabled` off, so scrcpy runs with `--no-audio` and the phone keeps its
+    own sound.
+  - A saved `MutePhone = false` (from a 1.0.0.18 pre-release) still adds `--audio-dup`, which plays
+    on both.
+  - The flag is added in `MirrorService.LaunchLocked`, outside `BuildScrcpyArgs`, so the
+    saved-settings byte-identity check (`tools/mirrorsettingssim`) is unchanged.
+- **Phone mirrors the PC** (PC Remote): the panel's **"Mute the PC while here"** (`mirror_mute_pc`,
+  off by default) asks the PC for speaker mode (`pc.speaker.set`, v25) instead of the plain
+  `pc.audio.start`. The PC's sound then moves onto the phone through the virtual cable.
+  - Leaving PC Remote turns speaker mode off **only if PC Remote turned it on**
+    (`MirrorActivity.speakerByRemote`). Speaker mode from the Sound page, or Play everywhere, is
+    left alone.
+  - Turning the switch off waits for `pc.speaker.state {on:false}` before asking for the plain
+    stream. The PC handles `pc.speaker.set` on a background task, so the two requests could
+    otherwise cross.
+  - With no cable (`error: no-cable`), it falls back to the plain stream (sound on both) and says
+    why.
 
 ## 4. PC Remote's sound (v20, channel 6 without `clock`)
 

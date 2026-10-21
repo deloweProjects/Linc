@@ -239,7 +239,6 @@ public partial class MirrorSettingsViewModel : ObservableObject
             || StayAwake != _loaded.StayAwake
             || TurnScreenOff != _loaded.TurnScreenOff
             || ShowTouches != _loaded.ShowTouches
-            || AudioEnabled != _loaded.AudioEnabled
             || AudioBitRate != _loaded.AudioBitRate
             || !string.Equals(AudioSource, _loaded.AudioSource ?? AudioSourceDefault, StringComparison.Ordinal);
         IsDirty = dirty;
@@ -286,7 +285,7 @@ public partial class MirrorSettingsViewModel : ObservableObject
             StayAwake: StayAwake,
             TurnScreenOff: TurnScreenOff,
             ShowTouches: ShowTouches,
-            AudioEnabled: AudioEnabled,
+            AudioEnabled: current.AudioEnabled, // the card's Sound choice owns it
             AudioBitRate: AudioBitRate,
             AudioSource: AudioSource == AudioSourceDefault ? null : AudioSource,
             MutePhone: current.MutePhone,

@@ -15,18 +15,23 @@ display names only — the update check ignores anything after a `-`.
 
 ---
 
-## 1.0.0.18 ("1.0.0-beta.18") — 2026-10-20
+## 1.0.0.18 ("1.0.0-beta.18") — 2026-10-21
 
-Install the PC app; the phone app is unchanged apart from its version (protocol v31). Everything in
-1.0.0.17 and earlier below, plus, in Device › Phone screen on this PC:
+Install both apps (protocol v31). Phones and settings are kept. Everything in 1.0.0.17 and earlier
+below, plus:
 
+- **Mirror screen: one device plays the sound.** By default the phone's sound plays only on the PC
+  while you mirror it, and the phone stays quiet, so there's no echo. Device › Phone screen on this
+  PC › **Sound** switches it to *On the phone* (the PC stays quiet) for when the two sit side by
+  side. To hear it on both, use Play everywhere.
+- **Mirror PC on the phone: "Mute the PC while here"** (in PC Remote's panel). The PC's sound plays
+  only on the phone; the PC's speakers come back when you leave. Needs the PC's virtual cable, like
+  "Phone as PC speaker"; without it the sound plays on both, as before.
 - **Screen shape › Fill this monitor**: the phone draws its screen at this monitor's resolution and
   the mirror opens full screen, so landscape apps and videos fill the monitor with no black bars.
   "Phone turned sideways" also turns the phone to landscape for you. The phone's own size and
   rotation come back when mirroring stops, when Linc closes, or at the next connection if the cable
   was pulled. Alt+F leaves full screen.
-- **Silence the phone while mirroring**: the phone's sound plays only on the PC (off: on both, as
-  before). No more echo between the phone's speaker and the PC.
 - The mirror runs at a higher priority on the PC, so a busy PC doesn't stutter it, and scrcpy's own
   messages are in Settings › Logs.
 
