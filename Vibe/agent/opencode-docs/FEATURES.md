@@ -105,7 +105,8 @@ Control is a set of full-screen pages; the **Pages** button or the edge handle o
 | **Phone as PC speaker** | Phone: Control › Sound | The PC's sound moves to the phone instead of playing on both; the PC's speakers come back when you stop or disconnect. Uses the virtual cable. | Off |
 | **Phone as the PC's microphone** | Phone: Control › Sound and Remote › microphone sheet · PC: Settings › Phone as microphone | Any PC app hears the phone's mic, through VB-CABLE (VB-Audio's free virtual cable, downloaded from vb-audio.com only after you agree, checked against a pinned SHA-256). Automatic in Mirror PC with "Phone" chosen. Your own default microphone is put back after each session, on exit and after a crash. | Off; PC: Set up / Remove |
 | **Voice Access** | Phone: Remote › Voice Access, the Mirror PC bubble | Starts Windows Voice Access (Windows 11 22H2+), hearing through the phone's microphone or the PC's. | Phone mic |
-| **Mirror screen's sound** | Mirror phone | scrcpy forwards the phone's sound and keeps it on the phone too; with **Silence the phone while mirroring** it plays only on the PC (no `--audio-dup`, scrcpy's default `output` source). | On; Silence the phone: off |
+| **Mirror screen's sound** | PC: Device › Phone screen on this PC › Sound | One device plays, so there's no echo: **On this PC** (the phone stays quiet; scrcpy without `--audio-dup`) or **On the phone** (`--no-audio`). Both at once is Play everywhere. | On this PC |
+| **Mute PC (Mirror PC)** | Phone: Mirror PC › Control panel › PC row, next to Sound | The PC's sound plays only on the phone while you're in Mirror PC (speaker mode, v25, through the virtual cable); the PC's speakers come back when you leave. Tapping it while the sound is off turns the sound on. Without the virtual cable it explains and the sound plays on both. | Off |
 
 ## 7. Files, sharing and sync
 
