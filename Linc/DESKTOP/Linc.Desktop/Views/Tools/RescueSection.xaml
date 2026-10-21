@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Linc.Desktop.Views.Tools.RescueSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Linc.Desktop.Views">
+
+    <UserControl.Resources>
+        <Style x:Key="StepNumber" TargetType="Border">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="CornerRadius" Value="20" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Background" Value="{ThemeResource PrimaryBrush}" />
+        </Style>
+    </UserControl.Resources>
+
+    <!-- Tools › Rescue (TOOLS.md §2): "Screen broken or black?" in three steps. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+        <StackPanel Spacing="16" Padding="0,0,12,12">
+            <TextBlock Text="Screen broken or black?" Style="{StaticResource HeadlineText}" />
+
+            <Grid ColumnSpacing="16" views:PageLayout.StackBelow="760">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 1 and 2 stack in the first column; 3 (the long one) gets the room. -->
+                <StackPanel Spacing="16">
+                    <Border Style="{StaticResource ExpressiveCard}" Padding="24">
+                        <StackPanel Spacing="12">
+                            <Border Style="{StaticResource StepNumber}">
+                                <TextBlock Text="1" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{ThemeResource OnPrimaryBrush}" />
+                            </Border>
+                            <TextBlock Text="See it" Style="{StaticResource TitleText}" />
+                            <TextBlock Text="The phone's screen, here on the PC. Its own screen stays off."
+                                       Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                            <Button Style="{StaticResource FilledButton}" Content="Show screen" HorizontalAlignment="Stretch"
+                                    Command="{x:Bind ViewModel.SeeItCommand}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource ExpressiveCard}" Padding="24">
+                        <StackPanel Spacing="12">
+                            <Border Style="{StaticResource StepNumber}">
+                                <TextBlock Text="2" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{ThemeResource OnPrimaryBrush}" />
+                            </Border>
+                            <TextBlock Text="Get in" Style="{StaticResource TitleText}" />
+                            <PasswordBox x:Name="PinBox" PlaceholderText="Your PIN or password" FontSize="20"
+                                         CornerRadius="{StaticResource ShapeLarge}" Padding="16,10"
+                                         AutomationProperties.Name="Your PIN or password" KeyDown="OnPinKeyDown" />
+                            <Button Style="{StaticResource TonalButton}" Content="Wake &amp; unlock" HorizontalAlignment="Stretch"
+                                    Click="OnGetInClick" />
+                            <TextBlock Text="Linc types it on the phone and forgets it." Style="{StaticResource CaptionText}"
+                                       TextWrapping="Wrap" views:Explain.IsHelp="True" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <Border Grid.Column="1" Style="{StaticResource ExpressiveCard}" Padding="24" VerticalAlignment="Top">
+                    <StackPanel Spacing="14">
+                        <Border Style="{StaticResource StepNumber}">
+                            <TextBlock Text="3" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource OnPrimaryBrush}" />
+                        </Border>
+                        <TextBlock Text="Save your stuff" Style="{StaticResource TitleText}" />
+                        <TextBlock Text="Photos, videos, downloads, documents and music, copied to Documents › Linc Backup on this PC."
+                                   Style="{StaticResource BodyText}" TextWrapping="Wrap" views:Explain.IsHelp="True" />
+                        <ProgressBar Value="{x:Bind ViewModel.BackupProgress, Mode=OneWay}" Maximum="100" Height="10"
+                                     CornerRadius="5" Visibility="{x:Bind ViewModel.BackupRunning, Mode=OneWay}" />
+                        <TextBlock Text="{x:Bind ViewModel.BackupStatus, Mode=OneWay}" Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Style="{StaticResource FilledButton}" Content="Back up now"
+                                    Visibility="{x:Bind ViewModel.BackupIdle, Mode=OneWay}"
+                                    Command="{x:Bind ViewModel.StartBackupCommand}" />
+                            <Button Style="{StaticResource TonalButton}" Content="{x:Bind ViewModel.PauseLabel, Mode=OneWay}"
+                                    Visibility="{x:Bind ViewModel.BackupRunning, Mode=OneWay}"
+                                    Command="{x:Bind ViewModel.PauseBackupCommand}" />
+                            <Button Style="{StaticResource QuietButton}" Content="Stop"
+                                    Visibility="{x:Bind ViewModel.BackupRunning, Mode=OneWay}"
+                                    Command="{x:Bind ViewModel.CancelBackupCommand}" />
+                            <Button Style="{StaticResource QuietButton}" Content="Open folder"
+                                    Visibility="{x:Bind ViewModel.BackupDone, Mode=OneWay}"
+                                    Command="{x:Bind ViewModel.OpenBackupFolderCommand}" />
+                        </StackPanel>
+                        <Expander Header="More" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="Keep awake while charging" Style="{StaticResource BodyText}" />
+                                    <TextBlock Text="The phone's screen stays on while it's plugged in to USB."
+                                               Style="{StaticResource CaptionText}" TextWrapping="Wrap" views:Explain.IsHelp="True" />
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" MinWidth="0" OnContent="" OffContent=""
+                                              AutomationProperties.Name="Keep awake while charging"
+                                              IsOn="{x:Bind ViewModel.KeepAwake, Mode=TwoWay}" />
+                            </Grid>
+                        </Expander>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <TextBlock Text="Works when USB debugging was allowed on this phone before." Style="{StaticResource CaptionText}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

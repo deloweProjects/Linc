@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Linc.Desktop.Views.Tools.AppsSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Linc.Desktop.Views"
+    xmlns:tools="using:Linc.Desktop.Views.Tools"
+    xmlns:vmt="using:Linc.Desktop.ViewModels.Tools">
+
+    <UserControl.Resources>
+        <Style x:Key="FilterChip" TargetType="ToggleButton">
+            <Setter Property="CornerRadius" Value="{StaticResource ShapeFull}" />
+            <Setter Property="Padding" Value="16,7" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style x:Key="PanelButton" TargetType="Button" BasedOn="{StaticResource TonalButton}">
+            <Setter Property="Padding" Value="8,12" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style x:Key="SmallQuiet" TargetType="Button" BasedOn="{StaticResource QuietButton}">
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </UserControl.Resources>
+
+    <!-- Apps (TOOLS.md §3): the list on the left, what you can do with the picked app on the right. -->
+    <Grid ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="360" />
+        </Grid.ColumnDefinitions>
+
+        <!-- The list -->
+        <Border Style="{StaticResource ExpressiveCard}" Padding="20">
+            <Grid RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox Style="{StaticResource ExpressiveTextBox}" PlaceholderText="Search apps"
+                             AutomationProperties.Name="Search apps"
+                             Text="{x:Bind ViewModel.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button Grid.Column="1" Style="{StaticResource IconTonalButton}" AutomationProperties.Name="Refresh the app list"
+                            ToolTipService.ToolTip="Refresh" Command="{x:Bind ViewModel.RefreshCommand}">
+                        <FontIcon Glyph="&#xE72C;" FontSize="16" />
+                    </Button>
+                </Grid>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                    <ToggleButton Style="{StaticResource FilterChip}" Content="Yours" views:ChoiceButton.IsChoice="True"
+                                  ToolTipService.ToolTip="Apps you installed"
+                                  IsChecked="{x:Bind ViewModel.ShowYours, Mode=OneWay}"
+                                  Command="{x:Bind ViewModel.SetFilterCommand}" CommandParameter="Yours" />
+                    <ToggleButton Style="{StaticResource FilterChip}" Content="System" views:ChoiceButton.IsChoice="True"
+                                  ToolTipService.ToolTip="Apps that came with the phone"
+                                  IsChecked="{x:Bind ViewModel.ShowSystem, Mode=OneWay}"
+                                  Command="{x:Bind ViewModel.SetFilterCommand}" CommandParameter="System" />
+                    <ToggleButton Style="{StaticResource FilterChip}" Content="Turned off" views:ChoiceButton.IsChoice="True"
+                                  ToolTipService.ToolTip="Apps you turned off"
+                                  IsChecked="{x:Bind ViewModel.ShowDisabled, Mode=OneWay}"
+                                  Command="{x:Bind ViewModel.SetFilterCommand}" CommandParameter="Disabled" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10">
+                    <ProgressRing Width="18" Height="18" IsActive="{x:Bind ViewModel.Loading, Mode=OneWay}"
+                                  Visibility="{x:Bind ViewModel.Loading, Mode=OneWay}" />
+                    <TextBlock Text="Reading the apps on the phone…" Style="{StaticResource CaptionText}" VerticalAlignment="Center"
+                               Visibility="{x:Bind ViewModel.Loading, Mode=OneWay}" />
+                    <TextBlock Text="{x:Bind ViewModel.EmptyText, Mode=OneWay}" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                               Visibility="{x:Bind ViewModel.ShowEmpty, Mode=OneWay}" />
+                    <Button Style="{StaticResource SmallQuiet}" Content="{x:Bind ViewModel.PutBackLabel, Mode=OneWay}"
+                            ToolTipService.ToolTip="Bring back the app you removed"
+                            Visibility="{x:Bind ViewModel.CanPutBack, Mode=OneWay}"
+                            Command="{x:Bind ViewModel.PutBackCommand}" />
+                </StackPanel>
+
+                <ListView Grid.Row="3" SelectionMode="Single" AutomationProperties.Name="Apps"
+                          ItemsSource="{x:Bind ViewModel.Visible}"
+                          SelectedItem="{x:Bind ViewModel.SelectedItem, Mode=TwoWay}">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                            <Setter Property="CornerRadius" Value="16" />
+                            <Setter Property="Padding" Value="10,0" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vmt:AppItem">
+                            <Grid ColumnSpacing="14" Padding="0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="40" Height="40" CornerRadius="12" Background="{x:Bind tools:AppsSection.TileBrush(Package)}">
+                                    <TextBlock Text="{x:Bind Initial}" FontSize="17" FontWeight="SemiBold" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock Text="{x:Bind Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                               Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+
+        <!-- The picked app -->
+        <Border Grid.Column="1" Style="{StaticResource ExpressiveCard}" Padding="24">
+            <Grid>
+                <StackPanel Spacing="10" VerticalAlignment="Center" Visibility="{x:Bind ViewModel.NoSelection, Mode=OneWay}">
+                    <FontIcon Glyph="&#xE71D;" FontSize="32" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                    <TextBlock Text="Pick an app" Style="{StaticResource TitleText}" HorizontalAlignment="Center" />
+                    <TextBlock Text="Open it, stop it, turn it off, save its APK or change what it may use."
+                               Style="{StaticResource BodyText}" TextWrapping="Wrap" TextAlignment="Center" views:Explain.IsHelp="True" />
+                </StackPanel>
+
+                <ScrollViewer Visibility="{x:Bind ViewModel.HasSelection, Mode=OneWay}" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollMode="Disabled">
+                    <StackPanel Spacing="14">
+                        <Grid ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="56" Height="56" CornerRadius="16" Background="{x:Bind tools:AppsSection.TileBrush(ViewModel.SelectedPackage), Mode=OneWay}">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedInitial, Mode=OneWay}" FontSize="24" FontWeight="SemiBold"
+                                           Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedName, Mode=OneWay}" Style="{StaticResource TitleText}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{x:Bind ViewModel.SelectedPackage, Mode=OneWay}" Style="{StaticResource CaptionText}"
+                                           TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="{x:Bind ViewModel.SelectedState, Mode=OneWay}" Style="{StaticResource CaptionText}" />
+                            <TextBlock Text="{x:Bind ViewModel.DetailVersion, Mode=OneWay}" Style="{StaticResource CaptionText}" />
+                            <TextBlock Text="{x:Bind ViewModel.DetailInfo, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Style="{StaticResource FilledButton}" Padding="8,12" FontSize="14" HorizontalAlignment="Stretch"
+                                    Content="Open" Command="{x:Bind ViewModel.OpenCommand}" IsEnabled="{x:Bind ViewModel.CanAct, Mode=OneWay}" />
+                            <Button Grid.Column="1" Style="{StaticResource PanelButton}" Content="Stop"
+                                    ToolTipService.ToolTip="Force-stop it"
+                                    Command="{x:Bind ViewModel.StopCommand}" IsEnabled="{x:Bind ViewModel.CanRemove, Mode=OneWay}" />
+                            <Button Grid.Column="2" Style="{StaticResource PanelButton}" Content="{x:Bind ViewModel.UninstallLabel, Mode=OneWay}"
+                                    Background="{ThemeResource ErrorContainerBrush}" Foreground="{ThemeResource OnErrorContainerBrush}"
+                                    Command="{x:Bind ViewModel.UninstallCommand}" IsEnabled="{x:Bind ViewModel.CanRemove, Mode=OneWay}" />
+                        </Grid>
+
+                        <TextBlock Text="{x:Bind ViewModel.ProtectedText, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                   Visibility="{x:Bind ViewModel.HasProtectedReason, Mode=OneWay}" />
+
+                        <Grid ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Style="{StaticResource SmallQuiet}" Padding="6" HorizontalAlignment="Stretch" Command="{x:Bind ViewModel.ToggleDisabledCommand}"
+                                    IsEnabled="{x:Bind ViewModel.CanRemove, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="{x:Bind ViewModel.DisableGlyph, Mode=OneWay}" FontSize="13" />
+                                    <TextBlock Text="{x:Bind ViewModel.DisableLabel, Mode=OneWay}" />
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="1" Style="{StaticResource SmallQuiet}" Padding="6" HorizontalAlignment="Stretch" Content="Clear data"
+                                    Command="{x:Bind ViewModel.ClearDataCommand}" IsEnabled="{x:Bind ViewModel.CanRemove, Mode=OneWay}" />
+                            <Button Grid.Column="2" Style="{StaticResource SmallQuiet}" Padding="6" HorizontalAlignment="Stretch" Content="Save APK" ToolTipService.ToolTip="Copy the app to Downloads on this PC"
+                                    Command="{x:Bind ViewModel.SaveApkCommand}" IsEnabled="{x:Bind ViewModel.CanAct, Mode=OneWay}" />
+                            <Button Grid.Column="3" Style="{StaticResource SmallQuiet}" Padding="8,6" AutomationProperties.Name="More for this app"
+                                    ToolTipService.ToolTip="More">
+                                <FontIcon Glyph="&#xE712;" FontSize="13" />
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                        <MenuFlyoutItem Text="App info on the phone" Command="{x:Bind ViewModel.AppInfoCommand}">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE946;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="Copy package name" Click="OnCopyPackage">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8C8;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
+
+                        <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.Saving, Mode=OneWay}">
+                            <TextBlock Text="{x:Bind ViewModel.SaveProgress, Mode=OneWay}" Style="{StaticResource CaptionText}" />
+                            <ProgressBar IsIndeterminate="True" />
+                        </StackPanel>
+
+                        <TextBlock Text="PERMISSIONS" Style="{StaticResource SectionLabel}" Margin="0,6,0,0" />
+                        <ProgressRing Width="20" Height="20" HorizontalAlignment="Left" IsActive="{x:Bind ViewModel.LoadingDetails, Mode=OneWay}"
+                                      Visibility="{x:Bind ViewModel.LoadingDetails, Mode=OneWay}" />
+                        <TextBlock Text="This app asks for nothing you can switch here." Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                   Visibility="{x:Bind ViewModel.HasNoPermissions, Mode=OneWay}" />
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Permissions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vmt:PermissionItem">
+                                    <Grid ColumnSpacing="8" ToolTipService.ToolTip="{x:Bind Name}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{x:Bind Label}" FontSize="14" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <ToggleSwitch Grid.Column="1" MinWidth="0" OnContent="" OffContent="" VerticalAlignment="Center"
+                                                      AutomationProperties.Name="{x:Bind Label}"
+                                                      IsOn="{x:Bind Granted, Mode=TwoWay}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

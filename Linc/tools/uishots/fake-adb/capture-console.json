@@ -1,0 +1,4 @@
+{
+  "settings get system show_touches": "0",
+  "pkill -INT screenrecord": ""
+}

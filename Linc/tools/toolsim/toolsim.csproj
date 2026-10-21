@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-toolsim</AssemblyName>
+    <RootNamespace>Linc.ToolSim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Compiled verbatim from Linc.Desktop: everything under Services\Tools\Pure is dependency-free
+      on purpose (the command quoting, the pretend phone, and every parser that turns a phone's
+      output into what the Tools page shows), so what is proven here is what the app runs.
+    -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\Tools\Pure\*.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Linc.Desktop.Views.Tools.CaptureSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Linc.Desktop.Views">
+
+    <!-- Tools › Capture (TOOLS.md §4): two big tiles, the last capture, and More. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+        <StackPanel Spacing="16" Padding="0,0,0,16">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button Style="{StaticResource ActionTile}" MinHeight="150" CornerRadius="28" Padding="24"
+                        AutomationProperties.Name="Screenshot"
+                        Command="{x:Bind ViewModel.ScreenshotCommand}">
+                    <StackPanel Spacing="10">
+                        <Border Width="52" Height="52" CornerRadius="26" HorizontalAlignment="Left"
+                                Background="{ThemeResource PrimaryContainerBrush}">
+                            <FontIcon Glyph="&#xE722;" FontSize="22" Foreground="{ThemeResource OnPrimaryContainerBrush}" />
+                        </Border>
+                        <TextBlock Text="Screenshot" Style="{StaticResource TitleText}" FontSize="20" />
+                        <TextBlock Text="Saved to Pictures › Linc" Style="{StaticResource CaptionText}" views:Explain.IsHelp="True" />
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="1" Style="{StaticResource ActionTile}" MinHeight="150" CornerRadius="28" Padding="24"
+                        AutomationProperties.Name="Record"
+                        Command="{x:Bind ViewModel.RecordCommand}">
+                    <StackPanel Spacing="10">
+                        <Border Width="52" Height="52" CornerRadius="26" HorizontalAlignment="Left"
+                                Background="{ThemeResource ErrorContainerBrush}">
+                            <FontIcon Glyph="{x:Bind ViewModel.RecordGlyph, Mode=OneWay}" FontSize="22"
+                                      Foreground="{ThemeResource OnErrorContainerBrush}" />
+                        </Border>
+                        <TextBlock Text="{x:Bind ViewModel.RecordTitle, Mode=OneWay}" Style="{StaticResource TitleText}" FontSize="20" />
+                        <TextBlock Text="Up to 3 minutes, saved to Videos › Linc" Style="{StaticResource CaptionText}"
+                                   views:Explain.IsHelp="True" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ViewModel.Busy, Mode=OneWay}" />
+
+            <!-- The last capture. -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20" Visibility="{x:Bind ViewModel.HasLast, Mode=OneWay}">
+                <Grid ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border CornerRadius="16" MaxWidth="220" VerticalAlignment="Top"
+                            Visibility="{x:Bind ViewModel.LastIsImage, Mode=OneWay}">
+                        <Image x:Name="LastImage" MaxHeight="300" Stretch="Uniform" />
+                    </Border>
+                    <Border Width="96" Height="96" CornerRadius="24" VerticalAlignment="Top"
+                            Background="{ThemeResource SecondaryContainerBrush}"
+                            Visibility="{x:Bind ViewModel.LastIsVideo, Mode=OneWay}">
+                        <FontIcon Glyph="&#xE714;" FontSize="36" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="12" VerticalAlignment="Center">
+                        <TextBlock Text="Last capture" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Text="{x:Bind ViewModel.LastName, Mode=OneWay}" Style="{StaticResource TitleText}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Style="{StaticResource FilledButton}" Content="Open" Command="{x:Bind ViewModel.OpenLastCommand}" />
+                            <Button Style="{StaticResource TonalButton}" Content="Copy" Click="OnCopy"
+                                    ToolTipService.ToolTip="Copy it to paste somewhere else" />
+                            <Button Style="{StaticResource QuietButton}" Content="Show in folder"
+                                    Command="{x:Bind ViewModel.ShowLastInFolderCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Everything else stays folded away. -->
+            <Expander Header="More" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <StackPanel Spacing="16">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Clean status bar" Style="{StaticResource TitleText}" FontSize="15" />
+                            <TextBlock Text="The phone shows 12:00, a full battery and signal, and no notification icons, for tidy screenshots."
+                                       Style="{StaticResource CaptionText}" views:Explain.IsHelp="True" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" MinWidth="0" OnContent="" OffContent="" AutomationProperties.Name="Clean status bar"
+                                      IsOn="{x:Bind ViewModel.CleanStatusBar, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Show touches while recording" Style="{StaticResource TitleText}" FontSize="15" />
+                            <TextBlock Text="A dot where each finger lands; put back as it was afterwards."
+                                       Style="{StaticResource CaptionText}" views:Explain.IsHelp="True" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" MinWidth="0" OnContent="" OffContent="" AutomationProperties.Name="Show touches while recording"
+                                      IsOn="{x:Bind ViewModel.ShowTouches, Mode=TwoWay}" />
+                    </Grid>
+                    <ComboBox Header="Recording quality" MinWidth="220"
+                              IsEnabled="{x:Bind ViewModel.NotRecording, Mode=OneWay}"
+                              SelectedIndex="{x:Bind ViewModel.Quality, Mode=TwoWay}">
+                        <ComboBoxItem Content="720p (smaller files)" />
+                        <ComboBoxItem Content="1080p" />
+                        <ComboBoxItem Content="The phone's full size" />
+                    </ComboBox>
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

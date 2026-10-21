@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Linc.Desktop.Views.Tools.CommandsSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Linc.Desktop.Views"
+    xmlns:vmt="using:Linc.Desktop.ViewModels.Tools">
+
+    <UserControl.Resources>
+        <Style x:Key="CategoryChip" TargetType="ToggleButton">
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+    </UserControl.Resources>
+
+    <!-- Tools › Commands: search an everyday adb command by what it does, fill in its
+         parameters, then Run or Copy it. Left the results, right the open command. -->
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBox Style="{StaticResource ExpressiveTextBox}" FontSize="17"
+                 AutomationProperties.Name="Search commands"
+                 PlaceholderText="What do you want to do? e.g. install app, reboot, screen size"
+                 Text="{x:Bind ViewModel.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+        <ScrollViewer Grid.Row="1" HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Hidden"
+                      VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="All" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsAll, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="All" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Apps" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsApps, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Apps" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Files" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsFiles, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Files" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Screen" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsScreen, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Screen" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Power" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsPower, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Power" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Network" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsNetwork, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Network" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Settings" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsSettings, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Settings" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Info" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsInfo, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Info" />
+                <ToggleButton Style="{StaticResource CategoryChip}" Content="Debug" views:ChoiceButton.IsChoice="True"
+                              IsChecked="{x:Bind ViewModel.IsDebug, Mode=OneWay}"
+                              Command="{x:Bind ViewModel.SelectCategoryCommand}" CommandParameter="Debug" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="2" ColumnSpacing="16" RowSpacing="16" views:PageLayout.StackBelow="900">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="5*" />
+                <ColumnDefinition Width="7*" />
+            </Grid.ColumnDefinitions>
+
+            <!--   results   -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="8,12">
+                <Grid RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{x:Bind ViewModel.ResultCountText, Mode=OneWay}" Style="{StaticResource CaptionText}" Margin="12,0" />
+                    <ListView Grid.Row="1" SelectionMode="Single" AutomationProperties.Name="Commands"
+                              ItemsSource="{x:Bind ViewModel.Results}"
+                              SelectedItem="{x:Bind ViewModel.SelectedResult, Mode=TwoWay}">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                                <Setter Property="CornerRadius" Value="14" />
+                                <Setter Property="Padding" Value="10,0" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vmt:CommandItem">
+                                <Grid ColumnSpacing="12" Padding="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="34" Height="34" CornerRadius="17" VerticalAlignment="Top"
+                                            Background="{ThemeResource SecondaryContainerBrush}">
+                                        <FontIcon Glyph="{x:Bind Glyph}" FontSize="15" Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Spacing="1">
+                                        <TextBlock Text="{x:Bind Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{x:Bind Description}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                   Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock Grid.Row="1" Margin="12" TextWrapping="Wrap" Style="{StaticResource BodyText}"
+                               Visibility="{x:Bind ViewModel.NoResults, Mode=OneWay}"
+                               Text="Nothing matches. Try other words, like &quot;apps&quot;, &quot;wifi&quot; or &quot;battery&quot;." />
+                </Grid>
+            </Border>
+
+            <!--   the open command   -->
+            <Border Grid.Column="1" Style="{StaticResource ExpressiveCard}" Padding="24,20">
+                <Grid>
+                    <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                               Visibility="{x:Bind ViewModel.NoSelection, Mode=OneWay}"
+                               Text="Pick a command on the left." />
+                    <ScrollViewer Visibility="{x:Bind ViewModel.HasSelection, Mode=OneWay}"
+                                  HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="14" Padding="0,0,12,0">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{x:Bind ViewModel.SelectedTitle, Mode=OneWay}" Style="{StaticResource TitleText}"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <Border Grid.Column="1" CornerRadius="12" Padding="10,4" VerticalAlignment="Center"
+                                        Background="{ThemeResource SecondaryContainerBrush}"
+                                        Visibility="{x:Bind ViewModel.IsSafe, Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind ViewModel.TierText, Mode=OneWay}" FontSize="12"
+                                               Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                                </Border>
+                                <Border Grid.Column="1" CornerRadius="12" Padding="10,4" VerticalAlignment="Center"
+                                        Background="{ThemeResource TertiaryContainerBrush}"
+                                        Visibility="{x:Bind ViewModel.IsCaution, Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind ViewModel.TierText, Mode=OneWay}" FontSize="12"
+                                               Foreground="{ThemeResource OnTertiaryContainerBrush}" />
+                                </Border>
+                                <Border Grid.Column="1" CornerRadius="12" Padding="10,4" VerticalAlignment="Center"
+                                        Background="{ThemeResource ErrorContainerBrush}"
+                                        Visibility="{x:Bind ViewModel.IsDanger, Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind ViewModel.TierText, Mode=OneWay}" FontSize="12"
+                                               Foreground="{ThemeResource OnErrorContainerBrush}" />
+                                </Border>
+                            </Grid>
+                            <TextBlock Text="{x:Bind ViewModel.SelectedDescription, Mode=OneWay}" Style="{StaticResource BodyText}"
+                                       TextWrapping="Wrap" Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+
+                            <!-- Parameters: one box each; a list for choices, Browse… for PC files. -->
+                            <StackPanel Spacing="10" Visibility="{x:Bind ViewModel.HasParams, Mode=OneWay}">
+                                <TextBlock Text="PARAMETERS" Style="{StaticResource SectionLabel}" />
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Params}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vmt:CommandParamItem">
+                                            <StackPanel Spacing="4" Margin="0,0,0,10">
+                                                <TextBlock Text="{x:Bind Label}" FontSize="13" FontWeight="SemiBold" />
+                                                <Grid ColumnSpacing="8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Visibility="{x:Bind IsTextInput}" CornerRadius="12"
+                                                             AutomationProperties.Name="{x:Bind Label}"
+                                                             PlaceholderText="{x:Bind Placeholder}"
+                                                             Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <ComboBox Visibility="{x:Bind IsChoice}" CornerRadius="12" MinWidth="220"
+                                                              AutomationProperties.Name="{x:Bind Label}"
+                                                              ItemsSource="{x:Bind Choices}"
+                                                              SelectedItem="{x:Bind SelectedChoice, Mode=TwoWay}" />
+                                                    <Button Grid.Column="1" Content="Browse…" Style="{StaticResource QuietButton}" Padding="16,6"
+                                                            Visibility="{x:Bind CanBrowse}" Click="OnBrowse" />
+                                                </Grid>
+                                                <TextBlock Text="{x:Bind Error, Mode=OneWay}" FontSize="12" TextWrapping="Wrap"
+                                                           Foreground="{ThemeResource ErrorBrush}"
+                                                           Visibility="{x:Bind HasError, Mode=OneWay}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- The command as it runs: this is also what Copy copies. -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="COMMAND" Style="{StaticResource SectionLabel}" />
+                                <Border Background="{ThemeResource SurfaceContainerHighBrush}" CornerRadius="14" Padding="14,10">
+                                    <TextBlock Text="{x:Bind ViewModel.Preview, Mode=OneWay}" FontFamily="Consolas" FontSize="13"
+                                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                </Border>
+                            </StackPanel>
+
+                            <TextBlock Text="{x:Bind ViewModel.BlockReason, Mode=OneWay}" FontSize="13" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource ErrorBrush}"
+                                       Visibility="{x:Bind ViewModel.HasBlockReason, Mode=OneWay}" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Style="{StaticResource FilledButton}" Command="{x:Bind ViewModel.RunCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                        <TextBlock Text="Run" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource TonalButton}" Click="OnCopy" ToolTipService.ToolTip="Copy the command">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                        <TextBlock Text="Copy" />
+                                    </StackPanel>
+                                </Button>
+                                <ProgressRing IsActive="{x:Bind ViewModel.Running, Mode=OneWay}" Width="22" Height="22"
+                                              VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <!-- What the phone answered. -->
+                            <Border Background="{ThemeResource SurfaceContainerHighBrush}" CornerRadius="14" Padding="14,10"
+                                    Visibility="{x:Bind ViewModel.HasOutput, Mode=OneWay}">
+                                <ScrollViewer MaxHeight="280" HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Auto"
+                                              VerticalScrollBarVisibility="Auto">
+                                    <TextBlock Text="{x:Bind ViewModel.Output, Mode=OneWay}" FontFamily="Consolas" FontSize="12"
+                                               IsTextSelectionEnabled="True" />
+                                </ScrollViewer>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

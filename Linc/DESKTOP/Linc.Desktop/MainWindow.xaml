@@ -248,6 +248,11 @@
                         <FontIcon Glyph="&#xE8EA;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Tools" Tag="Tools" ToolTipService.ToolTip="Type, rescue, apps, health and more, over USB or wireless debugging">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE90F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Files" Tag="Files">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8B7;" />

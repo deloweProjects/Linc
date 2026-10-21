@@ -1,0 +1,7 @@
+{
+  "getprop ro.build.version.sdk": "34",
+  "getprop ro.product.model": "Pixel 7",
+  "getprop ro.product.manufacturer": "Google",
+  "getprop ro.build.version.release": "14",
+  "wm size": "Physical size: 1080x2400"
+}

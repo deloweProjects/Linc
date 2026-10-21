@@ -33,7 +33,9 @@ Directory.CreateDirectory(root);
 var cert = FakePhone.CreateCertificate(Path.Combine(root, "phone.pfx"));
 WriteSettings(root, Convert.ToBase64String(cert.RawData));
 
-var app = Process.Start(new ProcessStartInfo(exe, $"--data-root \"{root}\"") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })!;
+// The Tools page's pretend phone: canned adb answers, one file per section (fake-adb/*.json).
+var fakeAdb = Path.Combine(AppContext.BaseDirectory, "fake-adb");
+var app = Process.Start(new ProcessStartInfo(exe, $"--data-root \"{root}\" --fake-adb \"{fakeAdb}\"") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! })!;
 using var stop = new CancellationTokenSource();
 var phone = new FakePhone(cert, Log);
 var phoneTask = Task.Run(() => phone.RunAsync(stop.Token));
@@ -62,6 +64,23 @@ try
     foreach (var page in pages)
     {
         if (Press(window, page)) { Thread.Sleep(2500); Shot(hwnd, $"page-{page.ToLowerInvariant()}"); }
+    }
+
+    // ---- every Tools section, against the pretend phone ----------------------------------------
+    string[] toolSections = ["Type", "Rescue", "Apps", "Capture", "Health", "System", "Commands", "Console"];
+    if (Press(window, "Tools"))
+    {
+        Thread.Sleep(4000); // the page finds the pretend phone on its first look
+        foreach (var section in toolSections)
+        {
+            if (Select(window, "Tools: " + section)) { Thread.Sleep(2500); Shot(hwnd, $"tools-{section.ToLowerInvariant()}"); }
+            else { notes.Add($"- **Tools › {section} is missing.**"); exitCode = 1; }
+        }
+    }
+    else
+    {
+        notes.Add("- **The Tools page is missing from the navigation.**");
+        exitCode = 1;
     }
 
     // ---- the floating bar's hover names --------------------------------------------------------

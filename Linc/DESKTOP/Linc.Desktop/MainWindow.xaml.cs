@@ -924,6 +924,7 @@ public sealed partial class MainWindow : Window
         {
             "Home" => typeof(HomePage),
             "Device" => typeof(DevicePage),
+            "Tools" => typeof(ToolsPage),
             "Files" => typeof(FilesPage),
             "Clipboard" => typeof(ClipboardPage),
             "Share" => typeof(QuickSharePage),

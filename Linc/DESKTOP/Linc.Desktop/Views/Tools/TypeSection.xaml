@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Linc.Desktop.Views.Tools.TypeSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Linc.Desktop.Views">
+
+    <!-- Tools › Type (TOOLS.md §1): one big box, the keys a dead screen needs, a D-pad. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+        <StackPanel Spacing="16" Padding="0,0,12,12">
+            <Border Style="{StaticResource ExpressiveCard}" Padding="28">
+                <StackPanel Spacing="18">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Type on your phone" Style="{StaticResource TitleText}" VerticalAlignment="Center" />
+                        <ToggleButton Grid.Column="1" CornerRadius="{StaticResource ShapeFull}" Padding="16,8"
+                                      IsChecked="{x:Bind ViewModel.LiveKeys, Mode=TwoWay}"
+                                      ToolTipService.ToolTip="Every key you press goes to the phone straight away">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE765;" FontSize="14" />
+                                <TextBlock Text="{x:Bind ViewModel.LiveLabel, Mode=OneWay}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <Button Grid.Column="2" Style="{StaticResource IconTonalButton}" Width="40" Height="40" CornerRadius="20"
+                                AutomationProperties.Name="More keys" ToolTipService.ToolTip="More keys">
+                            <FontIcon Glyph="&#xE712;" FontSize="16" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuFlyoutItem Text="Play / pause" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="85">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE768;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="Next" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="87">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE893;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="Previous" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="88">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE892;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="Volume up" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="24">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE995;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="Volume down" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="25">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE993;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="Mute" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="164">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74F;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Sleep" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="223">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE708;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="Notifications" Command="{x:Bind ViewModel.NotificationsCommand}">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEA8F;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Paste" Command="{x:Bind ViewModel.PasteCommand}">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="{x:Bind ViewModel.CopyLabel, Mode=OneWay}" Command="{x:Bind ViewModel.CopyCommand}"
+                                                    IsEnabled="{x:Bind ViewModel.CanCombos, Mode=OneWay}">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="{x:Bind ViewModel.SelectAllLabel, Mode=OneWay}" Command="{x:Bind ViewModel.SelectAllCommand}"
+                                                    IsEnabled="{x:Bind ViewModel.CanCombos, Mode=OneWay}">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B3;" /></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator />
+                                    <ToggleMenuFlyoutItem Text="Press Enter after" IsChecked="{x:Bind ViewModel.PressEnterAfter, Mode=TwoWay}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                    </Grid>
+
+                    <!-- A line at a time: Enter (or Send) types it on the phone. -->
+                    <Grid ColumnSpacing="12" Visibility="{x:Bind ViewModel.LineMode, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="LineBox" Style="{StaticResource ExpressiveTextBox}" FontSize="22" MinHeight="64"
+                                 VerticalContentAlignment="Center" PlaceholderText="Type here, Enter sends"
+                                 AutomationProperties.Name="Text to type on the phone" IsSpellCheckEnabled="False"
+                                 Text="{x:Bind ViewModel.Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 KeyDown="OnLineKeyDown" />
+                        <Button Grid.Column="1" Style="{StaticResource FilledButton}" Content="Send" VerticalAlignment="Stretch"
+                                Command="{x:Bind ViewModel.SendCommand}" />
+                    </Grid>
+
+                    <!-- Live keys: this box takes every key and sends it at once; the glow says it's live. -->
+                    <ContentControl x:Name="LivePad" Visibility="{x:Bind ViewModel.LiveKeys, Mode=OneWay}"
+                                    IsTabStop="True" UseSystemFocusVisuals="False" HorizontalContentAlignment="Stretch"
+                                    AutomationProperties.Name="Live keys: keys go straight to the phone"
+                                    PreviewKeyDown="OnLivePreviewKeyDown" CharacterReceived="OnLiveCharacter"
+                                    Tapped="OnLivePadTapped">
+                        <Border MinHeight="64" CornerRadius="{StaticResource ShapeLarge}" Padding="20,0"
+                                Background="{ThemeResource SurfaceContainerHighBrush}"
+                                BorderBrush="{ThemeResource PrimaryBrush}" BorderThickness="2">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Ellipse Width="10" Height="10" Fill="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="Keys go straight to the phone. Click here if they stop."
+                                           Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                    </ContentControl>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Style="{StaticResource TonalButton}" Padding="20,12" Command="{x:Bind ViewModel.WakeKeyCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE7E8;" FontSize="15" />
+                                <TextBlock Text="Wake" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource TonalButton}" Padding="20,12" Command="{x:Bind ViewModel.UnlockSwipeCommand}"
+                                ToolTipService.ToolTip="Swipe up, as you would to unlock">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE74A;" FontSize="15" />
+                                <TextBlock Text="Unlock swipe" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource QuietButton}" Content="Home" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="3" />
+                        <Button Style="{StaticResource QuietButton}" Content="Back" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="4" />
+                        <Button Style="{StaticResource QuietButton}" Content="Recents" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="187" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- D-pad: for a phone whose touch is broken, or a TV. -->
+                <Border Style="{StaticResource ExpressiveCard}" Padding="20">
+                    <Grid RowSpacing="6" ColumnSpacing="6">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="52" />
+                            <RowDefinition Height="52" />
+                            <RowDefinition Height="52" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="52" />
+                            <ColumnDefinition Width="52" />
+                            <ColumnDefinition Width="52" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="1" Style="{StaticResource IconTonalButton}" Width="52" Height="52" CornerRadius="16"
+                                AutomationProperties.Name="Up" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="19">
+                            <FontIcon Glyph="&#xE70E;" FontSize="16" />
+                        </Button>
+                        <Button Grid.Row="1" Style="{StaticResource IconTonalButton}" Width="52" Height="52" CornerRadius="16"
+                                AutomationProperties.Name="Left" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="21">
+                            <FontIcon Glyph="&#xE76B;" FontSize="16" />
+                        </Button>
+                        <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource FilledButton}" Width="52" Height="52" Padding="0"
+                                Content="OK" AutomationProperties.Name="OK" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="23" />
+                        <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource IconTonalButton}" Width="52" Height="52" CornerRadius="16"
+                                AutomationProperties.Name="Right" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="22">
+                            <FontIcon Glyph="&#xE76C;" FontSize="16" />
+                        </Button>
+                        <Button Grid.Row="2" Grid.Column="1" Style="{StaticResource IconTonalButton}" Width="52" Height="52" CornerRadius="16"
+                                AutomationProperties.Name="Down" Command="{x:Bind ViewModel.KeyCommand}" CommandParameter="20">
+                            <FontIcon Glyph="&#xE70D;" FontSize="16" />
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="1" Style="{StaticResource ExpressiveCard}" Padding="22">
+                    <StackPanel Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="Phone on its lock screen?" Style="{StaticResource TitleText}" FontSize="16" />
+                        <TextBlock Text="Wake, swipe, type your PIN. Linc never saves it." Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <TextBlock Text="Works over USB or wireless debugging, with or without the Linc app on the phone."
+                                   Style="{StaticResource CaptionText}" TextWrapping="Wrap" views:Explain.IsHelp="True" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

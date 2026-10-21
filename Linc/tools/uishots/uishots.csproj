@@ -14,4 +14,9 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- The Tools page's pretend phone (App.xaml.cs --fake-adb): canned adb answers. -->
+    <None Include="fake-adb\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

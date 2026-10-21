@@ -1,0 +1,6 @@
+{
+  "dumpsys battery | grep level": "  level: 82",
+  "ip -f inet addr show wlan0": "47: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 3000\n    inet 192.168.1.20/24 brd 192.168.1.255 scope global wlan0\n       valid_lft forever preferred_lft forever",
+  "getprop ro.build.fingerprint": "google/panther/panther:14/AP2A.240805.005/12025142:user/release-keys",
+  "uptime": " 16:02:11 up 3 days,  4:17,  0 users,  load average: 2.31, 2.10, 1.98"
+}

@@ -19,7 +19,7 @@ both sides support it (see PROTOCOL.md).
   (**Home, Control, Clipboard, Share**) and Settings behind the gear. Android 11+ (wireless
   debugging needs it).
 - **Linc for Windows** (`Linc/DESKTOP/Linc.Desktop`, C# WinUI 3). One tab per paired phone, pages
-  **Home, Device, Details, Files, Sync, Clipboard, Share, Logs**, plus Settings. Lives in the
+  **Home, Device, Tools, Details, Files, Sync, Clipboard, Share, Logs**, plus Settings. Lives in the
   notification area (tray) when closed.
 
 **No account, no server.** The phone and the PC talk directly, over the USB cable (ADB), wireless
@@ -160,6 +160,27 @@ Control is a set of full-screen pages; the **Pages** button or the edge handle o
 | **About** | Both: Settings › About: version, developer, Telegram channel (t.me/LincApp), source on GitHub, credits and licences. | — |
 
 ---
+
+## 11. Tools (PC page; ADB with a face)
+
+Works on any phone adb can see over USB or wireless debugging, **even when the Linc app isn't
+running on the phone** (it finds phones straight from adb; Linc's own connection is untouched).
+Every action shows the command it ran in a small caption (click copies it). Steps that change the
+phone ask first; ones that can't be undone get a red button that wakes after a moment. Code:
+`Services/Tools` (one command layer, `IAdbShell`; pure parsers in `Pure/`, tested by
+`tools/toolsim`), `ViewModels/Tools`, `Views/ToolsPage.xaml` + `Views/Tools/*Section.xaml`. Design
+and spec: `Vibe/claude-notes/linc-tools/`.
+
+| Section | What it does |
+|---|---|
+| **Type** | Type on the phone from the PC keyboard (a line at a time, or Live keys: each key straight away); Wake, Unlock swipe, Home, Back, Recents, arrow pad; ⋯ media keys, Sleep, Notifications, Paste. Typed text is never logged. Characters `input text` can't send (é, emoji) need the Linc app. |
+| **Rescue** | Screen broken or black: 1 See it (mirror with the phone's screen off), 2 Get in (wake, swipe, type your PIN; never saved), 3 Save your stuff (DCIM, Pictures, Download, Documents, Movies, Music into Documents\Linc Backup\<model> <date>, skipping files already copied). Needs USB debugging allowed before the screen died. |
+| **Apps** | Search and filter (Yours · System · Turned off); open, stop, uninstall, remove a system app for this user (with Put back), turn off/on, clear data, save the APK, runtime permissions. Core apps and Linc are protected. |
+| **Capture** | Screenshot to Pictures\Linc\Screenshots (Open · Copy · Show in folder); Record up to 3 min to Videos\Linc; More: clean status bar, show touches, quality. |
+| **Health** | Battery (level, charging, watts, temperature), phone temperature, storage, live CPU and memory graphs, busy apps with Stop, Phone details (Copy all). Refreshes every 3 s while open. |
+| **System** | Dark mode, Stay awake, Animations, Screen timeout, Brightness, Text size; More: Wi-Fi, mobile data, Bluetooth, airplane, location, battery saver, night light (Wi-Fi off / airplane on ask first over wireless); Restart, Recovery, Power off. |
+| **Commands** | Search ~170 everyday adb commands by what they do ("install app", "screen size", "wifi"), fill in the parameters, see the exact command, then Run or Copy. Values are quoted or checked; deletes only inside the phone's storage; nothing that weakens the phone's security. |
+| **Console** (Advanced) | Type adb shell commands yourself: history, Copy output, a warning and one confirm for risky commands. |
 
 ## Provenance (who made Linc, and how anyone can check)
 

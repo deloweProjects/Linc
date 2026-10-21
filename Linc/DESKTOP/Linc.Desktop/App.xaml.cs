@@ -22,6 +22,16 @@ public partial class App : Application
     // command line.
     private static readonly string? _parsedDataRoot = StartupRegistration.ParseDataRoot(Environment.GetCommandLineArgs());
 
+    // tools/uishots only: --fake-adb <folder> gives the Tools page a pretend phone with canned
+    // answers (Services/Tools/Pure/AdbShellTypes.cs), so every section can be screenshotted.
+    private static readonly string? _fakeAdb = ParseFakeAdb(Environment.GetCommandLineArgs());
+
+    private static string? ParseFakeAdb(string[] args)
+    {
+        var i = Array.FindIndex(args, a => string.Equals(a, "--fake-adb", StringComparison.OrdinalIgnoreCase));
+        return i >= 0 && i + 1 < args.Length && !string.IsNullOrWhiteSpace(args[i + 1]) ? Path.GetFullPath(args[i + 1]) : null;
+    }
+
     public App()
     {
         // M12b Part A: subscribe FIRST — before InitializeComponent(), before any service is
@@ -143,6 +153,20 @@ public partial class App : Application
             .AddSingleton<DesktopModeViewModel>()
             .AddSingleton<DesktopModeSettingsViewModel>()
             .AddSingleton<DisplayControlViewModel>()
+            // Tools (PC page, ADB with a face): one shell for every section, then the sections.
+            .AddSingleton<Linc.Desktop.Services.Tools.IAdbShell>(sp => _fakeAdb is not null
+                ? new Linc.Desktop.Services.Tools.FakeAdbShell(_fakeAdb)
+                : new Linc.Desktop.Services.Tools.AdbShell(sp.GetRequiredService<IAdbServerHost>(), sp.GetRequiredService<ILogService>()))
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.ToolsContext>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.TypeToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.RescueToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.AppsToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.CaptureToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.HealthToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.SystemToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.CommandsToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.ConsoleToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.ToolsViewModel>()
             .AddSingleton<AppShellViewModel>()
             .AddSingleton<DeviceTabsViewModel>()
             .AddSingleton<DeviceViewModel>()
