@@ -382,13 +382,14 @@ public sealed class MirrorService(ILogService log) : IMirrorService
     internal const int MaxShapeLongSide = 2560;
 
     /// <summary>Directory for the restore file (<see cref="IDeviceRegistry.RootPath"/>), set at
-    /// startup; falls back to %LOCALAPPDATA%\Linc.</summary>
+    /// startup by App. Only a harness that never sets it falls back to the temp folder: the store
+    /// root must come from the registry alone (cleanroomsim guards LocalApplicationData lookups).</summary>
     public static string? StoreRoot { get; set; }
 
     private static readonly object DisplayGate = new();
 
     private static string RestoreFile => Path.Combine(
-        StoreRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Linc"),
+        StoreRoot ?? Path.Combine(Path.GetTempPath(), "Linc"),
         "mirror-display-restore.json");
 
     /// <summary>Pure: the <c>wm size</c> to ask for, in the phone's natural orientation, for a
