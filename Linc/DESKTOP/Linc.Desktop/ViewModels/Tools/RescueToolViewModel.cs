@@ -88,7 +88,7 @@ public partial class RescueToolViewModel(
     public partial double BackupProgress { get; set; }
 
     [ObservableProperty]
-    public partial string BackupStatus { get; set; } = "Photos, downloads and documents to this PC.";
+    public partial string BackupStatus { get; set; } = "";
 
     [ObservableProperty]
     public partial bool BackupDone { get; set; }
