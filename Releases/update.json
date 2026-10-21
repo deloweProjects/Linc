@@ -31,13 +31,13 @@
   ],
   "latest": "1.0.0.18",
   "minimumSupported": "1.0.0-beta.1",
-  "notes": "Frosted look, phone sound everywhere, sync folders, clock styles and fonts",
+  "notes": "Mirroring plays sound on one device; Fill this monitor",
   "desktop": {
     "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.18/Linc-Setup-1.0.0.18.exe",
-    "sha256": "EEC9E7BD87AECDF0111286862B00B07189848B412D9DE1E20B55AA492C3DDBA6"
+    "sha256": "068B9D0AE92862CCB775B8EAC439CDAD329D492336E5C9C3A4CC05017374F6E5"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.18/Linc-Companion-1.0.0.18-2026-10-20.apk",
-    "sha256": "621131C083774267C7FBB33F0A0A50DACD463618DB2E4D0F1DCC460B94B54F94"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.18/Linc-Companion-1.0.0.18-2026-10-21.apk",
+    "sha256": "688B5573FD973A371B5413767857E62468C42A6ADC28F60F3EC36B398C432EBF"
   }
 }
