@@ -105,7 +105,9 @@ try {
     $tasks = if ($SkipTests) { @('assembleDebug') } else { @('testDebugUnitTest', 'assembleDebug') }
     # --offline on the owner's PC (its Gradle cache is warm); a fresh CI runner has to download.
     $offline = if ($env:CI) { @() } else { @('--offline') }
-    Run '.\gradlew.bat' ($offline + $tasks) 'The Android build'
+    # @(): a one-element 'if' result unrolls to a bare string, and string + array glued
+    # '--offline' onto the task names ("--offlinetestDebugUnitTest assembleDebug") off CI.
+    Run '.\gradlew.bat' (@($offline) + @($tasks)) 'The Android build'
 } finally { Pop-Location }
 $apk = Join-Path $Android 'app\build\outputs\apk\debug\app-debug.apk'
 if (-not (Test-Path $apk)) { Fail "no APK at $apk" }

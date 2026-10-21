@@ -40,6 +40,12 @@ public partial class MirrorViewModel : ObservableObject
             {
                 _ = _mirror.StopAsync();
             }
+            // "Fill this monitor" resizes the phone's display for a session; one cut short (Linc
+            // closed or crashed, cable pulled) is put back as soon as the phone is here again.
+            if (_supervisor.State == LinkState.Connected && _supervisor.Device is { } connected)
+            {
+                _ = _mirror.RestoreLeftoverAsync(connected.Serial);
+            }
             OnPropertyChanged(nameof(CanMirror));
         });
 
@@ -79,7 +85,7 @@ public partial class MirrorViewModel : ObservableObject
 
     /// <summary>Selects the preset that matches the persisted MaxSize+BitRate exactly,
     /// or clears the selection when none matches (no "Custom" preset is invented — the
-    /// task says so explicitly).</summary>
+    /// task says so explicitly). Also refreshes the screen-shape and phone-sound choices.</summary>
     private void SyncSelectedPresetFromSettings()
     {
         var s = _registry.Mirror;
@@ -89,7 +95,82 @@ public partial class MirrorViewModel : ObservableObject
             _selectedPreset = match;
             OnPropertyChanged(nameof(SelectedPreset));
         }
+        var shape = ShapeToIndex(s.ScreenShape);
+        if (shape != _screenShapeIndex)
+        {
+            _screenShapeIndex = shape;
+            OnPropertyChanged(nameof(ScreenShapeIndex));
+        }
+        OnPropertyChanged(nameof(FillsMonitor));
+        var sound = SoundToIndex(s);
+        if (sound != _soundIndex)
+        {
+            _soundIndex = sound;
+            OnPropertyChanged(nameof(SoundIndex));
+        }
+        OnPropertyChanged(nameof(SoundOnPc));
     }
+
+    // ---- 1.0.0.18: screen shape and phone sound, on the card itself (saved as they change) ----
+
+    private static int ShapeToIndex(string? shape) => shape switch
+    {
+        MirrorSettings.ShapeMonitor => 1,
+        MirrorSettings.ShapeMonitorLandscape => 2,
+        _ => 0,
+    };
+
+    private int _screenShapeIndex;
+
+    /// <summary>0 = the phone's own shape, 1 = fill this monitor, 2 = fill this monitor turned
+    /// sideways. Bound to the ComboBox's SelectedIndex on the Device page.</summary>
+    public int ScreenShapeIndex
+    {
+        get => _screenShapeIndex;
+        set
+        {
+            if (value < 0 || value > 2 || !SetProperty(ref _screenShapeIndex, value))
+            {
+                return;
+            }
+            _registry.SaveMirror(_registry.Mirror with
+            {
+                ScreenShape = value switch
+                {
+                    1 => MirrorSettings.ShapeMonitor,
+                    2 => MirrorSettings.ShapeMonitorLandscape,
+                    _ => null,
+                },
+            });
+        }
+    }
+
+    public bool FillsMonitor => _registry.Mirror.FillsMonitor();
+
+    // The owner: sound comes out of one device while mirroring, chosen here; both at once is
+    // what Play everywhere is for. 0 = on this PC (the phone silent: no --audio-dup),
+    // 1 = on the phone (the PC silent: --no-audio). An older "both" setting (sound here with
+    // MutePhone off) shows as 0 and becomes "this PC only" when picked.
+    private static int SoundToIndex(MirrorSettings s) => s.AudioEnabled ? 0 : 1;
+
+    private int _soundIndex;
+
+    /// <summary>Bound to the Sound ComboBox's SelectedIndex on the Device page.</summary>
+    public int SoundIndex
+    {
+        get => _soundIndex;
+        set
+        {
+            if (value < 0 || value > 1 || !SetProperty(ref _soundIndex, value))
+            {
+                return;
+            }
+            _registry.SaveMirror(_registry.Mirror with { AudioEnabled = value == 0, MutePhone = true });
+        }
+    }
+
+    /// <summary>The phone's sound plays on this PC (the audio source and bit rate apply).</summary>
+    public bool SoundOnPc => _registry.Mirror.AudioEnabled;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]

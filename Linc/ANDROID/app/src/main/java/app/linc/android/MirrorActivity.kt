@@ -40,6 +40,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import app.linc.android.service.AudioEverywhere
 import app.linc.android.service.AudioReceiver
 import app.linc.android.service.KeyboardSink
 import app.linc.android.service.LinkStats
@@ -49,6 +50,7 @@ import app.linc.android.service.MirrorSession
 import app.linc.android.service.MirrorSettings
 import app.linc.android.service.MirrorSettings.PointerMode
 import app.linc.android.service.ModifierKeys
+import app.linc.android.service.PcSpeaker
 import app.linc.android.service.PcTabletMode
 import app.linc.android.service.PcVoiceAccess
 import app.linc.android.service.PointerGestures
@@ -306,7 +308,24 @@ class MirrorActivity : ComponentActivity() {
         override fun sound() {
             val on = !MirrorSettings.audio(this@MirrorActivity)
             MirrorSettings.setAudio(this@MirrorActivity, on)
-            MirrorControl.audio(on)
+            if (on) startPcSound() else stopPcSound()
+            refreshUi(); touched()
+        }
+
+        override fun setMutePc(on: Boolean) {
+            MirrorSettings.setMutePc(this@MirrorActivity, on)
+            if (MirrorSettings.audio(this@MirrorActivity)) {
+                if (on) {
+                    // The PC stops the plain stream at once, then speaker mode starts its own.
+                    stopPcSound()
+                    startPcSound()
+                } else if (speakerByRemote) {
+                    // The PC turns speaker mode off on a background task: ask for the plain
+                    // stream only once it says so, or the two could cross and leave no sound.
+                    startPlainWhenSpeakerOff = true
+                    stopPcSound()
+                }
+            }
             refreshUi(); touched()
         }
 
@@ -430,6 +449,36 @@ class MirrorActivity : ComponentActivity() {
         handler.postDelayed(closePanel, PANEL_IDLE_MS)
     }
 
+    /** True while PC Remote itself turned the PC's speaker mode on ("Mute the PC while here"). */
+    private var speakerByRemote = false
+
+    /** "Mute the PC" was just turned off: start the plain stream once speaker mode is off. */
+    private var startPlainWhenSpeakerOff = false
+
+    /**
+     * The PC's sound on the phone. With "Mute the PC while here" the PC moves its sound onto the
+     * phone (speaker mode) so only the phone plays; otherwise the plain stream plays here and on
+     * the PC. Speaker mode someone else turned on (the Sound page, Play everywhere) is left alone.
+     */
+    private fun startPcSound() {
+        val speakerOn = PcSpeaker.state.value.on || AudioEverywhere.state.value.on
+        if (MirrorSettings.mutePc(this) && PcSpeaker.ready() && !speakerOn) {
+            speakerByRemote = true
+            PcSpeaker.set(true)
+        } else if (!speakerOn) {
+            MirrorControl.audio(true)
+        }
+    }
+
+    private fun stopPcSound() {
+        if (speakerByRemote) {
+            speakerByRemote = false
+            PcSpeaker.set(false) // the PC puts its own speakers back and ends the stream
+        } else {
+            MirrorControl.audio(false)
+        }
+    }
+
     /** Copy settings and session facts into the overlay's state. */
     private fun refreshUi() {
         ui.mouseMode = gestures.mode == PointerMode.MOUSE
@@ -439,6 +488,8 @@ class MirrorActivity : ComponentActivity() {
         ui.clickRing = MirrorSettings.clickRing(this)
         ui.soundAvailable = MirrorControl.v20()
         ui.soundOn = MirrorSettings.audio(this)
+        ui.mutePcAvailable = PcSpeaker.ready()
+        ui.mutePc = MirrorSettings.mutePc(this)
         // Always shown, in fixed places: a button that appeared a moment after each reconnect used
         // to shift the panel under the finger, so a tap meant for Tablet mode hit Voice Access.
         ui.voiceAccessAvailable = true
@@ -476,7 +527,7 @@ class MirrorActivity : ComponentActivity() {
                         gestures.syncCursor(state.width / 2f, state.height / 2f)
                     }
                     applyTransform()
-                    if (MirrorSettings.audio(this@MirrorActivity)) MirrorControl.audio(true)
+                    if (MirrorSettings.audio(this@MirrorActivity)) startPcSound()
                     PcVoiceAccess.refresh(this@MirrorActivity)
                     PcTabletMode.refresh()
                     // "Phone" chosen: the PC hears this phone whenever an app there listens (D-075).
@@ -524,6 +575,19 @@ class MirrorActivity : ComponentActivity() {
         lifecycleScope.launch { ModifierKeys.latches.collectLatest { keyboard.refresh() } }
         lifecycleScope.launch { MirrorSession.displays.collectLatest { refreshUi() } }
         lifecycleScope.launch { AudioReceiver.playing.collectLatest { refreshUi() } }
+        lifecycleScope.launch {
+            PcSpeaker.state.collectLatest { state ->
+                if (startPlainWhenSpeakerOff && !state.on) {
+                    startPlainWhenSpeakerOff = false
+                    if (MirrorSettings.audio(this@MirrorActivity)) MirrorControl.audio(true)
+                }
+                if (speakerByRemote && state.error != null) {
+                    speakerByRemote = false
+                    MirrorControl.audio(true) // sound on both, as before
+                    PcSpeaker.explain(state.error)?.let { toast(it) }
+                }
+            }
+        }
         lifecycleScope.launch { PcVoiceAccess.micLive.collectLatest { refreshUi() } }
         lifecycleScope.launch {
             PcVoiceAccess.state.collectLatest { state ->
@@ -1010,7 +1074,7 @@ class MirrorActivity : ComponentActivity() {
         if (PcTools.v28() && PcTools.curtain.value.on) PcTools.setCurtain(false)
         handler.removeCallbacksAndMessages(null)
         ModifierKeys.clear()
-        MirrorControl.audio(false)
+        stopPcSound()
         MirrorControl.stop()
         MirrorReceiver.detachSurface()
     }

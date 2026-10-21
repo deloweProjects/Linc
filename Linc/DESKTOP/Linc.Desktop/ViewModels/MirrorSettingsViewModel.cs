@@ -239,7 +239,6 @@ public partial class MirrorSettingsViewModel : ObservableObject
             || StayAwake != _loaded.StayAwake
             || TurnScreenOff != _loaded.TurnScreenOff
             || ShowTouches != _loaded.ShowTouches
-            || AudioEnabled != _loaded.AudioEnabled
             || AudioBitRate != _loaded.AudioBitRate
             || !string.Equals(AudioSource, _loaded.AudioSource ?? AudioSourceDefault, StringComparison.Ordinal);
         IsDirty = dirty;
@@ -275,6 +274,9 @@ public partial class MirrorSettingsViewModel : ObservableObject
             return;
         }
         ValidationMessage = null;
+        // The screen shape and phone-sound choices live on the card (MirrorViewModel) and save
+        // themselves; carry the current ones through so this Save never resets them.
+        var current = _registry.Mirror;
         var settings = new MirrorSettings(
             MaxSize: MaxSize,
             VideoBitRate: VideoBitRate,
@@ -283,9 +285,11 @@ public partial class MirrorSettingsViewModel : ObservableObject
             StayAwake: StayAwake,
             TurnScreenOff: TurnScreenOff,
             ShowTouches: ShowTouches,
-            AudioEnabled: AudioEnabled,
+            AudioEnabled: current.AudioEnabled, // the card's Sound choice owns it
             AudioBitRate: AudioBitRate,
-            AudioSource: AudioSource == AudioSourceDefault ? null : AudioSource);
+            AudioSource: AudioSource == AudioSourceDefault ? null : AudioSource,
+            MutePhone: current.MutePhone,
+            ScreenShape: current.ScreenShape);
         _saving = true;
         try
         {

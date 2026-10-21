@@ -303,6 +303,7 @@ public partial class App : Application
             PcVoiceAccess.StoreRoot = storeRoot;
             PcSpeakerMode.StoreRoot = storeRoot;
             PcTabletMode.StoreRoot = storeRoot;
+            MirrorService.StoreRoot = storeRoot;
             // D-071: a phone-mic session cut short by a crash or a kill left the virtual cable as
             // the default microphone; put the user's own back. COM, so off the UI thread.
             var restoreLog = Services.GetRequiredService<ILogService>();

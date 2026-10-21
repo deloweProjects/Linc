@@ -18,8 +18,8 @@ android {
         // InformationalVersion exactly, because M17b's update check compares against it.
         // Numeric four-part versions from 1.0.0.2 on (M20 A2): "1.0.0-beta.2" is only the display
         // name; the update check compares these numbers, and a "-beta.N" suffix would be ignored.
-        versionCode = 18
-        versionName = "1.0.0.17"
+        versionCode = 19
+        versionName = "1.0.0.18"
         // Authorship, stated openly (see Provenance.kt and NOTICE); informational only.
         buildConfigField("String", "AUTHOR", "\"deloweProjects\"")
     }

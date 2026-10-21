@@ -3,16 +3,16 @@ Linc builds - SHA256 checksums
 
 Verify before running:  Get-FileHash <filename> -Algorithm SHA256
 
-1.0.0.17 ("1.0.0-beta.17", 2026-10-20) - GitHub release v1.0.0.17.
+1.0.0.18 ("1.0.0-beta.18", 2026-10-20) - GitHub release v1.0.0.18.
 
-7A88D1A376841666EE0199DB1FFFA695B4385DB9D9C8F117C9F102E16A5802F0  Linc-Setup-1.0.0.17.exe
-60E6ADB02482D6D3A5D1F633A90384D4C541D7A52BF8E280C066BA69F4DB8CD1  Linc-Desktop-1.0.0.17-2026-10-20.zip
-986F17A36EEF57780A42A2E02DE75C981EA6F75AE60079A20A5B9B46D1AA56FC  Linc-Companion-1.0.0.17-2026-10-20.apk
+EEC9E7BD87AECDF0111286862B00B07189848B412D9DE1E20B55AA492C3DDBA6  Linc-Setup-1.0.0.18.exe
+81051BC91BE24BC390E6FAA1943E864D21296F8706A2DB3602A4A046959D7533  Linc-Desktop-1.0.0.18-2026-10-20.zip
+621131C083774267C7FBB33F0A0A50DACD463618DB2E4D0F1DCC460B94B54F94  Linc-Companion-1.0.0.18-2026-10-20.apk
 
 Linc-Setup installs Linc for your Windows account (no admin). The zip is the same app, portable.
 
 File sizes (bytes):
 
-    Linc-Setup-1.0.0.17.exe                      119,520,551
-    Linc-Desktop-1.0.0.17-2026-10-20.zip         180,940,159
-    Linc-Companion-1.0.0.17-2026-10-20.apk        32,404,285
+    Linc-Setup-1.0.0.18.exe                      119,426,636
+    Linc-Desktop-1.0.0.18-2026-10-20.zip         175,353,377
+    Linc-Companion-1.0.0.18-2026-10-20.apk        32,404,285

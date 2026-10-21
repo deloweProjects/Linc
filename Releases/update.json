@@ -29,15 +29,15 @@
     "",
     "Keys beginning with an underscore are ignored by both parsers."
   ],
-  "latest": "1.0.0.17",
+  "latest": "1.0.0.18",
   "minimumSupported": "1.0.0-beta.1",
   "notes": "Frosted look, phone sound everywhere, sync folders, clock styles and fonts",
   "desktop": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.17/Linc-Setup-1.0.0.17.exe",
-    "sha256": "7A88D1A376841666EE0199DB1FFFA695B4385DB9D9C8F117C9F102E16A5802F0"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.18/Linc-Setup-1.0.0.18.exe",
+    "sha256": "EEC9E7BD87AECDF0111286862B00B07189848B412D9DE1E20B55AA492C3DDBA6"
   },
   "android": {
-    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.17/Linc-Companion-1.0.0.17-2026-10-20.apk",
-    "sha256": "986F17A36EEF57780A42A2E02DE75C981EA6F75AE60079A20A5B9B46D1AA56FC"
+    "url": "https://github.com/deloweProjects/Linc/releases/download/v1.0.0.18/Linc-Companion-1.0.0.18-2026-10-20.apk",
+    "sha256": "621131C083774267C7FBB33F0A0A50DACD463618DB2E4D0F1DCC460B94B54F94"
   }
 }
