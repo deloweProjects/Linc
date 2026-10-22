@@ -56,7 +56,18 @@ but only your test can say it works:
 
 ## CI
 
-_(filled in below once the runs finish)_
+All on GitHub Actions, `build.yml` and the UI-test branches:
+
+- **Build** green on `claude/linc-link` at every LincLink commit (last: `ee30433`): the PC app, every
+  simulator (`linclinksim` included), the installer compile (with the new firewall step), the phone APK and
+  its 258 unit tests.
+- **UI test** green on `ui-test/linc-link-a4` (31 phone screenshots, 25 PC screenshots, the fake phone and
+  fake PC answering ~130 messages, as before LincLink). The PC's Home shows "Connected over Wi-Fi" with the
+  ADB chip; the phone's Settings shows the new engine switch on two lines; the phone's log shows
+  "LincLink: waiting for the PC to dial this phone (port 46002)". The fake phone (v29) and fake PC (v30) are older
+  peers, so this shows old peers still connect; v32 itself is proven by the simulator, not here.
+- One UI-test run (`a3`) caught the emulator's own launcher hanging ("Pixel Launcher isn't responding"), so
+  it got only 5 phone screenshots; the same code passed on `a4`. Not Linc.
 
 ## How to switch engines
 
