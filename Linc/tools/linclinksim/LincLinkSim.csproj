@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>linc-linclinksim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- LincLink's pure core (Vibe/agent/design/linclink.md), compiled verbatim from the app: no
+         sockets, no adb, no phone, no settings file touched. -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\*.cs" />
+  </ItemGroup>
+</Project>
