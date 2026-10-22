@@ -148,7 +148,9 @@ class PresenceClient(
     private fun shouldDial(): Boolean =
         TransportStore.presenceEnabled(context) &&
             TransportStore.dialTargets(context).isNotEmpty() &&
-            CompanionStateHolder.state.value is ServiceState.Listening
+            // v32: a session whose transport just died is worth dialling for while "Connected"
+            // is still showing (the linger), so the PC finds the phone before anyone notices.
+            (CompanionStateHolder.state.value is ServiceState.Listening || server.wantsPc())
 
     /**
      * Dials, for every PC it may ([TransportStore.dialTargets]), the USB reverse tunnel, then the

@@ -87,6 +87,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_500); tick++ } }
 
     var presence by remember { mutableStateOf(TransportStore.presenceEnabled(context)) }
+    var engine by remember { mutableStateOf(app.linc.android.service.link.LinkStore.engineOn(context)) }
     var clipSync by remember { mutableStateOf(ClipboardSettings.syncEnabled(context)) }
     var keepHistory by remember { mutableStateOf(ClipboardSettings.keepHistory(context)) }
     var historySize by remember { mutableIntStateOf(ClipboardSettings.historySize(context)) }
@@ -126,6 +127,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                     { s -> SettingsRow("Background connection", s, LincSymbols.Wifi,
                         supporting = "Find your PC on Wi-Fi by itself, without a cable.",
                         trailing = { Switch(presence, { presence = it; TransportStore.savePresenceEnabled(context, it) }) }) },
+                    { s -> SettingsRow("New connection engine", s, LincSymbols.Link,
+                        supporting = "The PC finds this phone by itself on any Wi-Fi, and a short drop never shows. Off: the way Linc always connected.",
+                        trailing = { Switch(engine, {
+                            engine = it
+                            app.linc.android.service.link.LinkStore.setEngineOn(context, it)
+                            restartCompanionIfRunning(context)
+                        }) }) },
                     { s -> SettingsRow("Stay connected in the background", s, LincSymbols.BatteryAlert,
                         value = if (exempt) "Allowed" else "Not allowed",
                         supporting = if (exempt) null else "Android may cut the link to your PC when the screen is off.",

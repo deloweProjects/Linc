@@ -1,5 +1,7 @@
 package app.linc.android.protocol
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -9,7 +11,7 @@ import java.util.UUID
 // This package must stay free of android.* imports so it runs in plain JVM unit tests.
 // Spec: docs/PROTOCOL.md. Wire-format changes require a version bump there first.
 
-const val PROTOCOL_VERSION = 31
+const val PROTOCOL_VERSION = 32
 
 /** Lowest version this app can still speak (peers may negotiate down to it). */
 const val PROTOCOL_MIN_VERSION = 0
@@ -171,6 +173,12 @@ object MessageType {
     const val ADB_DOWN = "adb.down"              // phone → desktop
     const val ADB_ARM = "adb.arm"                // desktop → phone
     const val ADB_ACK = "adb.ack"                // desktop → phone
+
+    // v32 — LincLink (Vibe/agent/design/linclink.md): one session over many routes.
+    const val LINK_ACK = "link.ack"              // either way: {ack, echo?}; never sequenced
+    const val LINK_PAIR = "link.pair"            // phone → desktop, inside the PC's pairing window only
+    const val LINK_SECRET = "link.secret"        // desktop → phone: {secret, gen}
+    const val LINK_WHERE = "link.where"          // either way: {addrs, port}
 }
 
 object Topic {
@@ -197,6 +205,7 @@ object ErrorCode {
     const val DENIED = "denied"
 }
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Envelope(
     val v: Int = PROTOCOL_VERSION,
@@ -204,6 +213,11 @@ data class Envelope(
     val id: String = UUID.randomUUID().toString(),
     val replyTo: String? = null,
     val payload: JsonObject = JsonObject(emptyMap()),
+    // v32 (LincLink): this frame's number in its session and the highest number received, so a
+    // session can move to another transport and replay what was lost. Never written when null,
+    // so an older PC sees exactly the envelope it always did.
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val seq: Long? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val ack: Long? = null,
 )
 
 val ProtocolJson = Json {

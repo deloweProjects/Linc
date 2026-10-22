@@ -35,6 +35,11 @@
     <!-- Normal permission, no runtime prompt; used only to read Wi-Fi signal
          strength/link speed for the Details page (never the SSID). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- LincLink (v32): start Linc after a restart (BootReceiver), and receive the PC's LAN beacon
+         while the screen is off (a multicast lock, held only while no PC is connected). Both are
+         normal permissions with no prompt. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Normal permission, no runtime prompt. Needed to acquire the low-latency Wi-Fi lock the
          PC Remote screen holds while it is visible, which stops the radio's power-save mode
          from sleeping between beacons and delaying the mirror's packets (D-066). -->
@@ -195,6 +200,32 @@
                 <data android:scheme="linc" android:host="tap" />
             </intent-filter>
         </activity>
+
+        <!-- LincLink: pairing by QR code. The PC's code is a linc://pair link the camera opens; the
+             activity asks before pairing, since any app or page could open such a link. -->
+        <activity
+            android:name=".PairActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="linc" android:host="pair" />
+            </intent-filter>
+        </activity>
+
+        <!-- LincLink: start after a restart or an update. BOOT_COMPLETED is a protected broadcast,
+             so only the system can send it; the receiver also checks the action. -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".service.SmsReceiver"
