@@ -108,6 +108,9 @@ public sealed class PairingWindow
 
     public bool IsOpen(DateTime nowUtc) => _token is not null && nowUtc < _closesUtc;
 
+    /// <summary>The open window's token (check <see cref="IsOpen"/> first), or null once burnt or closed.</summary>
+    public byte[]? CurrentToken => _token;
+
     public byte[] Open(DateTime nowUtc)
     {
         _token = LinkPairing.NewToken();

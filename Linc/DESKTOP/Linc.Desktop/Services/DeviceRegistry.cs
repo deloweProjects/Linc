@@ -188,6 +188,30 @@ public interface IDeviceRegistry
     bool ForceSoftwareEncoding { get; }
 
     void SaveForceSoftwareEncoding(bool enabled);
+
+    /// <summary>
+    /// Settings › Connection › New connection engine (LincLink, Vibe/agent/design/linclink.md).
+    /// On: protocol v32 is offered (resumable sessions, the PC dialling the phone, the UDP beacon,
+    /// app repair over ADB). Off: v31, exactly the old path. On by default on the LincLink test
+    /// builds; removed once the owner signs it off.
+    /// </summary>
+    bool LincLinkEnabled { get; }
+
+    void SaveLincLinkEnabled(bool enabled);
+
+    event Action? LincLinkChanged;
+
+    /// <summary>
+    /// A phone paired by QR code, with no ADB (v32): its record is keyed <c>linc:&lt;phone id&gt;</c>
+    /// until an ADB connect tells this PC its hardware serial, and made the active one.
+    /// </summary>
+    void SaveQrPairedPhone(string phoneId, string model, string certBase64);
+
+    /// <summary>
+    /// An ADB connect just learned that the phone with this certificate has hardware serial
+    /// <paramref name="serialNo"/>: fold its QR-paired <c>linc:</c> record into the serial one.
+    /// </summary>
+    void MergeQrPairedPhone(string serialNo, string certBase64);
     void SaveNotificationSyncEnabled(bool enabled);
     void SaveAllowUsbConnections(bool enabled);
     void SavePhoneCert(string certBase64);
@@ -350,7 +374,10 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // Clock style and app font: appended at the end like every field above it; missing reads
         // back as "classic" / "default", the look the app shipped with.
         string? ClockStyle = null,
-        string? AppFont = null);
+        string? AppFont = null,
+        // LincLink (v32): appended at the end like every field above it; missing reads back as
+        // ON on the test builds that carry the new engine.
+        bool? LincLinkEnabled = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -405,6 +432,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public int ClipboardHistorySize { get; private set; } = 500;
     public bool ShowExplanations { get; private set; } = true;
     public bool ForceSoftwareEncoding { get; private set; }
+    public bool LincLinkEnabled { get; private set; } = true;
+    public event Action? LincLinkChanged;
     public event Action? ShowExplanationsChanged;
 
     /// <summary>Raised when <see cref="UsePhoneColours"/> changes, so the theme can re-derive.</summary>
@@ -519,6 +548,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 ClipboardHistorySize = ClampHistorySize(settings?.ClipboardHistorySize ?? 500);
                 ShowExplanations = settings?.ShowExplanations ?? true;
                 ForceSoftwareEncoding = settings?.ForceSoftwareEncoding ?? false;
+                LincLinkEnabled = settings?.LincLinkEnabled ?? true;
                 FloatingNav = settings?.FloatingNav ?? true;
                 HomeClock = settings?.HomeClock ?? true;
                 WallpaperBackdrop = settings?.WallpaperBackdrop ?? true;
@@ -807,6 +837,49 @@ public sealed class DeviceRegistry : IDeviceRegistry
         ShowExplanationsChanged?.Invoke();
     }
 
+    public void SaveLincLinkEnabled(bool enabled)
+    {
+        if (LincLinkEnabled == enabled)
+        {
+            return;
+        }
+        LincLinkEnabled = enabled;
+        Persist();
+        LincLinkChanged?.Invoke();
+    }
+
+    public void SaveQrPairedPhone(string phoneId, string model, string certBase64)
+    {
+        // A phone already known by its certificate (paired over ADB before) keeps its record.
+        var known = _knownDevices.FirstOrDefault(d => d.PhoneCertBase64 == certBase64);
+        var serial = known?.Serial ?? $"linc:{phoneId}";
+        SavePairedDevice(serial, known?.Model ?? model);
+        UpdateActive(d => d with { PhoneCertBase64 = certBase64 });
+    }
+
+    public void MergeQrPairedPhone(string serialNo, string certBase64)
+    {
+        var qr = _knownDevices.FindIndex(d => d.Serial.StartsWith("linc:", StringComparison.Ordinal) && d.PhoneCertBase64 == certBase64);
+        if (qr < 0 || string.IsNullOrEmpty(serialNo))
+        {
+            return;
+        }
+        var record = _knownDevices[qr];
+        _knownDevices.RemoveAt(qr);
+        var existing = _knownDevices.FindIndex(d => d.Serial == serialNo);
+        if (existing < 0)
+        {
+            // The QR-paired record becomes the serial one, settings and all.
+            _knownDevices.Insert(Math.Min(qr, _knownDevices.Count), record with { Serial = serialNo });
+        }
+        if (PairedSerial == record.Serial)
+        {
+            PairedSerial = serialNo;
+        }
+        Persist();
+        KnownDevicesChanged?.Invoke();
+    }
+
     public void SaveForceSoftwareEncoding(bool enabled)
     {
         ForceSoftwareEncoding = enabled;
@@ -896,7 +969,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
                 null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
                 ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding,
-                FloatingNav, HomeClock, WallpaperBackdrop, ClockStyle, AppFont)));
+                FloatingNav, HomeClock, WallpaperBackdrop, ClockStyle, AppFont, LincLinkEnabled)));
         }
         catch (IOException)
         {

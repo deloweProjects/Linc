@@ -156,7 +156,8 @@ public static class LinkBrain
         negotiatedVersion >= LinkProtocol.Version && (sessionResumable || anotherRoutePossible);
 }
 
-/// <summary>v32 names and numbers shared by both sides (PROTOCOL.md §v32).</summary>
+/// <summary>v32 numbers shared by both sides (PROTOCOL.md §v32); the message names are in
+/// <c>Protocol/Envelope.cs</c> with the others.</summary>
 public static class LinkProtocol
 {
     /// <summary>The protocol version that brings LincLink.</summary>
@@ -164,9 +165,4 @@ public static class LinkProtocol
 
     /// <summary>The phone's LincLink TLS listener, which the PC dials.</summary>
     public const int PhonePort = 46002;
-
-    public const string Ack = "link.ack";
-    public const string Pair = "link.pair";
-    public const string Secret = "link.secret";
-    public const string Where = "link.where";
 }

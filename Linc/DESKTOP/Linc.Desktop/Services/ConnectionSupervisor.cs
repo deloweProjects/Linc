@@ -98,6 +98,21 @@ public interface IConnectionSupervisor : IDisposable
     void ResumeAutomatic();
 
     /// <summary>
+    /// What the status shows (LincLink, linclink.md §1): connected as soon as anything reaches the
+    /// phone — including ADB while its Linc app is still being started — searching otherwise.
+    /// </summary>
+    LinkPresence Presence => State switch
+    {
+        LinkState.Connected => LinkPresence.Connected,
+        LinkState.Paused => LinkPresence.Paused,
+        LinkState.NoDevice => LinkPresence.NoPhone,
+        _ => LinkPresence.Searching,
+    };
+
+    /// <summary>The ADB chip: true when ADB carries the link or reaches the phone beside it (Mirror, Tools, fast files).</summary>
+    bool AdbUp => false;
+
+    /// <summary>
     /// Something outside the link just saw the phone on the network (a Quick Share from it, for
     /// one). While searching, treat it like a resume: scan now and adopt whatever ADB already
     /// holds, instead of waiting out the idle delay. A no-op when connected or paused.
@@ -122,6 +137,7 @@ public sealed class ConnectionSupervisor(
     ITlsTransportService tlsTransport,
     IBlePresenceService blePresence,
     IHotspotLinkService hotspotLink,
+    ILincLinkService lincLink,
     ILogService log) : IConnectionSupervisor
 {
     private static readonly TimeSpan HealthInterval = TimeSpan.FromSeconds(15);
@@ -188,6 +204,45 @@ public sealed class ConnectionSupervisor(
     public LinkTransport? ManualTransport { get; private set; }
     public bool TransportChosenByHand { get; private set; }
 
+    // ---- LincLink (v32, Vibe/agent/design/linclink.md) -----------------------------------------
+
+    /// <summary>The serial of a phone ADB reaches while its Linc app isn't answering yet (being repaired).</summary>
+    private string? _adbOnlySerial;
+
+    /// <summary>Where each phone (by LincLink id) said it can be dialled (<c>link.where</c>).</summary>
+    private readonly Dictionary<string, List<string>> _told = new(StringComparer.Ordinal);
+
+    /// <summary>The phone's address on the last direct link, as a dial candidate.</summary>
+    private string? _lastDirectPeer;
+
+    /// <summary>Where a phone that just paired by QR code listens, dialled first.</summary>
+    private System.Net.IPEndPoint? _pairedAt;
+
+    private int _dialling;
+    private TaskCompletionSource _searchKick = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Random _jitter = new();
+    private CancellationTokenSource? _searchCts;
+
+    private bool Engine => registry.LincLinkEnabled;
+
+    public LinkPresence Presence => LinkBrain.Presence(
+        paired: registry.PairedSerial is not null,
+        paused: State == LinkState.Paused,
+        linked: State == LinkState.Connected,
+        adbReachesPhone: _adbOnlySerial is not null && State != LinkState.Connected);
+
+    public bool AdbUp => LinkBrain.AdbChipLit(State == LinkState.Connected && connection.HasAdb, _adbOnlySerial is not null);
+
+    private void SetAdbOnly(string? serial)
+    {
+        if (_adbOnlySerial == serial)
+        {
+            return;
+        }
+        _adbOnlySerial = serial;
+        StateChanged?.Invoke(); // the status and the ADB chip changed, even if State didn't
+    }
+
     public void SetManualTransport(LinkTransport? transport)
     {
         if (ManualTransport == transport)
@@ -235,7 +290,13 @@ public sealed class ConnectionSupervisor(
         blePresence.DeviceSighted += OnBleSighting;
         NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        connection.TransportLost += OnTransportLost;
+        connection.PhoneWhere += OnPhoneWhere;
+        lincLink.PhoneSpotted += OnPhoneSpotted;
+        tlsTransport.PhonePaired += OnPhonePaired;
+        registry.LincLinkChanged += OnEngineChanged;
         StartClockWatch();
+        StartEngine();
         discovery.Start();
         usbWatcher.Start();
         _ = SpotKnownPhonesAsync(_spotCts.Token);
@@ -267,6 +328,7 @@ public sealed class ConnectionSupervisor(
                 _backoff.Clear(); // a different phone shouldn't inherit the old one's penalty box
             }
             _handoffUntilUtc = null;
+            _adbOnlySerial = null;
             LastRttMs = null;
             ConnectedAtUtc = null;
             SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
@@ -373,12 +435,26 @@ public sealed class ConnectionSupervisor(
         {
             return; // paused or mid-connect
         }
-        if (signal is not (LinkSignal.BleSighting or LinkSignal.ProbeFailing))
+        if (signal is not (LinkSignal.BleSighting or LinkSignal.ProbeFailing or LinkSignal.PhoneSpotted))
         {
             log.Log(LogLevel.Info, $"{detail}; looking for the phone now.");
         }
         discovery.ScanNow();
         _ = RecoverPresentWirelessDeviceAsync();
+        if (Engine)
+        {
+            // LincLink: ask the network, and dial the phone ourselves on every address it might be
+            // at — raced, outbound (the firewall never blocks it), alongside the routes above.
+            if (signal != LinkSignal.PhoneSpotted)
+            {
+                lincLink.Probe(detail);
+            }
+            if (LinkPolicy.IsStrong(signal))
+            {
+                _searchKick.TrySetResult(); // and the search loop starts its backoff over
+            }
+            _ = DialPhoneAsync();
+        }
     }
 
     private bool IsHandingOff => _handoffUntilUtc is { } until && DateTime.UtcNow < until;
@@ -396,6 +472,13 @@ public sealed class ConnectionSupervisor(
         blePresence.DeviceSighted -= OnBleSighting;
         NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        connection.TransportLost -= OnTransportLost;
+        connection.PhoneWhere -= OnPhoneWhere;
+        lincLink.PhoneSpotted -= OnPhoneSpotted;
+        tlsTransport.PhonePaired -= OnPhonePaired;
+        registry.LincLinkChanged -= OnEngineChanged;
+        _searchCts?.Cancel();
+        lincLink.Dispose();
         _spotCts.Cancel();
         StopHealthLoop();
         _clockCts?.Cancel();
@@ -591,6 +674,10 @@ public sealed class ConnectionSupervisor(
         lock (_unusableReported)
         {
             _unusableReported.Remove(serial);
+        }
+        if (string.Equals(_adbOnlySerial, serial, StringComparison.OrdinalIgnoreCase))
+        {
+            SetAdbOnly(null);
         }
         if (State != LinkState.Connected || Device is not { } live)
         {
@@ -878,6 +965,7 @@ public sealed class ConnectionSupervisor(
             _hasConnectedOnce = true;
         }
         _firstProbeFailureUtc = null;
+        _adbOnlySerial = null;
         StartHealthLoop();
         if (handedOff)
         {
@@ -910,9 +998,15 @@ public sealed class ConnectionSupervisor(
     /// is the phone's address on the link, and it is carried down to ConnectionManager because
     /// the socket is not reachable from a <c>Stream</c>.
     /// </summary>
-    private void OnTlsControlArrived(System.IO.Stream stream, System.Net.IPEndPoint? peer)
+    private void OnTlsControlArrived(System.IO.Stream stream, System.Net.IPEndPoint? peer) =>
+        _ = Task.Run(() => AdoptDirectAsync(stream, peer, pcDialled: false));
+
+    /// <summary>
+    /// A Direct-TLS control connection to adopt: the phone dialled in (v9), or this PC dialled the
+    /// phone's LincLink listener (v32, <paramref name="pcDialled"/>). Same rules either way.
+    /// </summary>
+    private async Task AdoptDirectAsync(System.IO.Stream stream, System.Net.IPEndPoint? peer, bool pcDialled)
     {
-        _ = Task.Run(async () =>
         {
             await _gate.WaitAsync();
             try
@@ -950,9 +1044,14 @@ public sealed class ConnectionSupervisor(
                 var handoff = BeginAttempt();
                 try
                 {
-                    var device = await connection.AdoptTlsConnectionAsync(stream, peer, CancellationToken.None);
-                    Adopt(device, handoff, "direct, no ADB");
+                    var device = await connection.AdoptTlsConnectionAsync(stream, peer, CancellationToken.None, pcDialled);
+                    Adopt(device, handoff, pcDialled ? "this PC dialled the phone directly, no ADB" : "direct, no ADB");
                     LearnWifiMac(registry.PairedSerial, peer?.Address.ToString());
+                    _lastDirectPeer = peer?.Address.ToString();
+                    if (Engine && pcDialled && peer is not null && LinkSecretStore.PhoneIdOf(registry.PhoneCertBase64) is { } phoneId)
+                    {
+                        lincLink.Succeeded(phoneId, LinkRoute.TlsOut, new System.Net.IPEndPoint(peer.Address, LinkProtocol.PhonePort).ToString(), 0);
+                    }
                 }
                 catch (Exception ex) when (ex is LincException or System.IO.IOException)
                 {
@@ -965,14 +1064,14 @@ public sealed class ConnectionSupervisor(
                     {
                         ErrorRaised?.Invoke(LastErrorMessage);
                     }
-                    log.Log(LogLevel.Warn, $"Direct connection from the phone failed: {ex.Message}");
+                    log.Log(LogLevel.Warn, $"Direct connection {(pcDialled ? "to" : "from")} the phone failed: {ex.Message}");
                 }
             }
             finally
             {
                 _gate.Release();
             }
-        });
+        }
     }
 
     private async Task ConnectUsbAsync(DeviceData device, bool manual, bool knownPhone = false)
@@ -1011,6 +1110,16 @@ public sealed class ConnectionSupervisor(
                 }
                 Succeeded(device.Serial);
                 Adopt(connected, handoff, "USB");
+            }
+            catch (CompanionNotAnsweringException ex) when (Engine)
+            {
+                // LincLink: ADB reaches the phone, its app is being started. That is connected,
+                // not an error — the status says so, and the next USB poll tries again (the
+                // backoff paces it: 1, 2, 5, 10 … 30 s, and a cable or app signal cuts it short).
+                Failed(device.Serial);
+                EndFailedAttempt(handoff);
+                LastErrorMessage = ex.Message;
+                SetAdbOnly(device.Serial);
             }
             catch (LincException ex)
             {
@@ -1126,7 +1235,10 @@ public sealed class ConnectionSupervisor(
                     return;
                 }
                 StopHealthLoop();
-                if (LinkPolicy.OnLiveLinkLost(why, IsWifiPossible()) == LostLink.HandOff)
+                // LincLink: a v32 session whose transport died lingers the same way, invisibly,
+                // while every route is raced and the next transport resumes the session.
+                var lingers = why == LinkSignal.TransportLost && Engine && connection.HasResumableSession;
+                if (lingers || LinkPolicy.OnLiveLinkLost(why, IsWifiPossible()) == LostLink.HandOff)
                 {
                     var generation = ++_handoffGeneration;
                     _handoffUntilUtc = DateTime.UtcNow + LinkPolicy.HandoffGrace;
@@ -1143,7 +1255,8 @@ public sealed class ConnectionSupervisor(
             {
                 _gate.Release();
             }
-            Nudge(LinkSignal.CableOut, "The cable came out");
+            Nudge(why == LinkSignal.TransportLost ? LinkSignal.TransportLost : LinkSignal.CableOut,
+                why == LinkSignal.TransportLost ? "The link's transport ended" : "The cable came out");
         });
     }
 
@@ -1203,6 +1316,222 @@ public sealed class ConnectionSupervisor(
         // M15a Part B: a drop is at least as strong a signal as resume or a network change —
         // look for the phone straight away instead of waiting for an advert.
         _ = Task.Run(() => Nudge(LinkSignal.LinkDropped, "The link dropped"));
+    }
+
+    // ---- LincLink (v32) -----------------------------------------------------------------------
+
+    /// <summary>Turn the new engine's own parts on or off to match the setting.</summary>
+    private void StartEngine()
+    {
+        usbWatcher.EnablePush(Engine);
+        if (!Engine)
+        {
+            _searchCts?.Cancel();
+            _searchCts = null;
+            lincLink.Stop();
+            return;
+        }
+        lincLink.Start();
+        if (_searchCts is null)
+        {
+            _searchCts = new CancellationTokenSource();
+            _ = SearchLoopAsync(_searchCts.Token);
+        }
+    }
+
+    /// <summary>The engine switch moved: reconnect so the next link speaks the chosen version.</summary>
+    private void OnEngineChanged()
+    {
+        if (!_started)
+        {
+            return;
+        }
+        _ = Task.Run(async () =>
+        {
+            await _gate.WaitAsync();
+            try
+            {
+                StartEngine();
+                log.Log(LogLevel.Info, Engine
+                    ? "New connection engine on (LincLink); reconnecting with it."
+                    : "New connection engine off; reconnecting the way Linc always has.");
+                if (State == LinkState.Connected)
+                {
+                    StopHealthLoop();
+                    connection.Disconnect();
+                    Device = null;
+                    _handoffUntilUtc = null;
+                    LastRttMs = null;
+                    SetState(LinkState.Searching);
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
+            Nudge(LinkSignal.UserAsked, "Connection engine changed");
+        });
+    }
+
+    /// <summary>The live session's transport died (v32): linger invisibly and race for another.</summary>
+    private void OnTransportLost()
+    {
+        log.Log(LogLevel.Info, $"The {Describe(Device?.Transport ?? LinkTransport.DirectTls)} under the link ended; " +
+            $"keeping the session for {LinkBrain.LingerGrace.TotalSeconds:0} s while Linc finds another way to the phone.");
+        OnLinkDropped(LinkSignal.TransportLost);
+    }
+
+    private void OnPhoneWhere(IReadOnlyList<string> addresses, int port)
+    {
+        if (LinkSecretStore.PhoneIdOf(registry.PhoneCertBase64) is not { } phoneId)
+        {
+            return;
+        }
+        var endpoints = addresses
+            .Select(a => System.Net.IPAddress.TryParse(a, out var ip) ? new System.Net.IPEndPoint(ip, port).ToString() : null)
+            .OfType<string>().ToList();
+        lock (_told)
+        {
+            _told[phoneId] = endpoints;
+        }
+    }
+
+    private void OnPhoneSpotted(string phoneId, System.Net.IPEndPoint at)
+    {
+        if (LinkSecretStore.PhoneIdOf(registry.PhoneCertBase64) != phoneId)
+        {
+            return; // another phone this PC knows; tab switches decide which one is live
+        }
+        Nudge(LinkSignal.PhoneSpotted, $"The phone is on the network at {at}");
+    }
+
+    private void OnPhonePaired(string model, System.Net.IPEndPoint? listener)
+    {
+        // A phone just paired by QR code (it is the active record now): adopt its first link even
+        // inside the add-a-phone flow, which otherwise only takes a phone this PC didn't know.
+        _expectAny = true;
+        _expectNewOnly = false;
+        _pairedAt = listener;
+        if (State is LinkState.NoDevice or LinkState.Paused)
+        {
+            SetState(LinkState.Searching);
+        }
+        StateChanged?.Invoke(); // the tab strip has a new phone
+        Nudge(LinkSignal.UserAsked, $"Paired with {model}");
+    }
+
+    /// <summary>
+    /// While searching (or lingering after a transport died), wake on a strong signal or after a
+    /// jittered backoff, ask the network for the phone and dial it (linclink.md §5).
+    /// </summary>
+    private async Task SearchLoopAsync(CancellationToken ct)
+    {
+        var wait = TimeSpan.Zero;
+        while (!ct.IsCancellationRequested)
+        {
+            var kick = _searchKick;
+            var delay = wait > TimeSpan.Zero ? wait : LinkBrain.BackoffBase;
+            try
+            {
+                await Task.WhenAny(Task.Delay(delay, ct), kick.Task);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            if (kick.Task.IsCompleted)
+            {
+                Interlocked.CompareExchange(ref _searchKick, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously), kick);
+                wait = TimeSpan.Zero; // a strong signal: start the backoff over
+            }
+            var hunting = State is LinkState.Searching || IsHandingOff;
+            if (!hunting)
+            {
+                wait = TimeSpan.FromSeconds(5);
+                continue;
+            }
+            wait = LinkBrain.NextBackoff(wait, _jitter);
+            lincLink.Probe("still looking");
+            await DialPhoneAsync();
+        }
+    }
+
+    /// <summary>
+    /// Dial the active phone's LincLink listener at every address it might be at, raced (v32).
+    /// Single-flighted; a no-op unless searching or lingering, or for a phone with no pinned
+    /// certificate (an old phone that never paired for direct links simply refuses the port).
+    /// </summary>
+    private async Task DialPhoneAsync()
+    {
+        if (!Engine || !IsTransportAllowed(LinkTransport.DirectTls) || Interlocked.CompareExchange(ref _dialling, 1, 0) != 0)
+        {
+            return;
+        }
+        try
+        {
+            if (!(State is LinkState.Searching || IsHandingOff) ||
+                registry.KnownDevices.FirstOrDefault(d => d.Serial == registry.PairedSerial) is not { PhoneCertBase64: { } cert } phone ||
+                LinkSecretStore.PhoneIdOf(cert) is not { } phoneId)
+            {
+                return;
+            }
+            var fresh = new List<RouteCandidate>();
+            if (_pairedAt is { } paired)
+            {
+                fresh.Add(new RouteCandidate(LinkRoute.TlsOut, paired.ToString(), CandidateSource.Beacon));
+            }
+            foreach (var at in lincLink.RecentSightings(phoneId))
+            {
+                fresh.Add(new RouteCandidate(LinkRoute.TlsOut, at.ToString(), CandidateSource.Beacon));
+            }
+            lock (_told)
+            {
+                if (_told.TryGetValue(phoneId, out var told))
+                {
+                    fresh.AddRange(told.Select(a => new RouteCandidate(LinkRoute.TlsOut, a, CandidateSource.Told)));
+                }
+            }
+            var macs = (phone.WifiMacs ?? []).Select(PhoneFingerprint.NormalizeMac).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (macs.Count > 0)
+            {
+                foreach (var (address, mac) in NeighborTable.Read())
+                {
+                    if (PhoneFingerprint.NormalizeMac(mac) is { } normal && macs.Contains(normal) &&
+                        System.Net.IPAddress.TryParse(address, out var ip))
+                    {
+                        fresh.Add(new RouteCandidate(LinkRoute.TlsOut, new System.Net.IPEndPoint(ip, LinkProtocol.PhonePort).ToString(), CandidateSource.Neighbour));
+                    }
+                }
+            }
+            if (_lastDirectPeer is { } last && System.Net.IPAddress.TryParse(last, out var lastIp))
+            {
+                fresh.Add(new RouteCandidate(LinkRoute.TlsOut, new System.Net.IPEndPoint(lastIp, LinkProtocol.PhonePort).ToString(), CandidateSource.LastPeer));
+            }
+            var candidates = LinkBrain.Order(fresh, lincLink.Remembered(phoneId));
+            if (candidates.Count == 0)
+            {
+                return;
+            }
+            var dial = await lincLink.DialAsync(phoneId, cert, candidates, CancellationToken.None);
+            if (dial is null)
+            {
+                return;
+            }
+            _pairedAt = null;
+            await AdoptDirectAsync(dial.Stream, dial.Peer, pcDialled: true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.Log(LogLevel.Info, $"LincLink: dialling the phone failed ({ex.Message}).");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _dialling, 0);
+        }
     }
 
     private void OnNetworkAddressChanged(object? sender, EventArgs e) =>

@@ -241,6 +241,10 @@ Console.WriteLine("--- backoff, presence, old peers");
     True(blip < LinkBrain.LingerGrace.TotalMilliseconds, $"model: a half-open Wi-Fi link is replaced in {blip} ms, inside the {LinkBrain.LingerGrace.TotalSeconds:0} s linger: invisible");
 }
 
+// ---------------------------------------------------------------------------------------------
+Console.WriteLine("--- the PC's protocol client against a fake v32 phone (in-memory links, cut mid-stream)");
+await ClientSim.RunAsync(True);
+
 Console.WriteLine();
 if (failures.Count > 0)
 {

@@ -54,6 +54,9 @@ public sealed class LinkSession(string id)
 
     public int Pending => _unacked.Count;
 
+    /// <summary>The oldest seq still kept: the peer can be resumed only if it has everything before it.</summary>
+    public long FirstKept => _unacked.Count > 0 ? _unacked.Peek().Seq : Sent + 1;
+
     /// <summary>The next seq for an outgoing frame.</summary>
     public long Stamp() => ++Sent;
 
@@ -123,8 +126,7 @@ public sealed class LinkSession(string id)
         {
             return null;
         }
-        var firstKept = _unacked.Count > 0 ? _unacked.Peek().Seq : Sent + 1;
-        if (peerReceived + 1 < firstKept)
+        if (peerReceived + 1 < FirstKept)
         {
             return null; // frames peerReceived+1 .. firstKept-1 were dropped from the buffer
         }

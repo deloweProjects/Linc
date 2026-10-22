@@ -59,6 +59,9 @@ public partial class App : Application
             // production behaviour is unchanged.
             .AddSingleton<IDeviceRegistry>(_ => new DeviceRegistry(_parsedDataRoot))
             .AddSingleton<ITlsTransportService, TlsTransportService>()
+            // LincLink (v32): the per-phone link secrets, and the beacon/dialler beside the supervisor.
+            .AddSingleton(sp => new LinkSecretStore(sp.GetRequiredService<IDeviceRegistry>().RootPath))
+            .AddSingleton<ILincLinkService, LincLinkService>()
             .AddSingleton<IConnectionManager, ConnectionManager>()
             .AddSingleton<IDiscoveryService, DiscoveryService>()
             .AddSingleton<IUsbWatcherService, UsbWatcherService>()

@@ -10,6 +10,19 @@
   <ItemGroup>
     <!-- LincLink's pure core (Vibe/agent/design/linclink.md), compiled verbatim from the app: no
          sockets, no adb, no phone, no settings file touched. -->
-    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\*.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\LinkSession.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\LinkBeacon.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\LinkPairing.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\NetMemory.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\RouteRace.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\LinkBrain.cs" />
+    <!-- The PC's real protocol client, run against a fake v32 phone over in-memory links (ClientSim.cs). -->
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\CompanionClient.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppsPayload.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DisplayPayload.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Protocol\Envelope.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Protocol\Framing.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Provenance.cs" />
   </ItemGroup>
 </Project>

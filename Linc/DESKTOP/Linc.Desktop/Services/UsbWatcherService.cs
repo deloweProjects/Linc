@@ -26,6 +26,13 @@ public interface IUsbWatcherService : IDisposable
 
     void Start();
     void Stop();
+
+    /// <summary>
+    /// LincLink: also listen to the adb server's own device list (<c>host:track-devices</c>), so a
+    /// cable going in or out is noticed at once rather than at the next 3 s poll. The poll stays
+    /// as the backstop. Off: the poll alone, as before.
+    /// </summary>
+    void EnablePush(bool on);
 }
 
 /// <summary>
@@ -81,6 +88,68 @@ public sealed class UsbWatcherService : IUsbWatcherService
         // A restarted watcher starts from "seen nothing", so a serial that was present before the
         // stop cannot be reported gone by the first poll after it.
         _misses.Clear();
+        EnablePush(false);
+    }
+
+    private CancellationTokenSource? _pushCts;
+    private TaskCompletionSource _pollNow = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public void EnablePush(bool on)
+    {
+        if (!on)
+        {
+            _pushCts?.Cancel();
+            _pushCts = null;
+            return;
+        }
+        if (_pushCts is not null)
+        {
+            return;
+        }
+        _pushCts = new CancellationTokenSource();
+        _ = PushLoopAsync(_pushCts.Token);
+    }
+
+    /// <summary>Follow the adb server's device list; any change polls at once. Reconnects if the server restarts.</summary>
+    private async Task PushLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            DeviceMonitor? monitor = null;
+            try
+            {
+                monitor = new DeviceMonitor(new AdbSocket(AdbClient.AdbServerEndPoint));
+                monitor.DeviceListChanged += (_, _) => _pollNow.TrySetResult();
+                await monitor.StartAsync(ct);
+                while (!ct.IsCancellationRequested && monitor.IsRunning)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // stopped
+            }
+            catch
+            {
+                // The adb server isn't up yet (or just restarted): the poll covers it meanwhile.
+            }
+            finally
+            {
+                if (monitor is not null)
+                {
+                    try { await monitor.DisposeAsync(); } catch { /* already gone */ }
+                }
+            }
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
     }
 
     public void Dispose() => Stop();
@@ -185,7 +254,14 @@ public sealed class UsbWatcherService : IUsbWatcherService
 
             try
             {
-                await Task.Delay(PollInterval, ct);
+                // The poll's pace, or at once when the adb server reports a change (EnablePush).
+                var now = _pollNow;
+                await Task.WhenAny(Task.Delay(PollInterval, ct), now.Task);
+                ct.ThrowIfCancellationRequested();
+                if (now.Task.IsCompleted)
+                {
+                    Interlocked.CompareExchange(ref _pollNow, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously), now);
+                }
             }
             catch (OperationCanceledException)
             {
