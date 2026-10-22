@@ -14,6 +14,11 @@ Read next in this folder:
 
 ---
 
+## Connection rebuild (LincLink)
+
+A dedicated session builds it from `linc-link/BRIEF.md` on branch `claude/linc-link`; when it
+finishes it writes `linc-link/DONE.md`.
+
 ## 0. Linc Tools: built 2026-10-21 (Phase 1 + sections), not yet released
 
 The Tools page exists: Type, Rescue, Apps, Capture, Health, System, **Commands** (the owner's
