@@ -68,7 +68,7 @@ object LinkPairingClient {
                         async(Dispatchers.IO) {
                             runCatching {
                                 val (socket, pcCert) = TlsIdentity.connectByHash(address, invite.port, invite.pcCertSha256, DIAL_TIMEOUT_MS)
-                                socket.use { complete(context, it, pcCert) }
+                                socket.use { complete(context, it, pcCert, dialled = "$address:${invite.port}") }
                             }.onFailure { LogStore.log(LogLevel.INFO, "Pairing: couldn't reach ${invite.name} at $address (${it.javaClass.simpleName})") }
                         }
                     }
@@ -84,13 +84,13 @@ object LinkPairingClient {
     }
 
     /** The listener accepted a PC presenting the code's certificate: pair on that connection. */
-    fun completeIncoming(context: Context, socket: Socket, pcCertDer: ByteArray): Boolean = complete(context, socket, pcCertDer)
+    fun completeIncoming(context: Context, socket: Socket, pcCertDer: ByteArray): Boolean = complete(context, socket, pcCertDer, dialled = null)
 
     /**
      * On a TLS connection to the code's PC (either direction): send the proof, read the answer,
      * and remember the PC. The phone speaks first here (the PC waits for `link.pair`).
      */
-    private fun complete(context: Context, socket: Socket, pcCertDer: ByteArray): Boolean {
+    private fun complete(context: Context, socket: Socket, pcCertDer: ByteArray, dialled: String?): Boolean {
         val job = active() ?: return false
         if (LinkPairing.certHash(pcCertDer) != job.invite.pcCertSha256) return false
         val phoneCert = TlsIdentity.certificateDer() ?: return false
@@ -109,6 +109,8 @@ object LinkPairingClient {
         }
         val name = (reply.payload["name"] as? JsonPrimitive)?.contentOrNull ?: job.invite.name
         val pc = TransportStore.saveExchange(context, name, Base64.encodeToString(pcCertDer, Base64.NO_WRAP), job.invite.port, 0)
+        // The address that just worked is where to dial next, even where mDNS can't reach the phone.
+        if (dialled != null) TransportStore.saveLastEndpoint(context, pc.id, dialled)
         // The owner just paired this PC on purpose: if one particular PC was picked, it's this one now.
         if (TransportStore.selectedPcId(context) != null) TransportStore.selectPc(context, pc.id)
         LogStore.log(LogLevel.INFO, "Paired with ${pc.name} by its code (no cable)")
