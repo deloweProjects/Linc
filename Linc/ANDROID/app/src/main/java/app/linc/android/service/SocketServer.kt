@@ -127,7 +127,14 @@ class SocketServer(
         val tlsAddress: String? = null,
         /** Ends the connection from outside — when the owner picks another PC (D-088). */
         val close: () -> Unit = {},
-    )
+        /** Over Direct TLS: the id of the certificate the PC proved it holds — who the PC is (v32). */
+        val certPcId: String? = null,
+        /** Over ADB: the local connection came from adbd, so its far end is a PC the owner allowed. */
+        val fromAdb: Boolean = false,
+    ) {
+        /** Only a PC that proved who it is may hand the phone a link secret (`link.secret`). */
+        val mayKeySecrets: Boolean get() = certPcId != null || fromAdb
+    }
 
     private var serverSocket: LocalServerSocket? = null
 
@@ -135,12 +142,16 @@ class SocketServer(
     private val liveControls = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
-     * A PC is connecting: sessions still waiting for a different PC — or an older session of this
-     * one that it didn't resume — end now, so they can't keep it out (the gate's one-PC rule).
+     * The gate just admitted [pcId]: a session of a different PC ends now (it was waiting for its
+     * PC, which is why the gate let this one in), and so does an older session of this PC that it
+     * started over instead of resuming. Only after admission, so a refused PC ends nothing.
      */
     private fun releaseWaitingFor(pcId: String?) {
         for (session in sessions.values.toList()) {
-            if (!session.attached) session.end(if (session.pcId == pcId) "the PC started a new session" else "another PC connected")
+            when {
+                session.pcId != pcId -> session.end("another PC connected")
+                !session.attached -> session.end("the PC started a new session")
+            }
         }
     }
 
@@ -183,11 +194,15 @@ class SocketServer(
                 // Each connection is served on its own coroutine so a bulk transfer can
                 // never block the control channel (and vice versa).
                 scope.launch(Dispatchers.IO) {
+                    // Any app on the phone can open this socket; adbd (shell, or root on a debug
+                    // build) is the one that carries a PC's `adb forward`.
+                    val uid = runCatching { client.peerCredentials.uid }.getOrNull()
                     val peer = Peer(
                         DataInputStream(client.inputStream),
                         DataOutputStream(client.outputStream),
                         { millis -> client.soTimeout = millis },
                         close = { runCatching { client.shutdownInput() }; runCatching { client.close() } },
+                        fromAdb = uid == SHELL_UID || uid == ROOT_UID,
                     )
                     try {
                         dispatch(peer)
@@ -216,6 +231,7 @@ class SocketServer(
             { millis -> socket.soTimeout = millis },
             tlsAddress = socket.inetAddress?.hostAddress,
             close = { runCatching { socket.close() } },
+            certPcId = certIdOf(socket),
         )
         try {
             dispatch(peer)
@@ -243,6 +259,7 @@ class SocketServer(
             { millis -> socket.soTimeout = millis },
             tlsAddress = socket.inetAddress?.hostAddress,
             close = { runCatching { socket.close() } },
+            certPcId = certIdOf(socket),
         )
         try {
             peer.setTimeout(HANDSHAKE_TIMEOUT_MS)
@@ -275,6 +292,12 @@ class SocketServer(
             runCatching { socket.close() }
         }
     }
+
+    /** The id of the certificate a TLS peer proved it holds (the PC's id, as it computes it), else null. */
+    private fun certIdOf(socket: Socket): String? = runCatching {
+        (socket as? javax.net.ssl.SSLSocket)?.session?.peerCertificates?.firstOrNull()?.encoded
+            ?.let { TransportStore.idOf(android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)) }
+    }.getOrNull()
 
     /** Serves a channel connection the phone itself dialed back (v9 `channel.open`). */
     fun serveDialedChannel(channel: Int, input: DataInputStream, output: DataOutputStream) {
@@ -392,10 +415,23 @@ class SocketServer(
         val pcId = (hello.payload["pcId"] as? JsonPrimitive)?.contentOrNull
         val pcHost = (hello.payload["host"] as? JsonPrimitive)?.contentOrNull
         if (negotiated >= LinkBrain.VERSION && link != null) {
-            serveLinkControl(hello, negotiated, pcId, pcHost, peer, link)
+            // Over TLS the PC is the certificate it proved it holds: a hello naming another PC is
+            // refused, so no PC can take over (or key) a session or secret that is another's.
+            if (peer.certPcId != null && pcId != null && pcId != peer.certPcId) {
+                LogStore.log(LogLevel.WARN, "Turned away a PC whose hello named a different PC than its certificate")
+                send(Envelope(
+                    type = MessageType.ERROR,
+                    replyTo = hello.id,
+                    payload = buildJsonObject {
+                        put("code", ErrorCode.BAD_FRAME)
+                        put("message", "The PC's id doesn't match its certificate.")
+                    },
+                ))
+                return
+            }
+            serveLinkControl(hello, negotiated, peer.certPcId ?: pcId, pcHost, peer, link)
             return
         }
-        releaseWaitingFor(pcId)
         val ticket = when (val answer = gate.admit(pcId, pcHost, peer.close)) {
             is PcGate.Answer.Refuse -> {
                 send(Envelope(
@@ -410,6 +446,7 @@ class SocketServer(
             }
             is PcGate.Answer.Admit -> answer.ticket
         }
+        releaseWaitingFor(pcId)
 
         // v5: hand the desktop a session token so it can open channel connections.
         val sessionToken = if (negotiated >= 5) SessionRegistry.issue() else null
@@ -508,7 +545,6 @@ class SocketServer(
         var session = known
         var gen = known?.attach(peer, hello.id, pcRecv, resumed = true)
         if (gen == null) {
-            releaseWaitingFor(pcId)
             // A new session: admitted by the gate like any other, its ticket held until it ends.
             var created: LinkControl? = null
             val ticket = when (val answer = gate.admit(pcId, pcHost) { created?.end("another PC was picked") ?: peer.close() }) {
@@ -525,6 +561,7 @@ class SocketServer(
                 }
                 is PcGate.Answer.Admit -> answer.ticket
             }
+            releaseWaitingFor(pcId)
             val fresh = LinkControl(
                 id = java.util.UUID.randomUUID().toString().replace("-", ""),
                 pcId = pcId, pcHost = pcHost, negotiated = negotiated, ticket = ticket,
@@ -560,7 +597,7 @@ class SocketServer(
             ))
             host.where()?.let { live.send(Envelope(type = MessageType.LINK_WHERE, payload = it)) }
             scope.launch(Dispatchers.IO) { announceAdb("control connection established") }
-            controlLoop(peer.input, negotiated, live.ticket, pcHost, live.sessionToken, live::send, live)
+            controlLoop(peer.input, negotiated, live.ticket, pcHost, live.sessionToken, live::send, live, peer.mayKeySecrets)
         } finally {
             live.detach(gen!!)
             val remaining = liveControls.decrementAndGet()
@@ -583,7 +620,15 @@ class SocketServer(
         }
     }
 
-    /** One v32 session: its numbering, its transport (or none, between routes), and its gate ticket. */
+    /**
+     * One v32 session: its numbering, its transport (or none, between routes), and its gate ticket.
+     *
+     * Three locks, so a write stuck on a dead route never holds up anything but other writes:
+     * [writeLock] orders frames on the wire (a frame's number is taken and it is written under it,
+     * so they go out in number order) and is the only one held while writing; [seqLock] guards the
+     * numbering ([link]); [stateLock] guards which transport is attached and the session's end.
+     * Closing the transport (a resume, [end]) needs only [stateLock], and it unblocks a stuck write.
+     */
     private inner class LinkControl(
         val id: String,
         val pcId: String?,
@@ -596,26 +641,41 @@ class SocketServer(
         private val host: LinkHost,
     ) {
         val link = LinkSession(id)
-        private val lock = Any()
+        private val writeLock = Any()
+        private val seqLock = Any()
+        private val stateLock = Any()
+
+        /** Where frames go now; null between transports and until a resume's replay is written. */
+        @Volatile
         private var output: DataOutputStream? = null
+
+        /** A transport is attached (or being attached): the session isn't waiting for its PC. */
+        @Volatile
+        private var hasTransport = false
+
+        @Volatile
+        private var ended = false
         private var closeTransport: (() -> Unit)? = null
         private var gen = 0
-        private var ended = false
         private var expiry: Job? = null
         private var ticker: Job? = null
         var outbox: CompanionOutbox.Registration? = null
 
-        val attached: Boolean get() = synchronized(lock) { output != null && !ended }
+        val attached: Boolean get() = hasTransport && !ended
 
         /** Numbered, kept until acknowledged, and written if a transport is attached. */
-        fun send(envelope: Envelope) = synchronized(lock) {
-            val seq = link.stamp()
-            val json = envelope.copy(seq = seq, ack = link.received).toJson()
-            link.keep(seq, json)
-            link.ackSent(link.received)
+        fun send(envelope: Envelope) = synchronized(writeLock) {
+            val json = synchronized(seqLock) {
+                val seq = link.stamp()
+                envelope.copy(seq = seq, ack = link.received).toJson().also {
+                    link.keep(seq, it)
+                    link.ackSent(link.received)
+                }
+            }
             write(json)
         }
 
+        /** Under [writeLock]. */
         private fun write(json: String) {
             val out = output ?: return // between transports: kept, replayed on the resume
             try {
@@ -627,35 +687,64 @@ class SocketServer(
 
         /**
          * Put [peer] under this session: hello reply first, then (resuming) every frame the PC
-         * lacks. Returns the transport's generation, or null when it can't (ended, or frames gone).
+         * lacks, and only then do new frames go to it. Returns the transport's generation, or null
+         * when it can't (ended, or frames gone). Throws when [peer] dies on the way; the session
+         * then waits for the next resume, as after any lost transport.
          */
         fun attach(peer: Peer, helloId: String, pcReceived: Long, resumed: Boolean): Int? {
+            if (resumed && synchronized(seqLock) { link.replayAfter(pcReceived) } == null) return null
             val old: (() -> Unit)?
             val mine: Int
-            synchronized(lock) {
+            synchronized(stateLock) {
                 if (ended) return null
-                val replay = if (resumed) link.replayAfter(pcReceived) ?: return null else emptyList()
                 old = closeTransport
-                output = peer.output
                 closeTransport = peer.close
+                output = null // nothing more to the old route: frames from now on are kept for the replay
+                hasTransport = true
                 mine = ++gen
                 expiry?.cancel()
                 expiry = null
-                try {
-                    Framing.write(peer.output, helloReply(helloId, resumed).toJson())
-                    for (frame in replay) Framing.write(peer.output, frame)
-                } catch (e: IOException) {
-                    output = null
-                    closeTransport = null
-                    throw e
-                }
+                // Under the state lock (the gate never calls back into a session while holding its
+                // own), so a detach racing this resume can't leave the gate thinking it waits.
+                gate.setWaiting(ticket, false)
             }
-            if (old != null) runCatching { old() } // the PC moved the session: the old route goes
+            // The PC moved the session: the old route goes first, which also frees a write stuck on it.
+            if (old != null) runCatching { old() }
+            val replayed = try {
+                synchronized(writeLock) {
+                    val replay: List<String>?
+                    val recv: Long
+                    synchronized(seqLock) {
+                        replay = if (resumed) link.replayAfter(pcReceived) else emptyList()
+                        recv = link.received
+                    }
+                    if (replay == null) return@synchronized false
+                    Framing.write(peer.output, helloReply(helloId, resumed, recv).toJson())
+                    for (frame in replay) Framing.write(peer.output, frame)
+                    synchronized(stateLock) { if (gen == mine && !ended) output = peer.output }
+                    true
+                }
+            } catch (e: IOException) {
+                detach(mine)
+                throw e
+            }
+            if (!replayed) {
+                // Frames the PC lacks fell out of the buffer since the check above: this session
+                // can't carry on. [peer] isn't its to close; the caller starts a new session on it.
+                synchronized(stateLock) {
+                    if (gen == mine) {
+                        closeTransport = null
+                        hasTransport = false
+                    }
+                }
+                end("the frames the PC lacked were gone")
+                return null
+            }
             startTicker()
             return mine
         }
 
-        private fun helloReply(helloId: String, resumed: Boolean) = Envelope(
+        private fun helloReply(helloId: String, resumed: Boolean, recv: Long) = Envelope(
             type = MessageType.HELLO,
             replyTo = helloId,
             payload = buildJsonObject {
@@ -667,7 +756,7 @@ class SocketServer(
                 if (sessionToken != null) put("sessionToken", sessionToken)
                 put("link", buildJsonObject {
                     put("session", id)
-                    put("recv", link.received)
+                    put("recv", recv)
                     put("resumed", resumed)
                     host.phoneId()?.let { put("id", it) }
                     put("gen", host.secretGen(pcId))
@@ -676,24 +765,34 @@ class SocketServer(
         )
 
         /** The transport of generation [mine] ended: wait for a resume, or end after [LinkBrain.SESSION_KEEP_MS]. */
-        fun detach(mine: Int) = synchronized(lock) {
-            if (mine != gen || ended) return@synchronized
-            output = null
-            closeTransport = null
-            expiry = scope.launch {
-                kotlinx.coroutines.delay(LinkBrain.SESSION_KEEP_MS)
-                end("the PC didn't come back within ${LinkBrain.SESSION_KEEP_MS / 1000} s")
+        fun detach(mine: Int) {
+            synchronized(stateLock) {
+                if (mine != gen || ended) return
+                output = null
+                closeTransport = null
+                hasTransport = false
+                expiry?.cancel()
+                expiry = scope.launch {
+                    kotlinx.coroutines.delay(LinkBrain.SESSION_KEEP_MS)
+                    // Only if nothing resumed it meanwhile: a resume bumps the generation.
+                    endIf("the PC didn't come back within ${LinkBrain.SESSION_KEEP_MS / 1000} s") { gen == mine && !hasTransport }
+                }
+                gate.setWaiting(ticket, true) // waiting for its PC doesn't keep another PC out
             }
         }
 
-        fun end(why: String) {
+        fun end(why: String) = endIf(why) { true }
+
+        /** End the session if [still] holds (checked under [stateLock], so a resume can't slip in between). */
+        private fun endIf(why: String, still: () -> Boolean) {
             val close: (() -> Unit)?
-            synchronized(lock) {
-                if (ended) return
+            synchronized(stateLock) {
+                if (ended || !still()) return
                 ended = true
                 close = closeTransport
                 output = null
                 closeTransport = null
+                hasTransport = false
                 expiry?.cancel()
                 ticker?.cancel()
             }
@@ -701,25 +800,24 @@ class SocketServer(
             outbox?.let { CompanionOutbox.release(it) }
             SessionRegistry.clear(sessionToken)
             gate.release(ticket)
-            if (close != null) runCatching { close() }
+            if (close != null) runCatching { close() } // no lock held: this also frees a write stuck on it
             LogStore.log(LogLevel.INFO, "Session with $desktopApp ended ($why)")
         }
 
         /** Acks this side owes, sent bare when nothing outgoing carried them. */
-        private fun startTicker() {
-            if (ticker?.isActive == true) return
+        private fun startTicker() = synchronized(stateLock) {
+            if (ended || ticker?.isActive == true) return@synchronized
             ticker = scope.launch(Dispatchers.IO) {
                 while (isActive) {
                     kotlinx.coroutines.delay(1_000)
-                    val due = synchronized(lock) { output != null && link.ackDue(android.os.SystemClock.elapsedRealtime()) }
+                    val due = output != null && synchronized(seqLock) { link.ackDue(android.os.SystemClock.elapsedRealtime()) }
                     if (due) sendAck(echo = false)
                 }
             }
         }
 
-        private fun sendAck(echo: Boolean) = synchronized(lock) {
-            val ack = link.received
-            link.ackSent(ack)
+        private fun sendAck(echo: Boolean) = synchronized(writeLock) {
+            val ack = synchronized(seqLock) { link.received.also { link.ackSent(it) } }
             write(Envelope(type = MessageType.LINK_ACK, payload = buildJsonObject {
                 put("ack", ack)
                 put("echo", echo)
@@ -727,25 +825,30 @@ class SocketServer(
         }
 
         fun onAckFrame(message: Envelope) {
-            synchronized(lock) {
+            synchronized(seqLock) {
                 (message.payload["ack"] as? JsonPrimitive)?.longOrNull?.let { link.onAck(it) }
             }
             if ((message.payload["echo"] as? JsonPrimitive)?.booleanOrNull == true) sendAck(echo = false)
         }
 
         /** False for a replay this side already handled (never twice). */
-        fun accept(message: Envelope): Boolean = synchronized(lock) {
+        fun accept(message: Envelope): Boolean = synchronized(seqLock) {
             message.ack?.let { link.onAck(it) }
             val seq = message.seq ?: return@synchronized true
             link.accept(seq, android.os.SystemClock.elapsedRealtime()) != FrameArrival.DUPLICATE
         }
 
-        /** `link.secret`: the PC's key for the LAN beacon, kept encrypted (LinkStore). */
-        fun onSecret(message: Envelope) {
+        /**
+         * `link.secret`: the PC's key for the LAN beacon, kept encrypted (LinkStore). Taken only on a
+         * connection that proved which PC it is ([allowed]: its certificate, or adbd's forward);
+         * anything else on the phone could open the ADB socket and claim to be the PC.
+         */
+        fun onSecret(message: Envelope, allowed: Boolean) {
             val secret = (message.payload["secret"] as? JsonPrimitive)?.contentOrNull
                 ?.let { runCatching { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }.getOrNull() }
             val gen = (message.payload["gen"] as? JsonPrimitive)?.intOrNull ?: 0
-            val saved = pcId != null && secret != null && host.saveSecret(pcId, secret, gen)
+            if (!allowed) LogStore.log(LogLevel.WARN, "Ignored a link key from a connection that couldn't prove which PC it is")
+            val saved = allowed && pcId != null && secret != null && host.saveSecret(pcId, secret, gen)
             send(if (saved) {
                 Envelope(type = MessageType.OK, replyTo = message.id)
             } else {
@@ -771,6 +874,7 @@ class SocketServer(
         sessionToken: String?,
         send: (Envelope) -> Unit,
         link: LinkControl?,
+        secretsAllowed: Boolean = false,
     ) {
         while (true) {
             val json = Framing.read(input) ?: return
@@ -786,8 +890,9 @@ class SocketServer(
                     continue
                 }
                 if (!link.accept(message)) continue
+                if (message.type == MessageType.LINK_NOOP) continue // only takes up its number
                 if (message.type == MessageType.LINK_SECRET) {
-                    link.onSecret(message)
+                    link.onSecret(message, secretsAllowed)
                     continue
                 }
             }
@@ -1218,6 +1323,10 @@ class SocketServer(
 
         /** v32: how long "Connected" stays up after a session's transport dies (the PC's linger). */
         const val LINGER_MS = 12_000L
+
+        /** adbd's uid on a release build (shell), and on a debug build after `adb root`. */
+        const val SHELL_UID = 2000
+        const val ROOT_UID = 0
         const val CHANNEL_FILES = 2
         const val CHANNEL_BULK = 3
         const val CHANNEL_VIDEO = 5

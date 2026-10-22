@@ -179,6 +179,7 @@ object MessageType {
     const val LINK_PAIR = "link.pair"            // phone → desktop, inside the PC's pairing window only
     const val LINK_SECRET = "link.secret"        // desktop → phone: {secret, gen}
     const val LINK_WHERE = "link.where"          // either way: {addrs, port}
+    const val LINK_NOOP = "link.noop"            // either way: a numbered frame that does nothing (stands in for a request given up on)
 }
 
 object Topic {

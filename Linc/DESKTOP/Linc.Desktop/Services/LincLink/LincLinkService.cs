@@ -49,6 +49,7 @@ public sealed class LincLinkService(
     ILogService log) : ILincLinkService
 {
     private static readonly TimeSpan SightingKeep = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan SightingNews = TimeSpan.FromSeconds(30); // the same phone at the same place again is not news
     private static readonly TimeSpan NonceKeep = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan NetworkCache = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DialTimeout = TimeSpan.FromSeconds(4);
@@ -76,8 +77,10 @@ public sealed class LincLinkService(
         _cts = new CancellationTokenSource();
         try
         {
-            _probe = new UdpClient(new IPEndPoint(IPAddress.Any, 0)) { EnableBroadcast = true };
-            _ = ReceiveLoopAsync(_probe, _cts.Token);
+            var probe = new UdpClient(new IPEndPoint(IPAddress.Any, 0)) { EnableBroadcast = true };
+            _probe = probe;
+            var token = _cts.Token;
+            _ = Task.Run(() => ReceiveLoopAsync(probe, token)); // off the UI thread: what it reports ends in the supervisor's gate
         }
         catch (SocketException ex)
         {
@@ -91,14 +94,16 @@ public sealed class LincLinkService(
             listen.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             listen.Client.Bind(new IPEndPoint(IPAddress.Any, LinkBeacon.Port));
             _listen = listen;
-            _ = ReceiveLoopAsync(listen, _cts.Token);
+            var token = _cts.Token;
+            _ = Task.Run(() => ReceiveLoopAsync(listen, token));
         }
         catch (SocketException ex)
         {
             log.Log(LogLevel.Info, $"LincLink: not listening for phone announcements on UDP {LinkBeacon.Port} ({ex.SocketErrorCode}); probes still work.");
         }
         NetworkChange.NetworkAddressChanged += OnNetworkChanged;
-        _ = PairingProbeLoopAsync(_cts.Token);
+        var pairingToken = _cts.Token;
+        _ = Task.Run(() => PairingProbeLoopAsync(pairingToken));
     }
 
     public void Stop()
@@ -259,13 +264,21 @@ public sealed class LincLinkService(
             }
             var at = new IPEndPoint(from.Address, packet.Port);
             var list = _sightings.GetOrAdd(phoneId, _ => []);
+            bool news;
             lock (list)
             {
-                list.RemoveAll(s => s.At.Equals(at) || DateTime.UtcNow - s.SeenUtc > SightingKeep);
-                list.Insert(0, (at, DateTime.UtcNow));
+                var nowUtc = DateTime.UtcNow;
+                news = !list.Any(s => s.At.Equals(at) && nowUtc - s.SeenUtc < SightingNews);
+                list.RemoveAll(s => s.At.Equals(at) || nowUtc - s.SeenUtc > SightingKeep);
+                list.Insert(0, (at, nowUtc));
             }
-            log.Log(LogLevel.Info, $"LincLink: the phone {(packet.Role == LinkBeacon.RoleReply ? "answered" : "announced itself")} at {at}.");
-            PhoneSpotted?.Invoke(phoneId, at);
+            if (news)
+            {
+                // Reported (and logged) once per place per 30 s: every probe burst gets four
+                // replies, and each report wakes the dialler.
+                log.Log(LogLevel.Info, $"LincLink: the phone {(packet.Role == LinkBeacon.RoleReply ? "answered" : "announced itself")} at {at}.");
+                PhoneSpotted?.Invoke(phoneId, at);
+            }
             return;
         }
     }

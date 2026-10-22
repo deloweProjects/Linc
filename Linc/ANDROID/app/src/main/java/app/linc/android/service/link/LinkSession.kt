@@ -85,7 +85,8 @@ class LinkSession(val id: String) {
      */
     fun replayAfter(peerReceived: Long): List<String>? {
         if (peerReceived < 0 || peerReceived > sent) return null
-        if (peerReceived + 1 < firstKept) return null
+        // What the PC has proven it holds: what it says now, or what it acked earlier on the old route.
+        if (maxOf(peerReceived, peerAcked) + 1 < firstKept) return null
         onAck(peerReceived)
         return unacked.map { it.second }
     }

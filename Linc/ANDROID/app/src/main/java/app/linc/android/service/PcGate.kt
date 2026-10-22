@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.StateFlow
  *     setting the phone up on a new PC is a choice in itself — and becomes the picked PC once it
  *     has paired ([paired]).
  *
+ * A v32 session whose transport died and that waits for its PC to come back ([setWaiting]) is not
+ * a connected PC: another PC may come in, and the waiting session ends once that one is admitted.
+ *
  * Picking a PC on the phone drops any other PC's link at once ([pick]).
  */
 class PcGate(private val context: Context) {
@@ -26,7 +29,7 @@ class PcGate(private val context: Context) {
         data class Refuse(val message: String) : Answer
     }
 
-    private class Live(var key: String, val name: String, val close: () -> Unit)
+    internal class Live(var key: String, val name: String, val close: () -> Unit, var waiting: Boolean = false)
 
     private val live = mutableMapOf<Long, Live>()
     private var nextTicket = 0L
@@ -44,7 +47,7 @@ class PcGate(private val context: Context) {
         val key = id ?: "host:${host ?: "unknown"}"
         val name = host ?: known?.name ?: "this PC"
 
-        live.values.firstOrNull { it.key != key }?.let { other ->
+        blocking(live.values, key)?.let { other ->
             return refuse("${Build.MODEL} is connected to ${other.name} right now. Disconnect it there, " +
                 "or pick $name in Linc on the phone (Connection › PCs).")
         }
@@ -61,6 +64,12 @@ class PcGate(private val context: Context) {
         _connectedName.value = name
         if (known != null) TransportStore.markSeen(context, known.id, host)
         return Answer.Admit(ticket)
+    }
+
+    /** A v32 session lost its transport and waits for a resume ([waiting]), or got one back. */
+    @Synchronized
+    fun setWaiting(ticket: Long, waiting: Boolean) {
+        live[ticket]?.waiting = waiting
     }
 
     @Synchronized
@@ -129,6 +138,9 @@ class PcGate(private val context: Context) {
     }
 
     companion object {
+        /** Rule 1: the live link that keeps the PC known as [key] out, if any. A session waiting for its PC doesn't. */
+        internal fun blocking(live: Collection<Live>, key: String): Live? = live.firstOrNull { it.key != key && !it.waiting }
+
         private val _connectedName = MutableStateFlow<String?>(null)
 
         /** The name of the PC the phone is connected to now, for the UI. */

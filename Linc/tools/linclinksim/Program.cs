@@ -31,8 +31,16 @@ Console.WriteLine("--- session numbering");
     s.OnAck(99);
     True(s.Pending == 2, "an ack for frames never sent is ignored");
     True(string.Join(",", s.ReplayAfter(3)!) == "f4,f5", "a resume replays exactly what the peer lacks");
-    True(s.ReplayAfter(1) is null, "a peer claiming less than was trimmed can't be resumed");
+    True(string.Join(",", s.ReplayAfter(1)!) == "f4,f5",
+        "a peer whose offer predates an ack it sent since (a handoff, the old route still up) resumes from that ack");
     True(s.ReplayAfter(6) is null, "nor one claiming frames that were never sent");
+
+    var n = new LinkSession("n");
+    for (var i = 0; i < 4; i++) { var seq = n.Stamp(); n.Keep(seq, $"f{seq}"); }
+    n.OnAck(1);
+    True(n.Neutralize(3, "noop3") && string.Join(",", n.ReplayAfter(1)!) == "f2,noop3,f4",
+        "a request given up on is replayed as a no-op in its place (its number kept)");
+    True(!n.Neutralize(1, "noop1"), "...but one the peer already acknowledged ran, and stays as it was");
 
     var r = new LinkSession("abc");
     True(r.Accept(1, 0) == FrameArrival.New && r.Accept(2, 0) == FrameArrival.New, "frames in order are new");
@@ -206,6 +214,13 @@ Console.WriteLine("--- QR pairing");
     var proofVector = Convert.ToHexString(LinkPairing.Proof(vectorToken, Encoding.ASCII.GetBytes("phone"), Encoding.ASCII.GetBytes("pc"))).ToLowerInvariant();
     Console.WriteLine($"  vector: proof(token 00..0f, \"phone\", \"pc\") = {proofVector}");
     True(proofVector == ProofVector, "the proof matches the vector pinned in the phone's tests");
+
+    var check = LinkPairing.CheckCode(string.Concat(Enumerable.Repeat("ab", 32)), vectorToken);
+    Console.WriteLine($"  vector: checkCode(k ab×32, token 00..0f) = {check}");
+    True(check == "764 252", "the check code both screens show matches the vector pinned in the phone's tests");
+    True(LinkPairing.IsLanAddress("192.168.1.20") && LinkPairing.IsLanAddress("10.0.0.5") && LinkPairing.IsLanAddress("172.20.3.4") &&
+         !LinkPairing.IsLanAddress("8.8.8.8") && !LinkPairing.IsLanAddress("example.com") && !LinkPairing.IsLanAddress("::1"),
+        "a code only sends the phone to addresses on the local network");
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -787,6 +787,11 @@ as before.
   the one resumed), the highest seq it received, whether it resumed, the phone's LincLink id
   (SHA-256 of its certificate, first 16 hex digits — the same formula as the PC's `pcId`) and the
   link-secret generation it holds for this PC (0: none).
+- The `pcId` that sessions and secrets are filed under is bound to the transport: on TLS it must be the
+  id of the certificate the PC presented (a hello claiming another is refused); on the ADB socket the
+  phone accepts `link.secret` only from the shell or root user (`adb forward`), not from another app.
+- The desktop takes a resumed reply only when its `id` is the id of the phone the session belongs to,
+  and offers a session only to that phone (by its pinned certificate); anything else is refused.
 - The phone resumes only a session it still holds **for the same `pcId`**, at the same negotiated
   version, when `keep ≤ its recv + 1` and it can replay everything after the desktop's `recv`.
   Otherwise it starts a fresh session (pages see a reconnect, as before). It keeps a session with no
@@ -796,6 +801,11 @@ as before.
   keeps unacknowledged frames (at most 256 / 1 MiB) and, on a resume, sends again every frame after
   the other side's `recv`, right after the hello reply. A frame whose `seq` was already received is
   dropped unhandled: nothing happens twice (an `sms.send` replayed after a cable pull is sent once).
+  The receiver accepts a resume offer as long as it covers what the other side already acknowledged
+  (an offer written before a last ack on the old route is fine).
+- A request the desktop gave up on (timed out or cancelled) while its frame is still unacknowledged is
+  replaced in the replay buffer by `link.noop` under the same `seq`, so a resume never runs something
+  the user was told failed. One already acknowledged ran, as a lost reply always could.
 - `link.ack {ack, echo?}` (either way, **never numbered**): a bare acknowledgement, sent after 2 s or 32
   frames that no outgoing frame acknowledged. `echo: true` asks for one straight back: the desktop
   sends it after 4 s of hearing nothing and calls the transport dead if no frame arrives within 3 s
@@ -810,6 +820,7 @@ as before.
 | `link.secret` | desktop → phone | `{secret: base64 (32 bytes), gen}` → `ok` | The pair's link secret, made by the PC per phone and sent once over an authenticated session (ADB or pinned TLS), again only when the phone's hello reports another `gen`. Keys the UDP beacon. The phone keeps it encrypted with an AES key in the Android KeyStore; the PC keeps it in `%LOCALAPPDATA%\Linc\link-secrets.json`, beside its TLS key. |
 | `link.where` | phone → desktop | `{addrs: [IPv4…], port: 46002}` | Where the PC can dial this phone (its Wi-Fi/Ethernet/tethering addresses), sent on every session start and resume. |
 | `link.pair` | phone → desktop, first frame | `{proof: base64, model}` → `{ok, name, pcId}` | Pairing by QR code, below. Accepted only inside the PC's pairing window. |
+| `link.noop` | either way, numbered | `{}` | Does nothing; holds the `seq` of a request given up on (above). |
 
 ### The phone's listener (TCP 46002)
 
@@ -835,11 +846,17 @@ nonce `a0..a7` → tag `a59b781eddb9a453`.
 ### Pairing by QR code (no ADB)
 
 The PC (Add a phone › Wi-Fi) shows `linc://pair?v=1&k=<SHA-256 of its certificate, hex>&a=<addresses>&p=46001&t=<16 bytes, base64url>&n=<name>`,
-valid 5 minutes, one use. The phone's camera opens the link in Linc, which asks first. Then, raced: the
+valid 5 minutes, one use. `a` lists only private IPv4 addresses (10/8, 172.16/12, 192.168/16,
+169.254/16); the phone dials nothing else, so a link from a web page can't send it anywhere. The
+phone's camera opens the link in Linc, which asks first and shows a **check code**,
+`SHA-256("linc-check" ‖ k bytes ‖ token)`, first 4 bytes big-endian mod 1 000 000, as "123 456": the PC
+shows the same under its QR code, and the owner pairs only if they match. If the new engine is off on
+the phone, the same prompt says pairing turns it on. Then, raced: the
 phone dials the PC at each address (TLS; the PC's certificate must hash to `k`), **and** answers the
 PC's pairing probes (role `P` keyed by the token instead of a secret) so the PC can dial the phone's
 listener. On whichever connection lands, the phone sends `link.pair` with
 `proof = HMAC-SHA256(token, "linc-pair" ‖ SHA-256(phone cert) ‖ SHA-256(PC cert))`; the PC checks it in
 constant time and pins the phone (a record keyed `linc:<phone id>` until an ADB connect supplies the
 hardware serial, then merged), replies `ok`, and both sides connect as paired peers. Test vector: token
-`00..0f`, phone cert `"phone"`, PC cert `"pc"` → `cbce564e…f95d8978`.
+`00..0f`, phone cert `"phone"`, PC cert `"pc"` → `cbce564e…f95d8978`. Check code vector: `k` = `ab`×32,
+token `00..0f` → `764 252`.

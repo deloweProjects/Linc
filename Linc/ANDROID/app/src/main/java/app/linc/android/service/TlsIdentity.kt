@@ -93,7 +93,9 @@ object TlsIdentity {
         context.init(keyManagers, arrayOf(trustPaired), null)
         val server = context.serverSocketFactory.createServerSocket() as javax.net.ssl.SSLServerSocket
         server.reuseAddress = true
-        server.bind(java.net.InetSocketAddress(port))
+        // IPv4 only: the PC dials the phone's Wi-Fi address, and a global IPv6 address may be
+        // reachable from beyond the router.
+        server.bind(java.net.InetSocketAddress(java.net.InetAddress.getByAddress(ByteArray(4)), port))
         server.needClientAuth = true
         return server
     }

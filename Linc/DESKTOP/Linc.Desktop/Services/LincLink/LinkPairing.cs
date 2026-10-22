@@ -27,6 +27,41 @@ public static class LinkPairing
     public static readonly TimeSpan WindowLength = TimeSpan.FromMinutes(5);
 
     private static readonly byte[] ProofLabel = Encoding.ASCII.GetBytes("linc-pair");
+    private static readonly byte[] CheckLabel = Encoding.ASCII.GetBytes("linc-check");
+
+    /// <summary>
+    /// Six digits from the code's certificate hash and token, shown under the QR code on the PC and
+    /// in the phone's "Pair?" prompt. A pairing link the owner didn't scan from their own PC's
+    /// screen (a web page, another app) shows digits their PC isn't showing.
+    /// </summary>
+    public static string CheckCode(string pcCertSha256Hex, byte[] token)
+    {
+        var hash = Convert.FromHexString(pcCertSha256Hex);
+        var message = new byte[CheckLabel.Length + hash.Length + token.Length];
+        CheckLabel.CopyTo(message, 0);
+        hash.CopyTo(message, CheckLabel.Length);
+        token.CopyTo(message, CheckLabel.Length + hash.Length);
+        var n = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(SHA256.HashData(message)) % 1_000_000;
+        var digits = n.ToString("000000", System.Globalization.CultureInfo.InvariantCulture);
+        return $"{digits[..3]} {digits[3..]}";
+    }
+
+    /// <summary>
+    /// True for an IPv4 literal on a local network (10/8, 172.16/12, 192.168/16, 169.254/16,
+    /// 100.64/10): the only addresses a phone dials from a pairing code, so a link can't send it
+    /// to a host on the internet.
+    /// </summary>
+    public static bool IsLanAddress(string address)
+    {
+        if (!System.Net.IPAddress.TryParse(address, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+            address.Count(c => c == '.') != 3)
+        {
+            return false;
+        }
+        var b = ip.GetAddressBytes();
+        return b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168) ||
+               (b[0] == 169 && b[1] == 254) || (b[0] == 100 && b[1] >= 64 && b[1] <= 127);
+    }
 
     public static byte[] NewToken() => RandomNumberGenerator.GetBytes(TokenBytes);
 

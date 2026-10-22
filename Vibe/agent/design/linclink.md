@@ -190,6 +190,19 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
   is the side that dials now). The phone's `NetMemory` is written and tested, not yet wired.
 - **Firewall rule** covers private and domain networks. A home Wi-Fi Windows calls "Public" gets no inbound
   rule; the PC still reaches the phone by dialling out.
+- **After an adversarial review of A** (each finding checked by two skeptics, then fixed):
+  - a request that timed out is never run later by a resume (`link.noop` takes its number);
+  - the session is offered to, and resumed by, only the phone it belongs to (pinned certificate, `id` checked);
+    the PC picks a phone's link secret by its certificate, and the phone files a PC's secret under the id of
+    the certificate it presented (ADB: only the shell user may send one);
+  - the `linc://pair` link shows a check code on both screens, carries only private IPv4 addresses, and no
+    longer turns the engine on without saying so;
+  - a transport that dies before its connection is installed fails at once instead of holding the gate; the
+    app repair can be cancelled (disconnect, phone switch, engine switch) and never runs on the UI thread;
+  - beacon sightings wake the dialler once per place per 30 s, and each address the PC dials has its own
+    backoff, so a phone busy with another PC can't make it spin;
+  - the phone's session does no I/O under its bookkeeping lock, a resume closes the old route first, and the
+    listener caps handshakes (8 at a time, 5 s each).
 - Not in A (as planned): Bluetooth (B), wireless-debugging re-arm after a reboot (B), Wi-Fi Direct and USB
   tethering (C).
 

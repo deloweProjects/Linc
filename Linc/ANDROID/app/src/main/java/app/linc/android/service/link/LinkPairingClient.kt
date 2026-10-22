@@ -18,9 +18,12 @@ import java.io.DataOutputStream
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -41,6 +44,9 @@ object LinkPairingClient {
 
     private val pending = AtomicReference<Pending?>(null)
 
+    /** Outlives the screen that asked: the pairing screen closes as soon as the owner says Pair. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private const val WINDOW_MS = 5 * 60_000L
     private const val DIAL_TIMEOUT_MS = 4_000
 
@@ -60,11 +66,16 @@ object LinkPairingClient {
         val job = Pending(invite, android.os.SystemClock.elapsedRealtime() + WINDOW_MS, CompletableDeferred())
         pending.set(job)
         LogStore.log(LogLevel.INFO, "Pairing with ${invite.name} from its code: dialling it and listening for it")
+        // Only addresses on a local network: a link from anywhere can't make the phone dial out.
+        val (lan, elsewhere) = invite.addresses.partition { LinkPairing.isLanAddress(it) }
+        if (elsewhere.isNotEmpty()) {
+            LogStore.log(LogLevel.WARN, "Pairing: not dialling ${elsewhere.joinToString()} from the code (not on a local network)")
+        }
         return try {
             withTimeoutOrNull(60_000) {
                 coroutineScope {
                     // Route 1: dial the PC at every address in the code (all at once; the first wins).
-                    val dials = invite.addresses.map { address ->
+                    val dials = lan.map { address ->
                         async(Dispatchers.IO) {
                             runCatching {
                                 val (socket, pcCert) = TlsIdentity.connectByHash(address, invite.port, invite.pcCertSha256, DIAL_TIMEOUT_MS)
@@ -119,6 +130,12 @@ object LinkPairingClient {
         return true
     }
 
-    /** For the UI: pair off the main thread. */
-    suspend fun pairInBackground(context: Context, invite: PairingInvite): String? = withContext(Dispatchers.IO) { pair(context, invite) }
+    /** For the UI: pair in the background, then [done] on the main thread with the PC's name (null: didn't pair). */
+    fun pairInBackground(context: Context, invite: PairingInvite, done: (String?) -> Unit) {
+        val app = context.applicationContext
+        scope.launch {
+            val name = pair(app, invite)
+            withContext(Dispatchers.Main) { done(name) }
+        }
+    }
 }

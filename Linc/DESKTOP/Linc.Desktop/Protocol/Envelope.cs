@@ -190,6 +190,7 @@ public static class MessageType
     public const string LinkPair = "link.pair";     // phone → desktop, inside the PC's pairing window only
     public const string LinkSecret = "link.secret"; // desktop → phone: {secret, gen}
     public const string LinkWhere = "link.where";   // either way: {addrs, port}
+    public const string LinkNoop = "link.noop";     // either way: a numbered frame that does nothing (stands in for a request given up on)
 }
 
 public static class Topic

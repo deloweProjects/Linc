@@ -65,6 +65,10 @@ object LinkStore {
         return true
     }
 
+    /** Whether any PC has given this phone its link key (no decryption: cheap enough to poll). */
+    @Synchronized
+    fun hasSecrets(context: Context): Boolean = secrets(context).length() > 0
+
     /** Every PC's secret, for matching a probe from whichever PC sent it. */
     @Synchronized
     fun allSecrets(context: Context): List<Pair<String, ByteArray>> {

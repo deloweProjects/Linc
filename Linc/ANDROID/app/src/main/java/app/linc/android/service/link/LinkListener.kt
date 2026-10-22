@@ -23,6 +23,10 @@ import kotlinx.coroutines.launch
  * phone has paired with — by its exact certificate — gets past the handshake, plus, while a QR
  * code is being paired, the PC in that code. A control connection or a typed channel is then
  * served exactly as a link the phone dialled.
+ *
+ * Anyone on the network can open a connection, so a stranger costs little: at most
+ * [MAX_HANDSHAKES] handshakes at once (more are closed at once), each given [HANDSHAKE_DEADLINE_MS]
+ * in all, and only IPv4 is listened on (behind the Wi-Fi's router, never a global IPv6 address).
  */
 class LinkListener(
     private val context: Context,
@@ -30,6 +34,7 @@ class LinkListener(
     private val server: SocketServer,
 ) {
     private var job: Job? = null
+    private val handshakes = java.util.concurrent.Semaphore(MAX_HANDSHAKES)
 
     @Volatile
     private var socket: SSLServerSocket? = null
@@ -54,6 +59,10 @@ class LinkListener(
                 try {
                     while (isActive) {
                         val client = listening.accept() as SSLSocket
+                        if (!handshakes.tryAcquire()) {
+                            runCatching { client.close() } // a flood: a real PC dials again
+                            continue
+                        }
                         launch(Dispatchers.IO) { handle(client) }
                     }
                 } catch (_: IOException) {
@@ -78,11 +87,21 @@ class LinkListener(
         return TransportStore.pcs(context).any { it.cert == b64 } || LinkPairingClient.pendingHash() == LinkPairing.certHash(der)
     }
 
+    /** Called holding one of [handshakes]; gives it back once the handshake is over, either way. */
     private fun handle(client: SSLSocket) {
+        var holding = true
+        // A peer that sends a byte every few seconds would never trip the read timeout alone.
+        val deadline = scope.launch {
+            delay(HANDSHAKE_DEADLINE_MS)
+            runCatching { client.close() }
+        }
         try {
             runCatching { client.tcpNoDelay = true }
-            client.soTimeout = 5_000
+            client.soTimeout = HANDSHAKE_DEADLINE_MS.toInt()
             client.startHandshake() // the trust manager above refuses everyone else
+            deadline.cancel()
+            handshakes.release()
+            holding = false
             client.soTimeout = 0
             val der = client.session.peerCertificates.firstOrNull()?.encoded ?: return
             val b64 = Base64.encodeToString(der, Base64.NO_WRAP)
@@ -96,7 +115,14 @@ class LinkListener(
         } catch (_: Exception) {
             // a stranger, or a PC that hung up mid-handshake: nothing to say
         } finally {
+            deadline.cancel()
+            if (holding) handshakes.release()
             runCatching { client.close() }
         }
+    }
+
+    private companion object {
+        const val MAX_HANDSHAKES = 8
+        const val HANDSHAKE_DEADLINE_MS = 5_000L
     }
 }

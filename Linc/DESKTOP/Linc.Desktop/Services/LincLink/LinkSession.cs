@@ -126,11 +126,42 @@ public sealed class LinkSession(string id)
         {
             return null;
         }
-        if (peerReceived + 1 < FirstKept)
+        // What the peer has proven it holds: what it says now, or what it acknowledged earlier on
+        // the old transport (it can ack more there after the new hello's offer was written).
+        var have = Math.Max(peerReceived, PeerAcked);
+        if (have + 1 < FirstKept)
         {
-            return null; // frames peerReceived+1 .. firstKept-1 were dropped from the buffer
+            return null; // frames have+1 .. firstKept-1 were dropped from the buffer, never acknowledged
         }
         OnAck(peerReceived);
         return _unacked.Select(f => f.Json).ToList();
+    }
+
+    /// <summary>
+    /// The caller gave up on frame <paramref name="seq"/> (its request timed out): if it is still
+    /// kept, replace it with <paramref name="placeholderJson"/> (a numbered no-op), so a later
+    /// replay can't run what this side already reported as failed. True when it was replaced;
+    /// false when the peer already acknowledged it (it ran, as a lost reply always could) or it is gone.
+    /// </summary>
+    public bool Neutralize(long seq, string placeholderJson)
+    {
+        if (seq <= PeerAcked)
+        {
+            return false;
+        }
+        var frames = _unacked.ToArray();
+        var index = Array.FindIndex(frames, f => f.Seq == seq);
+        if (index < 0)
+        {
+            return false;
+        }
+        _bytes += placeholderJson.Length - frames[index].Json.Length;
+        frames[index] = (seq, placeholderJson);
+        _unacked.Clear();
+        foreach (var frame in frames)
+        {
+            _unacked.Enqueue(frame);
+        }
+        return true;
     }
 }

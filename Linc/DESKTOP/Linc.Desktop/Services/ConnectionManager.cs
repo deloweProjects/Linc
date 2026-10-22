@@ -201,8 +201,20 @@ public sealed class ConnectionManager(
         MaxVersion = registry.LincLinkEnabled ? ProtocolConstants.Version : LinkProtocol.Version - 1,
     };
 
-    /// <summary>The session a new transport should offer to resume (v32), if there is one.</summary>
-    private CompanionClient? Resumable() => registry.LincLinkEnabled && _companion is { HasLinkSession: true } live ? live : null;
+    /// <summary>
+    /// The session a new transport should offer to resume (v32), if there is one and it belongs to
+    /// <paramref name="phoneId"/> — the phone this transport reaches. Another phone never hears of it.
+    /// </summary>
+    private CompanionClient? Resumable(string? phoneId) =>
+        registry.LincLinkEnabled && phoneId is not null && _companion is { HasLinkSession: true } live && live.PhoneLinkId == phoneId
+            ? live
+            : null;
+
+    /// <summary>The LincLink id of the phone at the other end of a TLS stream: the hash of the certificate it presented.</summary>
+    private static string? PhoneIdOf(System.IO.Stream stream) =>
+        stream is System.Net.Security.SslStream { RemoteCertificate: { } cert }
+            ? LinkSecretStore.PhoneIdOf(Convert.ToBase64String(cert.GetRawCertData()))
+            : null;
 
     public async Task<bool> HasOnlineDeviceAsync(string serial, CancellationToken ct)
     {
@@ -267,10 +279,11 @@ public sealed class ConnectionManager(
         System.IO.Stream stream, System.Net.IPEndPoint? peer, CancellationToken ct, bool pcDialled = false)
     {
         var companion = NewClient();
+        var phoneId = PhoneIdOf(stream);
         try
         {
             var appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
-            var hello = await companion.ConnectAsync(stream, appVersion, ct, resume: Resumable());
+            var hello = await companion.ConnectAsync(stream, appVersion, ct, resume: Resumable(phoneId));
             // v32: a resumed hello carries on the live session on this new transport.
             var live = companion.ResumedInto ?? companion;
             var phoneCert = registry.PhoneCertBase64;
@@ -310,7 +323,7 @@ public sealed class ConnectionManager(
                 Serial: registry.PairedSerial ?? "direct",
                 SerialNo: registry.PairedSerial ?? "",
                 Companion: hello,
-                Transport: LinkTransport.DirectTls), rawDevice: null, peer?.Address.ToString(), pcDialled);
+                Transport: LinkTransport.DirectTls), rawDevice: null, peer?.Address.ToString(), phoneId, pcDialled);
             log.Log(LogLevel.Info, hello.Resumed
                 ? $"The session moved to a direct Wi-Fi link ({(pcDialled ? "this PC dialled the phone" : "the phone dialled in")}); nothing was lost."
                 : pcDialled ? "Connected to the phone directly — this PC dialled it, no ADB involved"
@@ -365,7 +378,8 @@ public sealed class ConnectionManager(
                 "Turn Wireless debugging off and on again on the phone, then retry.", ex);
         }
 
-        var (companion, hello) = await ReachCompanionAsync(device, localPort, Resumable(), ct);
+        // ADB authenticated this phone, and the record made active above holds its pinned certificate.
+        var (companion, hello) = await ReachCompanionAsync(device, localPort, Resumable(LinkSecretStore.PhoneIdOf(registry.PhoneCertBase64)), ct);
         // v32: a resumed hello carries on the live session on this new transport.
         var shell = companion;
         companion = companion.ResumedInto ?? companion;
@@ -446,7 +460,8 @@ public sealed class ConnectionManager(
                 // connection, so the pipeline is verifiable on hardware (Logs page). Best-effort.
                 selfTest = true;
             }
-            var current = Install(companion, new ConnectedDevice(model, serial, serialNo, hello, transport), device, peer: null);
+            var current = Install(companion, new ConnectedDevice(model, serial, serialNo, hello, transport), device, peer: null,
+                phoneId: LinkSecretStore.PhoneIdOf(registry.PhoneCertBase64)); // after the exchange above re-pinned it
             if (selfTest)
             {
                 _ = RunBulkSelfTestAsync();
@@ -766,10 +781,11 @@ public sealed class ConnectionManager(
     /// the old one (D-081): a handoff from Wi-Fi to USB, or the reverse, never leaves a moment
     /// with nothing connected. The phone keeps both control connections and talks to the newest.
     /// </summary>
-    private ConnectedDevice Install(CompanionClient companion, ConnectedDevice current, DeviceData? rawDevice, string? peer, bool pcDialled = false)
+    private ConnectedDevice Install(CompanionClient companion, ConnectedDevice current, DeviceData? rawDevice, string? peer, string? phoneId, bool pcDialled = false)
     {
         var old = _companion;
-        if (!ReferenceEquals(old, companion))
+        var fresh = !ReferenceEquals(old, companion);
+        if (fresh)
         {
             // v32: the session's own events, only while it is the live one.
             companion.TransportLost += () =>
@@ -794,11 +810,30 @@ public sealed class ConnectionManager(
         RawDevice = rawDevice;
         PeerAddress = peer;
         PcDialled = pcDialled;
-        if (old is not null && !ReferenceEquals(old, companion))
+        if (old is not null && fresh)
         {
             old.Dispose();
         }
-        _ = ShareLinkSecretAsync(companion);
+        // v32: the transport may have died, or the phone said where it listens, before the
+        // handlers above existed. Neither may be lost: report both now, off this call.
+        var deadAlready = companion.MarkAdopted();
+        if (fresh && companion.LastWhere is { } where)
+        {
+            PhoneWhere?.Invoke(where.Addresses, where.Port);
+        }
+        if (deadAlready && fresh) // (a resumed session reported its own loss: it was adopted already)
+        {
+            _ = Task.Run(() =>
+            {
+                if (ReferenceEquals(_companion, companion))
+                {
+                    RawDevice = null;
+                    PeerAddress = null;
+                    TransportLost?.Invoke();
+                }
+            });
+        }
+        _ = ShareLinkSecretAsync(companion, phoneId);
         return current;
     }
 
@@ -810,9 +845,11 @@ public sealed class ConnectionManager(
     /// and again only when the phone reports a different generation. Best-effort: without it the
     /// phone is still found by every other route.
     /// </summary>
-    private async Task ShareLinkSecretAsync(CompanionClient companion)
+    private async Task ShareLinkSecretAsync(CompanionClient companion, string? phoneId)
     {
-        if (!registry.LincLinkEnabled || !companion.HasLinkSession || companion.PhoneLinkId is not { } phoneId)
+        // The secret is chosen by the phone this PC knows is at the other end (its pinned
+        // certificate), never by the id the phone states; a mismatch gets nothing.
+        if (!registry.LincLinkEnabled || !companion.HasLinkSession || phoneId is null || companion.PhoneLinkId != phoneId)
         {
             return;
         }

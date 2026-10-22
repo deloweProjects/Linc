@@ -107,7 +107,8 @@ public sealed class UsbWatcherService : IUsbWatcherService
             return;
         }
         _pushCts = new CancellationTokenSource();
-        _ = PushLoopAsync(_pushCts.Token);
+        var token = _pushCts.Token;
+        _ = Task.Run(() => PushLoopAsync(token));
     }
 
     /// <summary>Follow the adb server's device list; any change polls at once. Reconnects if the server restarts.</summary>

@@ -28,6 +28,7 @@ static class ClientSim
         };
         var hello = await client.ConnectAsync(pcEnd, "test", Timeout(5));
         check(hello.V == 32 && client.HasLinkSession && !hello.Resumed, $"a v32 hello starts a session (v{hello.V})");
+        client.MarkAdopted(); // as ConnectionManager.Install does: from here a lost transport lingers
 
         // Requests and events in flight when the cable comes out.
         var requests = Enumerable.Range(0, 40).Select(i => client.SmsSendAsync("555", $"msg {i}", Timeout(20))).ToList();
@@ -57,6 +58,44 @@ static class ClientSim
                 $"every event from the phone arrived once, in order ({events.Count}/30)");
         }
 
+        // A request given up on while the session waits must not run when it resumes (a retried SMS
+        // would go out twice): its kept frame becomes a numbered no-op.
+        var (pcEndG, phoneEndG) = Duplex.Pair();
+        _ = phone.ServeAsync(phoneEndG);
+        var shellG = new CompanionClient { PcId = "pc1" };
+        await shellG.ConnectAsync(pcEndG, "test", Timeout(5), resume: client);
+        var lostBeforeG = Volatile.Read(ref lost);
+        phoneEndG.Cut();
+        await WaitFor(() => Volatile.Read(ref lost) > lostBeforeG, 3000);
+        var givenUp = client.SmsSendAsync("555", "given up", Timeout(1));
+        var gaveUp = await Task.WhenAny(givenUp, Task.Delay(5000)) == givenUp && !givenUp.IsCompletedSuccessfully;
+        var kept = client.SmsSendAsync("555", "kept", Timeout(20));
+        var (pcEndH, phoneEndH) = Duplex.Pair();
+        _ = phone.ServeAsync(phoneEndH);
+        var shellH = new CompanionClient { PcId = "pc1" };
+        await shellH.ConnectAsync(pcEndH, "test", Timeout(5), resume: client);
+        var keptDone = await Task.WhenAny(kept, Task.Delay(5000)) == kept && kept.IsCompletedSuccessfully;
+        check(gaveUp && keptDone && !phone.Handled("sms.send").Contains("given up") && phone.Handled("sms.send").Contains("kept"),
+            "a request that timed out between transports never runs after the resume; the next one does");
+
+        // Only the phone the session belongs to may resume it.
+        phone.PhoneId = "someone-else";
+        var (pcEndI, phoneEndI) = Duplex.Pair();
+        _ = phone.ServeAsync(phoneEndI);
+        var imposter = new CompanionClient { PcId = "pc1" };
+        var refused = false;
+        try
+        {
+            await imposter.ConnectAsync(pcEndI, "test", Timeout(5), resume: client);
+        }
+        catch (LincException)
+        {
+            refused = true;
+        }
+        phone.PhoneId = "phone1";
+        check(refused && imposter.ResumedInto is null, "a phone with another id can't take the session over");
+        all.Add(kept);
+
         // Half-open: the phone goes silent without closing (Wi-Fi out of range).
         var (pcEnd3, phoneEnd3) = Duplex.Pair();
         _ = phone.ServeAsync(phoneEnd3);
@@ -76,12 +115,30 @@ static class ClientSim
         _ = phone.ServeAsync(phoneEnd4);
         var fresh = new CompanionClient { PcId = "pc1" };
         var hello4 = await fresh.ConnectAsync(pcEnd4, "test", Timeout(5), resume: client);
+        fresh.MarkAdopted();
         check(!hello4.Resumed && fresh.HasLinkSession && fresh.ResumedInto is null,
             "after a phone reboot the resume is refused and a fresh session starts (pages see a reconnect)");
         await fresh.SmsSendAsync("555", "after reboot", Timeout(5));
         check(phone.Handled("sms.send").Count == all.Count + 1, "...and it works");
         fresh.Dispose();
         client.Dispose();
+
+        // A v32 transport that dies before the connection is installed fails its requests at once
+        // (as below v32) instead of waiting for a resume nobody will attempt.
+        var (pcEnd7, phoneEnd7) = Duplex.Pair();
+        var quiet = new FakeLinkPhone();
+        _ = quiet.ServeAsync(phoneEnd7);
+        var early = new CompanionClient { PcId = "pc1" };
+        var earlyLost = 0;
+        early.TransportLost += () => earlyLost++;
+        await early.ConnectAsync(pcEnd7, "test", Timeout(5));
+        quiet.Mute = true;
+        var stranded = early.SmsSendAsync("555", "early", Timeout(20));
+        await Task.Delay(50);
+        phoneEnd7.Cut();
+        var strandedFast = await Task.WhenAny(stranded, Task.Delay(3000)) == stranded && stranded.IsFaulted;
+        check(strandedFast && earlyLost == 0, "a v32 link lost before it was installed fails its requests at once");
+        early.Dispose();
 
         // An old v31 phone: exactly the old behaviour.
         var old = new FakeLinkPhone { Version = 31 };
@@ -123,6 +180,7 @@ sealed class FakeLinkPhone
 {
     public int Version { get; init; } = 32;
     public volatile bool Mute;
+    public volatile string PhoneId = "phone1";
     public bool SawSeq;
 
     private sealed class Session(string id)
@@ -202,7 +260,7 @@ sealed class FakeLinkPhone
             var payload = new JsonObject { ["app"] = "linc-android", ["appVersion"] = "sim", ["v"] = negotiated, ["sessionToken"] = "tok" };
             if (negotiated >= 32)
             {
-                payload["link"] = new JsonObject { ["session"] = session.Link.Id, ["recv"] = session.Link.Received, ["resumed"] = resumed, ["id"] = "phone1", ["gen"] = 0 };
+                payload["link"] = new JsonObject { ["session"] = session.Link.Id, ["recv"] = session.Link.Received, ["resumed"] = resumed, ["id"] = PhoneId, ["gen"] = 0 };
             }
             transport.WriteFrame(Envelope.Create(MessageType.Hello, payload, replyTo: hello.Id).ToJson());
             if (resumed)
@@ -240,6 +298,7 @@ sealed class FakeLinkPhone
                 if (message.Ack is { } ack) session.Link.OnAck(ack);
                 if (message.Seq is { } seq && session.Link.Accept(seq, 0) == FrameArrival.Duplicate) continue;
             }
+            if (message.Type == MessageType.LinkNoop) continue; // only takes up its number
             lock (_handled) _handled.Add((message.Type, (string?)message.Payload["body"] ?? ""));
             Send(session, Envelope.Create(MessageType.Ok, replyTo: message.Id));
         }

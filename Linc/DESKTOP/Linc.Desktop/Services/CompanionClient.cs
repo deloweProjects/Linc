@@ -67,10 +67,19 @@ public sealed class CompanionClient : IDisposable
     // stay numbered and kept, and the next transport's hello resumes it (TakeTransportAsync).
     // All null below v32, where everything works exactly as before.
     private readonly object _linkLock = new();
+    // Guards which stream is the session's transport (_stream, _owner, _transportGen, the
+    // keepalive's echo clock): the swap to a resumed transport and a read loop's end are decided
+    // under it, so an old route closing during a resume can never take the new one down with it.
+    private readonly object _transportLock = new();
     private LinkSession? _link;
     private int _transportGen;
     private CompanionClient? _sink;
     private int _sinkGen;
+    private readonly object _sinkLock = new(); // this client's read loop ending vs. handing it to a session
+    private bool _loopEnded;
+    // Set by ConnectionManager.Install: until then a dying transport fails its requests at once, as
+    // below v32, instead of holding the not-yet-live session (and the supervisor's gate) open.
+    private bool _adopted;
     private string? _helloId;
     private TaskCompletionSource? _helloDecided;
     private long _lastHeardMs;
@@ -97,6 +106,9 @@ public sealed class CompanionClient : IDisposable
 
     /// <summary>v32: where the phone says it can be dialled (<c>link.where</c>), newest last.</summary>
     public event Action<IReadOnlyList<string>, int>? PhoneWhere;
+
+    /// <summary>The last <c>link.where</c>, kept for a subscriber that attaches after it arrived (Install).</summary>
+    public (IReadOnlyList<string> Addresses, int Port)? LastWhere { get; private set; }
 
     /// <summary>
     /// v32: the transport under the session died. The session waits for another (nothing pending
@@ -146,9 +158,13 @@ public sealed class CompanionClient : IDisposable
     public async Task<CompanionHello> ConnectAsync(
         Stream stream, string appVersion, CancellationToken ct, IDisposable? owner = null, CompanionClient? resume = null)
     {
-        _stream = stream;
-        _owner = owner;
-        var gen = ++_transportGen;
+        int gen;
+        lock (_transportLock)
+        {
+            _stream = stream;
+            _owner = owner;
+            gen = ++_transportGen;
+        }
 
         var hello = Envelope.Create(MessageType.Hello, new JsonObject
         {
@@ -190,6 +206,12 @@ public sealed class CompanionClient : IDisposable
                 var session = (string?)link["session"];
                 if ((bool?)link["resumed"] == true && resume is not null && session is not null)
                 {
+                    if (PhoneLinkId is null || PhoneLinkId != resume.PhoneLinkId)
+                    {
+                        // Only the phone the session belongs to may carry it on (its id is the hash of
+                        // the certificate it answered with); another one claiming it gets nothing.
+                        throw new LincException(CompanionUnreachable);
+                    }
                     if (!await resume.TakeTransportAsync(this, session, (long?)link["recv"] ?? 0))
                     {
                         // The phone resumed, but this side can't replay what it lacks (it shouldn't
@@ -247,7 +269,9 @@ public sealed class CompanionClient : IDisposable
     {
         Stream? oldStream = null;
         IDisposable? oldOwner = null;
-        await _writeLock.WaitAsync();
+        var deadOnArrival = false;
+        int gen;
+        await _writeLock.WaitAsync(); // nothing goes out on either transport while they swap
         try
         {
             IReadOnlyList<string>? replay;
@@ -255,43 +279,81 @@ public sealed class CompanionClient : IDisposable
             {
                 replay = _link is { } link && link.Id == session ? link.ReplayAfter(peerReceived) : null;
             }
-            if (replay is null || shell._stream is not { } stream || _disposed)
+            Stream stream;
+            lock (_transportLock)
             {
-                return false;
+                if (replay is null || shell._stream is not { } fresh || _disposed)
+                {
+                    return false;
+                }
+                stream = fresh;
+                oldStream = _stream;
+                oldOwner = _owner;
+                gen = ++_transportGen; // before the new stream is published: the old loop's end is now stale
+                _stream = stream;
+                _owner = shell._owner;
+                shell._stream = null;
+                shell._owner = null;
+                _lastHeardMs = NowMs;
+                _echoSentMs = null;
             }
-            oldStream = _stream;
-            oldOwner = _owner;
-            _stream = stream;
-            _owner = shell._owner;
-            shell._stream = null;
-            shell._owner = null;
+            // Hand the shell's read loop over to this session, unless that loop already ended (the new
+            // transport died between the hello and here): then it is this session's loss to report.
+            lock (shell._sinkLock)
+            {
+                if (shell._loopEnded)
+                {
+                    deadOnArrival = true;
+                }
+                else
+                {
+                    shell._sinkGen = gen;
+                    shell._sink = this;
+                }
+            }
             if (shell.ChannelOpener is { } opener)
             {
                 ChannelOpener = opener; // the new transport's way to open channels (ADB: its forward port)
             }
-            var gen = Interlocked.Increment(ref _transportGen);
-            shell._sinkGen = gen;
-            Volatile.Write(ref shell._sink, this);
-            _lastHeardMs = NowMs;
-            _echoSentMs = null;
-            try
+            if (!deadOnArrival)
             {
-                foreach (var json in replay)
+                try
                 {
-                    await Framing.WriteAsync(stream, json, CancellationToken.None);
+                    foreach (var json in replay)
+                    {
+                        await Framing.WriteAsync(stream, json, CancellationToken.None);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    // The new transport died already; its read loop reports it, and the frames are still kept.
                 }
             }
-            catch (IOException)
-            {
-                // The new transport died already; its read loop reports it, and the frames are still kept.
-            }
-            return true;
         }
         finally
         {
             _writeLock.Release();
             oldStream?.Dispose();
             oldOwner?.Dispose();
+        }
+        if (deadOnArrival)
+        {
+            OnTransportEnded(gen);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// ConnectionManager installed this client as the live link: from now on a dying transport
+    /// leaves the session waiting for a resume. True when it has no transport already (it died
+    /// between the hello and now), so the caller reports the loss at once.
+    /// </summary>
+    public bool MarkAdopted()
+    {
+        lock (_transportLock)
+        {
+            _adopted = true;
+            return _link is not null && _stream is null;
         }
     }
 
@@ -600,13 +662,15 @@ public sealed class CompanionClient : IDisposable
     /// until the phone acknowledges it; with no transport (between routes) it is only kept, and the
     /// next transport replays it. Below v32 it is written exactly as before.
     /// </summary>
-    private async Task WriteAsync(Envelope envelope, CancellationToken ct)
+    /// <returns>The frame's seq on a v32 session (so a caller that gives up can neutralise it), else null.</returns>
+    private async Task<long?> WriteAsync(Envelope envelope, CancellationToken ct)
     {
         await _writeLock.WaitAsync(ct);
         try
         {
             string json;
             bool sequenced;
+            long? stamped = null;
             lock (_linkLock)
             {
                 sequenced = _link is not null && envelope.Type != MessageType.LinkAck;
@@ -617,18 +681,29 @@ public sealed class CompanionClient : IDisposable
                     json = envelope.ToJson();
                     link.Keep(seq, json);
                     link.AckSent(link.Received);
+                    stamped = seq;
                 }
                 else
                 {
                     json = envelope.ToJson();
                 }
             }
-            var stream = _stream;
+            Stream? stream;
+            bool adopted;
+            lock (_transportLock)
+            {
+                stream = _stream;
+                adopted = _adopted;
+            }
             if (stream is null)
             {
+                if (sequenced && adopted)
+                {
+                    return stamped; // between transports: kept, and replayed when the session resumes
+                }
                 if (sequenced)
                 {
-                    return; // between transports: kept, and replayed when the session resumes
+                    throw new LincException(CompanionUnreachable); // not live yet: fail the attempt now
                 }
                 throw new InvalidOperationException("not connected");
             }
@@ -640,10 +715,30 @@ public sealed class CompanionClient : IDisposable
             {
                 // The transport is dying under a session: the frame is kept, the read loop reports the loss.
             }
+            return stamped;
         }
         finally
         {
             _writeLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// A request this side gave up on (timed out, cancelled): if its frame is still kept for a
+    /// replay, swap it for a numbered no-op, so a resume can never run what was reported as failed
+    /// (an SMS the user then sends again would go out twice). If the phone already acknowledged it,
+    /// it ran, just as a lost reply always could.
+    /// </summary>
+    private void Neutralize(long? seq)
+    {
+        if (seq is not { } s)
+        {
+            return;
+        }
+        var placeholder = (Envelope.Create(MessageType.LinkNoop) with { Seq = s, Ack = 0 }).ToJson();
+        lock (_linkLock)
+        {
+            _link?.Neutralize(s, placeholder);
         }
     }
 
@@ -692,15 +787,25 @@ public sealed class CompanionClient : IDisposable
                 {
                     return; // the client was disposed
                 }
-                if (_stream is not { } stream)
-                {
-                    continue; // between transports: nothing to keep alive
-                }
+                Stream stream;
                 var now = NowMs;
-                if (_echoSentMs is { } sent && now - sent > (long)LinkBrain.KeepaliveTimeout.TotalMilliseconds)
+                var halfOpen = false;
+                lock (_transportLock)
                 {
-                    _echoSentMs = null;
-                    stream.Dispose(); // ends the read loop, which reports the loss
+                    if (_stream is not { } live)
+                    {
+                        continue; // between transports: nothing to keep alive
+                    }
+                    stream = live;
+                    if (_echoSentMs is { } sent && now - sent > (long)LinkBrain.KeepaliveTimeout.TotalMilliseconds)
+                    {
+                        _echoSentMs = null;
+                        halfOpen = true;
+                    }
+                }
+                if (halfOpen)
+                {
+                    stream.Dispose(); // ends that transport's read loop, which reports the loss
                     continue;
                 }
                 bool due;
@@ -752,9 +857,17 @@ public sealed class CompanionClient : IDisposable
         {
             // Socket died; fall through.
         }
-        if (Volatile.Read(ref _sink) is { } sink)
+        CompanionClient? sink;
+        int sinkGen;
+        lock (_sinkLock)
         {
-            sink.OnTransportEnded(_sinkGen);
+            _loopEnded = true;
+            sink = _sink;
+            sinkGen = _sinkGen;
+        }
+        if (sink is not null)
+        {
+            sink.OnTransportEnded(sinkGen);
         }
         else
         {
@@ -795,10 +908,16 @@ public sealed class CompanionClient : IDisposable
                 }
             }
         }
+        if (envelope.Type == MessageType.LinkNoop)
+        {
+            return; // it only takes up its number
+        }
         if (envelope.Type == MessageType.LinkWhere && envelope.Payload["addrs"] is JsonArray addrs)
         {
             var list = addrs.Select(a => (string?)a).Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a!).ToList();
-            PhoneWhere?.Invoke(list, (int?)envelope.Payload["port"] ?? LinkProtocol.PhonePort);
+            var port = (int?)envelope.Payload["port"] ?? LinkProtocol.PhonePort;
+            LastWhere = (list, port); // it usually arrives before Install subscribes (see LastWhere)
+            PhoneWhere?.Invoke(list, port);
             return;
         }
         if (envelope.ReplyTo is not null && _pending.TryRemove(envelope.ReplyTo, out var pending))
@@ -814,18 +933,34 @@ public sealed class CompanionClient : IDisposable
     /// <summary>A transport's read loop ended. A v32 session waits for another; anything else fails its waiters as before.</summary>
     private void OnTransportEnded(int gen)
     {
-        if (gen != Volatile.Read(ref _transportGen))
+        Stream? stream;
+        IDisposable? owner;
+        bool lingers;
+        lock (_transportLock)
         {
-            return; // an old transport the session already moved off
+            if (gen != _transportGen)
+            {
+                return; // an old transport the session already moved off
+            }
+            if (_link is null || _disposed)
+            {
+                stream = null;
+                owner = null;
+                lingers = false; // below v32 (or disposed): exactly as before, the stream stays as it was
+            }
+            else
+            {
+                stream = _stream;
+                owner = _owner;
+                _stream = null;
+                _owner = null;
+                lingers = _adopted;
+            }
         }
-        if (_link is not null && !_disposed)
+        stream?.Dispose();
+        owner?.Dispose();
+        if (lingers)
         {
-            var stream = _stream;
-            var owner = _owner;
-            _stream = null;
-            _owner = null;
-            stream?.Dispose();
-            owner?.Dispose();
             TransportLost?.Invoke();
             return;
         }
@@ -847,14 +982,16 @@ public sealed class CompanionClient : IDisposable
     {
         var pending = new TaskCompletionSource<Envelope>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[request.Id] = pending;
+        long? seq = null;
         try
         {
-            await WriteAsync(request, ct);
+            seq = await WriteAsync(request, ct);
 
             // A live link answers quickly; a zombie link answers never.
             var completed = await Task.WhenAny(pending.Task, Task.Delay(ReplyTimeout, ct));
             if (completed != pending.Task)
             {
+                Neutralize(seq); // reported as failed below: a resume must not run it after all
                 ct.ThrowIfCancellationRequested();
                 throw new LincException(CompanionUnreachable);
             }

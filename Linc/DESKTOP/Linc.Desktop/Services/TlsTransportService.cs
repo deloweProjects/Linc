@@ -144,24 +144,37 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
 
     public PairingInvite OpenPairing()
     {
-        Start(); // the phone may dial in to pair; harmless when already listening
         byte[] token;
         lock (_pairing)
         {
+            // The phone may dial in to pair. With background connections off nothing listens, so
+            // listen for as long as the code shows, and no longer (ClosePairing).
+            _listeningForPairing |= _listener is null;
             token = _pairing.Open(DateTime.UtcNow);
         }
+        Start(); // harmless when already listening
         log.Log(LogLevel.Info, "Showing a pairing code for 5 minutes (QR, no cable needed).");
-        return new PairingInvite(LinkPairing.CertHash(CertificateDer), LanAddresses().Select(a => a.ToString()).ToList(),
+        return new PairingInvite(LinkPairing.CertHash(CertificateDer), LanAddresses().Select(a => a.ToString()).Where(LinkPairing.IsLanAddress).ToList(), // the phone dials nothing else
             TlsPort, token, Environment.MachineName);
     }
 
     public void ClosePairing()
     {
+        bool stop;
         lock (_pairing)
         {
             _pairing.Close();
+            stop = _listeningForPairing && !registry.BackgroundConnectionEnabled;
+            _listeningForPairing = false;
+        }
+        if (stop)
+        {
+            Stop();
         }
     }
+
+    /// <summary>True when the listener runs only because a pairing code is showing.</summary>
+    private bool _listeningForPairing;
 
     private bool PairingOpen()
     {

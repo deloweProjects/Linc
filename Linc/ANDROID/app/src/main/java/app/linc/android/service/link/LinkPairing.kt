@@ -27,6 +27,34 @@ object LinkPairing {
     const val TOKEN_BYTES = 16
 
     private val PROOF_LABEL = "linc-pair".toByteArray(Charsets.US_ASCII)
+    private val CHECK_LABEL = "linc-check".toByteArray(Charsets.US_ASCII)
+
+    /**
+     * Six digits from the code's certificate hash and token, as the PC shows them under its QR code
+     * ("123 456"). The phone's prompt shows them too: a link the owner didn't scan from their own
+     * PC's screen shows digits their PC isn't showing.
+     */
+    fun checkCode(pcCertSha256Hex: String, token: ByteArray): String {
+        val hash = pcCertSha256Hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val digest = MessageDigest.getInstance("SHA-256").digest(CHECK_LABEL + hash + token)
+        val n = (((digest[0].toLong() and 0xFF) shl 24) or ((digest[1].toLong() and 0xFF) shl 16) or
+            ((digest[2].toLong() and 0xFF) shl 8) or (digest[3].toLong() and 0xFF)) % 1_000_000
+        val digits = n.toString().padStart(6, '0')
+        return digits.substring(0, 3) + " " + digits.substring(3)
+    }
+
+    /**
+     * True for an IPv4 literal on a local network (10/8, 172.16/12, 192.168/16, 169.254/16,
+     * 100.64/10): the only addresses the phone dials from a pairing code, so a link can't point it
+     * at a host on the internet.
+     */
+    fun isLanAddress(address: String): Boolean {
+        val parts = address.split('.')
+        if (parts.size != 4) return false
+        val b = parts.map { p -> p.toIntOrNull()?.takeIf { it in 0..255 && p == it.toString() } ?: return false }
+        return b[0] == 10 || (b[0] == 172 && b[1] in 16..31) || (b[0] == 192 && b[1] == 168) ||
+            (b[0] == 169 && b[1] == 254) || (b[0] == 100 && b[1] in 64..127)
+    }
 
     fun certHash(certDer: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(certDer).joinToString("") { "%02x".format(it) }

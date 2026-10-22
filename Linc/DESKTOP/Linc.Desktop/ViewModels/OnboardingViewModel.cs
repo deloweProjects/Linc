@@ -170,6 +170,13 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
 
     public bool ShowLincCode => _registry.LincLinkEnabled;
 
+    /// <summary>
+    /// The six digits the phone shows before it pairs, worked out from the code on both sides: the
+    /// same number on both screens means the phone scanned this PC's code and not someone else's.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? LincCheckCode { get; set; }
+
     private void OnLincPaired(string model, System.Net.IPEndPoint? listener)
     {
         _dispatcher.TryEnqueue(() =>
@@ -273,7 +280,9 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         var next = OnboardingFlow.Choose(Step, route);
         if (next == OnboardingStep.PrepareWifi && _registry.LincLinkEnabled)
         {
-            LincQrImage = CreateQrImage(LinkPairing.ToUri(_tls.OpenPairing()));
+            var invite = _tls.OpenPairing();
+            LincQrImage = CreateQrImage(LinkPairing.ToUri(invite));
+            LincCheckCode = $"The phone will show {LinkPairing.CheckCode(invite.PcCertSha256, invite.Token)}. Pair only if it does.";
         }
         if (next == OnboardingStep.Checking)
         {

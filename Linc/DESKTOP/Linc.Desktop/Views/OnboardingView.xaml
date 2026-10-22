@@ -166,6 +166,11 @@
                                 </Border>
                                 <TextBlock
                                     Style="{StaticResource BodyText}"
+                                    HorizontalAlignment="Center"
+                                    TextWrapping="Wrap"
+                                    Text="{x:Bind ViewModel.LincCheckCode, Mode=OneWay}" />
+                                <TextBlock
+                                    Style="{StaticResource BodyText}"
                                     Foreground="{ThemeResource OnSurfaceVariantBrush}"
                                     TextWrapping="Wrap"
                                     Text="Or pair over wireless debugging instead:" />

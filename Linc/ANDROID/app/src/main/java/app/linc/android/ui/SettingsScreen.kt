@@ -128,7 +128,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                         supporting = "Find your PC on Wi-Fi by itself, without a cable.",
                         trailing = { Switch(presence, { presence = it; TransportStore.savePresenceEnabled(context, it) }) }) },
                     { s -> SettingsRow("New connection engine", s, LincSymbols.Link,
-                        supporting = "The PC finds this phone by itself on any Wi-Fi, and a short drop never shows. Off: the way Linc always connected.",
+                        supporting = "Finds your PC on any Wi-Fi; short drops don't show. Off: the old way.",
                         trailing = { Switch(engine, {
                             engine = it
                             app.linc.android.service.link.LinkStore.setEngineOn(context, it)

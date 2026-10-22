@@ -81,7 +81,8 @@ class LinkCoreTest {
         s.onAck(3)
         assertEquals(2, s.pending)
         assertEquals(listOf("f4", "f5"), s.replayAfter(3))
-        assertNull(s.replayAfter(1))
+        // The PC acked 3 on the old route, so a lower `recv` still resumes: it has 1..3.
+        assertEquals(listOf("f4", "f5"), s.replayAfter(1))
         assertNull(s.replayAfter(6))
 
         val r = LinkSession("abc")
@@ -91,6 +92,35 @@ class LinkCoreTest {
         assertTrue(r.ackDue(LinkSession.ACK_EVERY_MS))
         r.ackSent(r.received)
         assertFalse(r.ackDue(100_000))
+    }
+
+    @Test
+    fun `frames the PC acknowledged on the old route aren't counted as lost`() {
+        val s = LinkSession("ack")
+        repeat(10) { val seq = s.stamp(); s.keep(seq, "f$seq") }
+        s.onAck(8) // trims 1..8: the PC proved it holds them
+        assertEquals(9L, s.firstKept)
+        // The resume's `recv` lags (its hello raced the ack): still resumable, replaying only 9 and 10.
+        assertEquals(listOf("f9", "f10"), s.replayAfter(5))
+    }
+
+    @Test
+    fun `the pairing check code matches the PC's vector`() {
+        val token = ByteArray(16) { it.toByte() }
+        assertEquals("764 252", LinkPairing.checkCode("ab".repeat(32), token))
+        assertEquals(LinkPairing.checkCode("ab".repeat(32), token), LinkPairing.checkCode("AB".repeat(32).lowercase(), token))
+        assertNotEquals("764 252", LinkPairing.checkCode("ab".repeat(32), ByteArray(16) { (it + 1).toByte() }))
+    }
+
+    @Test
+    fun `a pairing code only makes the phone dial local network addresses`() {
+        for (lan in listOf("10.0.0.7", "172.16.4.1", "172.31.255.254", "192.168.1.23", "169.254.10.2", "100.64.0.1", "100.127.3.4")) {
+            assertTrue(lan, LinkPairing.isLanAddress(lan))
+        }
+        for (other in listOf("8.8.8.8", "172.15.0.1", "172.32.0.1", "192.169.0.1", "100.128.0.1", "1.2.3", "1.2.3.4.5",
+            "256.1.1.1", "010.0.0.1", "pc.example.com", "fe80::1", "::ffff:10.0.0.1", "", " 10.0.0.1")) {
+            assertFalse(other, LinkPairing.isLanAddress(other))
+        }
     }
 
     @Test

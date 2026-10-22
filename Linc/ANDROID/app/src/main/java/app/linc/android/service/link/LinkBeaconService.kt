@@ -34,6 +34,10 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
 
     @Volatile
     private var socket: DatagramSocket? = null
+
+    /** An announcement asked for before the socket was open (Linc just started, the phone just booted): sent once it is. */
+    @Volatile
+    private var queuedAnnounce: String? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private val lastAnswered = mutableMapOf<String, Long>()
 
@@ -45,7 +49,7 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
                     DatagramSocket(null).apply {
                         reuseAddress = true
                         broadcast = true
-                        bind(InetSocketAddress(LinkBeacon.PORT))
+                        bind(InetSocketAddress(InetAddress.getByAddress(ByteArray(4)), LinkBeacon.PORT)) // IPv4: the beacon is a LAN broadcast
                     }
                 } catch (e: SocketException) {
                     LogStore.log(LogLevel.WARN, "LincLink: couldn't open the network beacon (${e.message}); retrying")
@@ -53,6 +57,10 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
                     continue
                 }
                 socket = udp
+                queuedAnnounce?.let { why ->
+                    queuedAnnounce = null
+                    announce(why)
+                }
                 val buffer = ByteArray(64)
                 try {
                     while (isActive) {
@@ -69,10 +77,18 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
             }
         }
         // Some phones filter broadcast traffic while the screen is off; hold the lock only while
-        // no PC is connected, which is when the beacon matters.
+        // the beacon matters: no PC connected, and a PC that could probe (one that gave this phone
+        // its link key, or a QR code being paired). Checked on every state change and every 10 s.
         lockJob = scope.launch {
             CompanionStateHolder.state.collectLatest { state ->
-                if (state is CompanionStateHolder.ServiceState.Connected) releaseLock() else acquireLock()
+                if (state is CompanionStateHolder.ServiceState.Connected) {
+                    releaseLock()
+                    return@collectLatest
+                }
+                while (true) { // until the state changes (collectLatest cancels this) or the beacon stops
+                    if (LinkPairingClient.pendingToken() != null || LinkStore.hasSecrets(context)) acquireLock() else releaseLock()
+                    delay(LOCK_CHECK_MS)
+                }
             }
         }
     }
@@ -118,7 +134,10 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
 
     /** Say "I'm here" to every paired PC on every network the phone is on (cheap: 23 bytes each). */
     fun announce(why: String) {
-        val udp = socket ?: return
+        val udp = socket ?: run {
+            queuedAnnounce = why
+            return
+        }
         scope.launch(Dispatchers.IO) {
             val secrets = LinkStore.allSecrets(context)
             if (secrets.isEmpty()) return@launch
@@ -144,6 +163,7 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
         return targets.toList()
     }
 
+    @Synchronized
     private fun acquireLock() {
         if (multicastLock?.isHeld == true) return
         multicastLock = runCatching {
@@ -152,12 +172,15 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
         }.getOrNull()
     }
 
+    @Synchronized
     private fun releaseLock() {
         runCatching { multicastLock?.takeIf { it.isHeld }?.release() }
         multicastLock = null
     }
 
     companion object {
+        private const val LOCK_CHECK_MS = 10_000L
+
         /** The phone's LAN addresses the PC can dial (Wi-Fi, Ethernet, tethering; not mobile data or VPNs). */
         fun lanAddresses(): List<String> = runCatching {
             NetworkInterface.getNetworkInterfaces().toList()
