@@ -68,6 +68,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 Name: "startup"; Description: "Start Linc when I sign in to Windows (it waits quietly in the notification area)"; GroupDescription: "Startup:"; Flags: unchecked
+; LincLink: the phone dials this PC and its "I'm here" beacon reaches it only if Windows Firewall
+; lets Linc in. One rule, for Linc only, on private networks (home, work; never public). It needs
+; administrator permission once, so Windows asks; the install itself still doesn't. Without it,
+; the PC still finds the phone by dialling out, which the firewall never blocks.
+Name: "firewall"; Description: "Let Linc through Windows Firewall on home networks (Windows asks for permission once)"; GroupDescription: "Connection:"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -84,6 +89,11 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
   ValueData: """{app}\{#AppExe}"" --startup"; Tasks: startup; Flags: uninsdeletevalue
 
 [Run]
+; The firewall rule (see [Tasks]): any old "Linc" rule is replaced, so reinstalling never stacks them.
+Filename: "{sys}\cmd.exe"; \
+  Parameters: "/s /c """"{sys}\netsh.exe"" advfirewall firewall delete rule name=Linc >nul 2>&1 & ""{sys}\netsh.exe"" advfirewall firewall add rule name=Linc dir=in action=allow ""program={app}\{#AppExe}"" enable=yes profile=private,domain"""; \
+  Flags: shellexec runhidden waituntilterminated; Verb: runas; Tasks: firewall; Check: not WizardSilent; \
+  StatusMsg: "Letting Linc through Windows Firewall..."
 Filename: "{app}\{#AppExe}"; Description: "Launch Linc"; Flags: nowait postinstall skipifsilent
 ; A silent run is Linc updating itself: start it again afterwards.
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
@@ -93,6 +103,9 @@ Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
 ; (default and Voice Access microphones, display scale, Explorer menu, autostart). VB-CABLE stays.
 Filename: "{app}\{#AppExe}"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "LincQuit"
 Filename: "{app}\{#AppExe}"; Parameters: "--restore-and-exit"; Flags: runhidden waituntilterminated; RunOnceId: "LincRestore"
+; The firewall rule goes with Linc (Windows asks for permission, as when it was added).
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=Linc"; \
+  Flags: shellexec runhidden waituntilterminated; Verb: runas; Tasks: firewall; RunOnceId: "LincFirewall"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

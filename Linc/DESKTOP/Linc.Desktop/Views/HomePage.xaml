@@ -127,6 +127,22 @@
                                    Foreground="{ThemeResource OnSurfaceBrush}" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{x:Bind ViewModel.ConnectionCaption, Mode=OneWay}" FontSize="13"
                                    Foreground="{ThemeResource OnSurfaceVariantBrush}" TextWrapping="Wrap" />
+                        <!-- LincLink: ADB is a capability beside the link, not the link. Its dot is green
+                             when ADB is up too (Mirror, Tools, fast files); the tooltip says what it unlocks. -->
+                        <Border Margin="0,6,0,0" Padding="8,2,10,2" CornerRadius="10" HorizontalAlignment="Left"
+                                Background="{ThemeResource SecondaryContainerBrush}"
+                                Visibility="{x:Bind ViewModel.ShowAdbChip, Mode=OneWay}"
+                                ToolTipService.ToolTip="{x:Bind ViewModel.AdbChipTip, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Grid Width="7" Height="7" VerticalAlignment="Center">
+                                    <Ellipse Fill="#34C759" Visibility="{x:Bind ViewModel.AdbUp, Mode=OneWay}" />
+                                    <Ellipse Fill="{ThemeResource OnSecondaryContainerBrush}" Opacity="0.35"
+                                             Visibility="{x:Bind ViewModel.AdbDown, Mode=OneWay}" />
+                                </Grid>
+                                <TextBlock Text="ADB" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{ThemeResource OnSecondaryContainerBrush}" />
+                            </StackPanel>
+                        </Border>
                         <!-- The link's own messages (lost, can't reach the Linc app…): one quiet line
                              here, the full text on hover. This replaced the red banner across the top. -->
                         <StackPanel Margin="0,4,0,0" Orientation="Horizontal" Spacing="8"

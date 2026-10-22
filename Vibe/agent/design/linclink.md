@@ -144,9 +144,9 @@ not proven yet, and these lines will show it.
 |---|---|---|
 | `hello.link {session?, recv}` / reply `link {session, recv, resumed, id}` | both | 32 |
 | envelope `seq`, `ack`; `link.ack {ack}` | both | 32 |
-| `tls.exchange` + `linkSecret`, `linkGen` | PC→phone | 32 |
+| `link.secret {secret, gen}` | PC→phone | 32 |
 | `link.pair {proof, model, name}` → `link.pair {ok, linkSecret, linkGen}` | phone→PC (pairing window only) | 32 |
-| `link.where {net, addrs, tlsPort, listenPort}` | both | 32 |
+| `link.where {addrs, port}` | phone→PC | 32 |
 | `link.wifi {ssid, pass, gen}` → `link.wifi {gen}` | PC→phone | 32 (C) |
 | UDP 46003 beacon, BLE v2 beacon, phone TLS listener 46002 | — | outside the envelope |
 
@@ -157,14 +157,41 @@ old phone connects exactly as today, just faster. A v32 phone with a v31 PC dial
 **Switch**: Settings › Connection › "New connection engine" (both apps). On by default on this branch's test
 builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Removed after the owner signs off.
 
-## 11. Code layout
+## 11. Code layout (as built, build A)
 
-- PC `Services/LincLink/`: `LinkBrain.cs` (pure), `LinkSession.cs` (seq/ack/replay, pure), `NetMemory.cs`,
-  `Beacon.cs` (tag maths, pure), `PairingCode.cs` (QR + proof, pure); I/O adapters: `LinkEngine.cs`
-  (implements `IConnectionSupervisor`, so pages don't change), `UdpBeacon.cs`, `AdbTracker.cs`.
-- Phone `service/link/`: the same pure pieces in Kotlin (JVM unit tests) + `LinkListener.kt`, `BootReceiver.kt`, `UdpBeacon.kt`.
-- `Linc/tools/linclinksim`: compiles the pure PC files; scenarios: cable pull mid-stream, multicast blocked,
-  IP change, phone reboot, BLE-only, slow/lossy link, two PCs, old v31 peer. Exits 0 when green (run by `build.yml`).
+- PC `Services/LincLink/`, pure: `LinkSession.cs` (seq/ack/replay), `LinkBeacon.cs`, `LinkPairing.cs` (QR text,
+  proof, pairing window), `NetMemory.cs`, `RouteRace.cs` (happy eyeballs), `LinkBrain.cs` (backoff, order,
+  presence, timings). I/O: `LincLinkService.cs` (UDP beacon, pairing probes, dialling the phone, network
+  fingerprint, `link-memory.json`), `LinkSecretStore.cs` (`link-secrets.json`).
+- The engine lives **inside** `ConnectionSupervisor` rather than beside it: every new path is behind
+  `registry.LincLinkEnabled`, and all of the supervisor's admission rules (known phones, the add-a-phone
+  flow, hand-picked transports, closed tabs) stay one copy. `CompanionClient` holds the v32 session;
+  `ConnectionManager` resumes it on a new transport, repairs the phone app over ADB and shares the link secret;
+  `TlsTransportService` dials the phone and runs the pairing window; `UsbWatcherService` follows adb's device
+  list (`DeviceMonitor`) so a cable is seen at once.
+- Phone `service/link/`: the same pure pieces in Kotlin (`LinkSession`, `LinkBeacon`, `LinkPairing`,
+  `LinkBrain`/`NetMemory`, JVM tests in `LinkCoreTest`), plus `LinkStore` (switch, "stopped by hand", secrets in
+  a KeyStore AES box), `LinkListener` (TLS 46002), `LinkBeaconService` (UDP 46003), `LinkPairingClient`,
+  `LinkRuntime` (the `SocketServer.LinkHost`). `SocketServer` runs v32 sessions (`serveLinkControl`,
+  `LinkControl`) around the unchanged message loop (`controlLoop`). `BootReceiver`, `PairActivity`.
+- `Linc/tools/linclinksim`: the pure core's rules and scenarios, plus the PC's **real** `CompanionClient`
+  against a fake v32 phone (the phone's side as `SocketServer.kt` does it) over in-memory links cut mid-stream.
+  Exits 0 when green (run by `build.yml`).
+
+## 13. What changed from the plan while building A (and why)
+
+- **The link secret** travels in `link.secret` on any authenticated v32 session, not inside `tls.exchange`:
+  a phone paired by QR code has no ADB link to exchange it on.
+- **The QR code is read by the phone's own camera.** It carries a `linc://pair` link that opens Linc
+  (`PairActivity`), which asks before pairing (any app could open such a link). No scanner library (Google's
+  pulls in telemetry), no camera permission. Pairing works with the PC's firewall closed: the phone dials the
+  PC *and* answers the PC's pairing probes so the PC can dial the phone.
+- **The phone's dial order** stays `ReconnectPolicy`'s; the per-network memory that matters is the PC's (it
+  is the side that dials now). The phone's `NetMemory` is written and tested, not yet wired.
+- **Firewall rule** covers private and domain networks. A home Wi-Fi Windows calls "Public" gets no inbound
+  rule; the PC still reaches the phone by dialling out.
+- Not in A (as planned): Bluetooth (B), wireless-debugging re-arm after a reboot (B), Wi-Fi Direct and USB
+  tethering (C).
 
 ## 12. Targets (simulator and logs)
 

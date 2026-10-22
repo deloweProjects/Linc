@@ -153,6 +153,19 @@
                             OnContent="On" OffContent="Off"
                             IsOn="{x:Bind ViewModel.BackgroundConnectionEnabled, Mode=TwoWay}" />
                     </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="New connection engine — finds the phone faster on any Wi-Fi, and short drops never show. Off: the way Linc always connected"
+                            Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.LincLinkEnabled, Mode=TwoWay}" />
+                    </Grid>
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button
                             Content="Resume auto-reconnect"

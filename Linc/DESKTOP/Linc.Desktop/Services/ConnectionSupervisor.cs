@@ -1437,7 +1437,7 @@ public sealed class ConnectionSupervisor(
             }
             catch (OperationCanceledException)
             {
-                return;
+                return; // the engine was switched off, or the supervisor disposed
             }
             if (ct.IsCancellationRequested)
             {

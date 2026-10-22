@@ -1563,7 +1563,7 @@ RefreshGradient();
     /// "Pixel 7 / Looking for your phone…" instead of "No phone connected / Looking for your phone…".
     /// </summary>
     public string ModelName => _supervisor.Device?.Model ?? _registry.PairedModel ?? "Phone";
-    public string ConnectionCaption => _supervisor.State switch
+    public string ConnectionCaption => _registry.LincLinkEnabled ? LinkCaption : _supervisor.State switch
     {
         LinkState.Connected => _supervisor.Device?.Transport switch
         {
@@ -1576,6 +1576,28 @@ RefreshGradient();
         LinkState.Paused => "Disconnected — the link is paused",
         _ => "Pair a phone to get started",
     };
+
+    /// <summary>
+    /// The new engine's caption (LincLink, linclink.md §1): "connected" is the Linc link, by
+    /// cable or Wi-Fi; ADB is the chip below, never part of this sentence. ADB reaching the phone
+    /// while its app starts is connected too, not an error.
+    /// </summary>
+    private string LinkCaption => _supervisor.Presence switch
+    {
+        LinkPresence.Connected => _supervisor.Device?.Transport == LinkTransport.AdbUsb ? "Connected over USB" : "Connected over Wi-Fi",
+        LinkPresence.ConnectedStartingApp => "Connected — starting Linc on your phone…",
+        LinkPresence.Paused => "Disconnected — the link is paused",
+        LinkPresence.NoPhone => "Pair a phone to get started",
+        _ => _supervisor.State == LinkState.Connecting ? "Connecting…" : "Looking for your phone…",
+    };
+
+    /// <summary>The ADB chip (new engine, a phone paired): green when ADB is up beside the link.</summary>
+    public bool ShowAdbChip => _registry.LincLinkEnabled && _registry.PairedSerial is not null;
+    public bool AdbUp => _supervisor.AdbUp;
+    public bool AdbDown => !_supervisor.AdbUp;
+    public string AdbChipTip => _supervisor.AdbUp
+        ? "ADB is up too: Mirror, Tools and fast file copies are ready."
+        : "ADB isn't up. Everything else works; Mirror, Tools and fast file copies need the USB cable or wireless debugging.";
 
     /// <summary>
     /// The far end of the live link, when it is meaningful to say it: Direct TLS connects
@@ -1616,6 +1638,10 @@ RefreshGradient();
         OnPropertyChanged(nameof(IsDisconnected));
         OnPropertyChanged(nameof(ModelName));
         OnPropertyChanged(nameof(ConnectionCaption));
+        OnPropertyChanged(nameof(ShowAdbChip));
+        OnPropertyChanged(nameof(AdbUp));
+        OnPropertyChanged(nameof(AdbDown));
+        OnPropertyChanged(nameof(AdbChipTip));
         OnPropertyChanged(nameof(LinkAddress));
         OnPropertyChanged(nameof(HasLinkAddress));
         OnPropertyChanged(nameof(QuickActionsEnabled));
@@ -1760,7 +1786,7 @@ RefreshGradient();
     public bool ScreenshotEnabled => IsConnected && _connection.HasAdb;
 
     /// <summary>On a direct (no-ADB) link, tell the user what turning debugging on would unlock.</summary>
-    public bool ShowAdbHint => IsConnected && !_connection.HasAdb;
+    public bool ShowAdbHint => IsConnected && !_connection.HasAdb && !_registry.LincLinkEnabled; // the new engine's ADB chip says it
     public string AdbHintText =>
         "Connected directly — files, photos and everything here work. For screen " +
         "mirroring and screenshots, also turn on USB or wireless debugging.";

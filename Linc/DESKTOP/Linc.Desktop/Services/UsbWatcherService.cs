@@ -138,7 +138,14 @@ public sealed class UsbWatcherService : IUsbWatcherService
             {
                 if (monitor is not null)
                 {
-                    try { await monitor.DisposeAsync(); } catch { /* already gone */ }
+                    try
+                    {
+                        await monitor.DisposeAsync();
+                    }
+                    catch
+                    {
+                        // already gone with the adb server
+                    }
                 }
             }
             try
@@ -147,7 +154,7 @@ public sealed class UsbWatcherService : IUsbWatcherService
             }
             catch (OperationCanceledException)
             {
-                return;
+                return; // push turned off, or the watcher stopped
             }
         }
     }

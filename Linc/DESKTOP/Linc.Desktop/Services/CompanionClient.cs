@@ -690,7 +690,7 @@ public sealed class CompanionClient : IDisposable
                 }
                 catch (OperationCanceledException)
                 {
-                    return;
+                    return; // the client was disposed
                 }
                 if (_stream is not { } stream)
                 {

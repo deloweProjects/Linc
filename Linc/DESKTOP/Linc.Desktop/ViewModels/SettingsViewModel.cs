@@ -228,6 +228,16 @@ public partial class SettingsViewModel : ObservableObject
         set { _registry.SaveAllowUsbConnections(value); OnPropertyChanged(); }
     }
 
+    /// <summary>
+    /// LincLink (Vibe/agent/design/linclink.md): the new connection engine. Turning it either way
+    /// reconnects with the chosen protocol (v32 or v31); off is exactly the old path.
+    /// </summary>
+    public bool LincLinkEnabled
+    {
+        get => _registry.LincLinkEnabled;
+        set { _registry.SaveLincLinkEnabled(value); OnPropertyChanged(); }
+    }
+
     /// <summary>Standing presence (v9, D-014): advertise + accept direct phone connections.</summary>
     public bool BackgroundConnectionEnabled
     {
