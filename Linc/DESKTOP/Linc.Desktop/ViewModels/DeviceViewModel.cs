@@ -176,7 +176,7 @@ public partial class DeviceViewModel : ObservableObject
     {
         LinkTransport.AdbUsb => "USB cable",
         LinkTransport.AdbWireless => "Wireless debugging",
-        LinkTransport.DirectTls => "Direct Wi-Fi",
+        LinkTransport.DirectTls => "Direct (no ADB)",
         _ => "—",
     };
 

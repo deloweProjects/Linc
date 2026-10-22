@@ -42,6 +42,8 @@ class CompanionService : Service() {
     override fun onCreate() {
         super.onCreate()
         LogStore.init(this)
+        // Running, however it was started: from now on Linc may start by itself again (LinkStore).
+        app.linc.android.service.link.LinkStore.noteRunning(this)
         // The first line of every run says what this is and who made it (Provenance.kt).
         LogStore.log(LogLevel.INFO, Provenance.banner(BuildConfig.VERSION_NAME))
         ClipboardHistoryStore.init(this)

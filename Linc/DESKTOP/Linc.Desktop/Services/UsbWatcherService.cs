@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using System.Text;
 using System.Text.RegularExpressions;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
@@ -111,52 +113,62 @@ public sealed class UsbWatcherService : IUsbWatcherService
         _ = Task.Run(() => PushLoopAsync(token));
     }
 
-    /// <summary>Follow the adb server's device list; any change polls at once. Reconnects if the server restarts.</summary>
+    /// <summary>
+    /// Follow the adb server's own device list (<c>host:track-devices</c>, adb's SERVICES.TXT): the
+    /// server sends the list at once and again on every change, and each message polls at once.
+    /// Spoken here directly rather than through the client library's DeviceMonitor, whose loop
+    /// spins on a server that closed the connection (an empty read is not treated as the end) and
+    /// restarts the adb server by itself. When the server goes away this waits and connects again
+    /// (1 s, doubling to 10 s); the 3 s poll covers the gap, as it always did.
+    /// </summary>
     private async Task PushLoopAsync(CancellationToken ct)
     {
+        var pause = TimeSpan.FromSeconds(1);
         while (!ct.IsCancellationRequested)
         {
-            DeviceMonitor? monitor = null;
             try
             {
-                monitor = new DeviceMonitor(new AdbSocket(AdbClient.AdbServerEndPoint));
-                monitor.DeviceListChanged += (_, _) => _pollNow.TrySetResult();
-                await monitor.StartAsync(ct);
-                while (!ct.IsCancellationRequested && monitor.IsRunning)
+                using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                await socket.ConnectAsync(AdbClient.AdbServerEndPoint, ct);
+                await using var stream = new NetworkStream(socket, ownsSocket: false);
+                const string request = "host:track-devices";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes($"{request.Length:X4}{request}"), ct);
+                var header = new byte[4];
+                await stream.ReadExactlyAsync(header, ct);
+                if (Encoding.ASCII.GetString(header) != "OKAY")
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                    throw new IOException("the adb server turned down track-devices");
+                }
+                pause = TimeSpan.FromSeconds(1);
+                while (!ct.IsCancellationRequested)
+                {
+                    await stream.ReadExactlyAsync(header, ct); // EndOfStreamException when the server goes away
+                    var length = Convert.ToInt32(Encoding.ASCII.GetString(header), 16);
+                    if (length > 0)
+                    {
+                        await stream.ReadExactlyAsync(new byte[length], ct);
+                    }
+                    _pollNow.TrySetResult(); // the device list changed (or this is the first one): poll now
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                // stopped
+                return; // push turned off, or the watcher stopped
             }
-            catch
+            catch (Exception ex) when (ex is SocketException or IOException or FormatException or ObjectDisposedException)
             {
-                // The adb server isn't up yet (or just restarted): the poll covers it meanwhile.
-            }
-            finally
-            {
-                if (monitor is not null)
-                {
-                    try
-                    {
-                        await monitor.DisposeAsync();
-                    }
-                    catch
-                    {
-                        // already gone with the adb server
-                    }
-                }
+                // The adb server isn't up yet, or it just went away: the poll covers it while this
+                // waits to connect again.
             }
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                await Task.Delay(pause, ct);
             }
             catch (OperationCanceledException)
             {
                 return; // push turned off, or the watcher stopped
             }
+            pause = TimeSpan.FromSeconds(Math.Min(pause.TotalSeconds * 2, 10));
         }
     }
 

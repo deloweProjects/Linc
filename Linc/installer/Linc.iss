@@ -89,11 +89,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
   ValueData: """{app}\{#AppExe}"" --startup"; Tasks: startup; Flags: uninsdeletevalue
 
 [Run]
-; The firewall rule (see [Tasks]): any old "Linc" rule is replaced, so reinstalling never stacks them.
-Filename: "{sys}\cmd.exe"; \
-  Parameters: "/s /c """"{sys}\netsh.exe"" advfirewall firewall delete rule name=Linc >nul 2>&1 & ""{sys}\netsh.exe"" advfirewall firewall add rule name=Linc dir=in action=allow ""program={app}\{#AppExe}"" enable=yes profile=private,domain"""; \
-  Flags: shellexec runhidden waituntilterminated; Verb: runas; Tasks: firewall; Check: not WizardSilent; \
-  StatusMsg: "Letting Linc through Windows Firewall..."
+; The firewall rule (see [Tasks]) is added from [Code] (AddFirewallRule), so declining Windows'
+; permission prompt is quietly accepted instead of showing an error.
 Filename: "{app}\{#AppExe}"; Description: "Launch Linc"; Flags: nowait postinstall skipifsilent
 ; A silent run is Linc updating itself: start it again afterwards.
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
@@ -103,9 +100,7 @@ Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
 ; (default and Voice Access microphones, display scale, Explorer menu, autostart). VB-CABLE stays.
 Filename: "{app}\{#AppExe}"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "LincQuit"
 Filename: "{app}\{#AppExe}"; Parameters: "--restore-and-exit"; Flags: runhidden waituntilterminated; RunOnceId: "LincRestore"
-; The firewall rule goes with Linc (Windows asks for permission, as when it was added).
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=Linc"; \
-  Flags: shellexec runhidden waituntilterminated; Verb: runas; Tasks: firewall; RunOnceId: "LincFirewall"
+; The firewall rule goes with Linc, from [Code] (RemoveFirewallRule): only when it is there.
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -113,6 +108,47 @@ Type: filesandordirs; Name: "{app}"
 [Code]
 const
   QuitWaitMs = 6000;
+  { LincLink's own firewall rule. Its own name, so only this rule is ever replaced or removed,
+    never one Windows or the owner made for Linc (a "Linc" rule allowing a public network, say). }
+  FirewallRule = 'Linc-LincLink';
+
+function Netsh: String;
+begin
+  Result := ExpandConstant('{sys}\netsh.exe');
+end;
+
+{ The firewall task (see [Tasks]): one elevated step that replaces this rule, so reinstalling never
+  stacks them. Windows asks for permission; if the owner declines, Linc goes without the rule (the
+  PC still reaches the phone by dialling out), and Setup says nothing. A silent run is Linc
+  updating itself: it never asks (the rule, if wanted, is there from the first install). }
+procedure AddFirewallRule;
+var
+  Params: String;
+  Code: Integer;
+begin
+  Params := '/s /c ""' + Netsh + '" advfirewall firewall delete rule name=' + FirewallRule + ' >nul 2>&1 & "' +
+    Netsh + '" advfirewall firewall add rule name=' + FirewallRule + ' dir=in action=allow "program=' +
+    ExpandConstant('{app}\{#AppExe}') + '" enable=yes profile=private,domain"';
+  WizardForm.StatusLabel.Caption := 'Letting Linc through Windows Firewall...';
+  if not ShellExec('runas', ExpandConstant('{sys}\cmd.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Log('Firewall rule not added (' + SysErrorMessage(Code) + '); Linc works without it.');
+end;
+
+{ On uninstall: remove the rule only if it exists, so a PC that never had it isn't asked for permission. }
+procedure RemoveFirewallRule;
+var
+  Code: Integer;
+begin
+  if Exec(Netsh, 'advfirewall firewall show rule name=' + FirewallRule, '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) then
+    if not ShellExec('runas', Netsh, 'advfirewall firewall delete rule name=' + FirewallRule, '', SW_HIDE, ewWaitUntilTerminated, Code) then
+      Log('Firewall rule left in place (' + SysErrorMessage(Code) + ').');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('firewall') and not WizardSilent then
+    AddFirewallRule;
+end;
 
 function IsAtLeast1011(const Path: String): Boolean;
 var
@@ -143,6 +179,8 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
 begin
+  if (CurUninstallStep = usUninstall) and not UninstallSilent then
+    RemoveFirewallRule;
   if CurUninstallStep = usPostUninstall then
   begin
     DataDir := ExpandConstant('{localappdata}\Linc');

@@ -84,8 +84,12 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
             PcsSection()
             if (state is ServiceState.Listening) {
                 HelperText(
-                    "Linc finds your PC on the same Wi-Fi, over the USB cable, or on the PC's hotspot. Keep Linc open on the PC. " +
-                        "No cable, and a PC this phone hasn't met? On the PC, choose Add a phone, then Pair without a cable, and point this phone's camera at the code.",
+                    "Linc finds your PC on the same Wi-Fi, over the USB cable, or on the PC's hotspot. Keep Linc open on the PC." +
+                        // LincLink's pairing by code: only with the new engine (and a PC that has it).
+                        if (app.linc.android.service.link.LinkStore.engineOn(context)) {
+                            " No cable, and a PC this phone hasn't met? On the PC, choose Add a phone, then \"Wi-Fi — scan a QR code\", " +
+                                "and point this phone's camera at the top code."
+                        } else "",
                     modifier = Modifier.padding(horizontal = Kit.gutter),
                 )
             }

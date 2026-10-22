@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
         // LincLink: and it starts Linc if it isn't running (unless it was stopped by hand), so the
         // PC can find the phone without anyone tapping Start.
         if (app.linc.android.service.link.LinkStore.engineOn(this) &&
-            !app.linc.android.service.link.LinkStore.userStopped(this) &&
+            app.linc.android.service.link.LinkStore.mayStartByItself(this) &&
             app.linc.android.service.TransportStore.hasAnyPc(this) &&
             app.linc.android.service.CompanionStateHolder.state.value is app.linc.android.service.CompanionStateHolder.ServiceState.Stopped
         ) {

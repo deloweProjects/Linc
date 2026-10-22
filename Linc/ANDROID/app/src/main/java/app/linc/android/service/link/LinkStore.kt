@@ -39,6 +39,19 @@ object LinkStore {
 
     fun userStopped(context: Context): Boolean = prefs(context).getBoolean(KEY_USER_STOPPED, false)
 
+    /**
+     * Linc may start by itself (after a restart, an update, on opening Linc) only once this build
+     * has seen the owner run it: a phone updated from a build that didn't record "stopped by hand"
+     * stays as the owner left it until Linc is started once (by them, or by the PC over ADB).
+     */
+    fun mayStartByItself(context: Context): Boolean =
+        prefs(context).let { it.contains(KEY_USER_STOPPED) && !it.getBoolean(KEY_USER_STOPPED, false) }
+
+    /** Linc's service is running and nobody had said otherwise: it isn't stopped by hand. */
+    fun noteRunning(context: Context) {
+        if (!prefs(context).contains(KEY_USER_STOPPED)) setUserStopped(context, false)
+    }
+
     fun setUserStopped(context: Context, stopped: Boolean) = prefs(context).edit().putBoolean(KEY_USER_STOPPED, stopped).apply()
 
     // ---- link secrets ----------------------------------------------------------------------

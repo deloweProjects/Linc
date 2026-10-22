@@ -115,9 +115,10 @@ not proven yet, and these lines will show it.
   After boot on a remembered network it re-arms wireless debugging itself (`AdbArming`, already holds
   `WRITE_SECURE_SETTINGS`).
 - PC: the installer is per-user (`PrivilegesRequired=lowest`), so the firewall rule
-  (`netsh advfirewall firewall add rule … program="{app}\Linc.Desktop.exe" profile=private`, TCP 46001 + UDP 46003)
-  is a checked post-install step that asks for admin once (`Verb: runas`); removed on uninstall the same way.
-  The app logs when the rule is missing and offers the same one-click fix.
+  (`netsh advfirewall firewall add rule name=Linc-LincLink … program="{app}\Linc.Desktop.exe" profile=private,domain`,
+  so TCP 46001 + UDP 46003) is a checked post-install step that asks for admin once (`ShellExec` with `runas` in
+  `[Code]`; declining is silent, a silent self-update never asks). Uninstall removes it only if it exists. Its own
+  name, so a rule Windows or the owner made for Linc is never touched. (Built: no in-app "add the rule" button yet.)
 
 ## 8. Bluetooth (build B)
 
@@ -202,7 +203,11 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
   - beacon sightings wake the dialler once per place per 30 s, and each address the PC dials has its own
     backoff, so a phone busy with another PC can't make it spin;
   - the phone's session does no I/O under its bookkeeping lock, a resume closes the old route first, and the
-    listener caps handshakes (8 at a time, 5 s each).
+    listener caps handshakes (8 at a time, 5 s each);
+  - the cable-in push speaks adb's `host:track-devices` itself (the library's DeviceMonitor spins on a closed
+    server connection and restarts the adb server on its own);
+  - the installer's firewall rule has its own name and a declined permission prompt is silent;
+  - a phone updated from an older build stays stopped if it was, until Linc is started once.
 - Not in A (as planned): Bluetooth (B), wireless-debugging re-arm after a reboot (B), Wi-Fi Direct and USB
   tethering (C).
 
