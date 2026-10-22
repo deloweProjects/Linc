@@ -27,10 +27,13 @@ Off (either side) means protocol v31 and exactly the old paths. A v31 phone or P
 
 - **Simulator** (`Linc/tools/linclinksim`, run by `build.yml`): the pure rules, and the PC's real
   `CompanionClient` against a fake v32 phone that follows the phone's code, over in-memory links cut
-  mid-stream: 50 requests answered exactly once, 30 events delivered once and in order, a silent link
-  found in ~8 s, a rebooted phone refused cleanly, v31 peers and the switch off unchanged. Beacon and
-  pairing test vectors agree between C#, Kotlin and Python.
-- **Phone**: built locally (`assembleDebug`) with all 253 unit tests green, including the vectors.
+  mid-stream: every request answered exactly once, 30 events delivered once and in order, a silent link
+  found in ~8 s, a rebooted phone refused cleanly, a request that timed out never run later by a resume,
+  another phone unable to take the session over, a route taking over while the old one is still up, a link
+  lost before it was installed failing at once, v31 peers and the switch off unchanged. Beacon, pairing and
+  check-code test vectors agree between C#, Kotlin and Python.
+- **Phone**: built locally (`assembleDebug`) with all 258 unit tests green, including the vectors.
+- **USB push**: the PC's `host:track-devices` loop run against a real adb server (connect, kill, restart).
 - **PC**: every C# file except the XAML views compiled locally on Linux; every Linux-runnable harness
   green (`applaunchsim` and `packagesim` need Windows, same as before these changes).
 - **CI**: see "CI" below.
@@ -39,7 +42,15 @@ Off (either side) means protocol v31 and exactly the old paths. A v31 phone or P
   SMS could be re-sent by a resume; the session could be offered to another phone; the `linc://pair`
   link could be opened from a web page with no way to tell (now a check code on both screens, local
   addresses only); a 15 s app repair could freeze the PC's window on Disconnect; the phone did network
-  writes under its session lock. linclink.md §13 lists them all.
+  writes under its session lock.
+- **Second review**, of those fixes (same method): a cable plugged in over Wi-Fi could be taken for a lost
+  link and bounce between routes; closing the pairing screen could cut a just-paired phone's channels with
+  background connections off; the phone's new handshake cap turned away the PC's own burst of thumbnail
+  dials. All fixed in `a157459`, with smaller ones (a replayed beacon, a leaked probe socket, a lost boot
+  announcement, a double-tapped pairing link). Also fixed after reading the library's source: its adb device
+  monitor spins on a closed server connection, so the PC now speaks `host:track-devices` itself; and the
+  installer's firewall rule has its own name. linclink.md §13 lists everything, plus the one thing left: a
+  phone paired only by QR code starts a fresh session (pages reconnect once) on its first cable connection.
 
 ## What is NOT verified (needs your hardware)
 
@@ -58,16 +69,18 @@ but only your test can say it works:
 
 All on GitHub Actions, `build.yml` and the UI-test branches:
 
-- **Build** green on `claude/linc-link` at every LincLink commit (last: `ee30433`): the PC app, every
-  simulator (`linclinksim` included), the installer compile (with the new firewall step), the phone APK and
-  its 258 unit tests.
-- **UI test** green on `ui-test/linc-link-a4` (31 phone screenshots, 25 PC screenshots, the fake phone and
-  fake PC answering ~130 messages, as before LincLink). The PC's Home shows "Connected over Wi-Fi" with the
-  ADB chip; the phone's Settings shows the new engine switch on two lines; the phone's log shows
-  "LincLink: waiting for the PC to dial this phone (port 46002)". The fake phone (v29) and fake PC (v30) are older
-  peers, so this shows old peers still connect; v32 itself is proven by the simulator, not here.
-- One UI-test run (`a3`) caught the emulator's own launcher hanging ("Pixel Launcher isn't responding"), so
-  it got only 5 phone screenshots; the same code passed on `a4`. Not Linc.
+- **Build** green for the final code, `a157459`, on `claude/linc-link` and `ui-test/linc-link-a6`: the PC
+  app, every simulator (`linclinksim` included), the installer compile (with the new firewall step), the
+  phone APK and its 258 unit tests.
+- **UI test** green on `ui-test/linc-link-a6` (`a157459`) and `a4`: 31 phone screenshots, 25 PC screenshots,
+  the fake phone and fake PC answering ~135 messages, as before LincLink. The PC's Home shows "Connected over
+  Wi-Fi" with the ADB chip; the phone's Settings shows the new engine switch on two lines; the phone's log
+  shows "LincLink: waiting for the PC to dial this phone (port 46002)". The fake phone (v29) and fake PC (v30)
+  are older peers, so this shows old peers still connect; v32 itself is proven by the simulator, not here.
+- **Two CI flakes, neither Linc's** (both also happen on the commit before LincLink, `db7de01`, run on
+  `ui-test/linclink-base-check-1` to check): the emulator's own launcher hanging ("Pixel Launcher isn't
+  responding", runs `a3`, `a5`: only 5 phone screenshots), and `applaunchsim` failing on the Windows runner
+  ("The handle is invalid", once on a docs-only commit).
 
 ## How to switch engines
 
@@ -96,4 +109,4 @@ Logs and phone Settings › Logs › Copy log, and send both.
 
 ## Paste back to the other session
 
-> LincLink done on `claude/linc-link` @ <commit>. Build <green/red>. Read Vibe/claude-notes/linc-link/DONE.md.
+> LincLink done on `claude/linc-link` @ a157459 (code; this note is the commit after it). Build green. Read Vibe/claude-notes/linc-link/DONE.md.

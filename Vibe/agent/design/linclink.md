@@ -169,7 +169,7 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
   flow, hand-picked transports, closed tabs) stay one copy. `CompanionClient` holds the v32 session;
   `ConnectionManager` resumes it on a new transport, repairs the phone app over ADB and shares the link secret;
   `TlsTransportService` dials the phone and runs the pairing window; `UsbWatcherService` follows adb's device
-  list (`DeviceMonitor`) so a cable is seen at once.
+  list (adb's `host:track-devices`, spoken directly) so a cable is seen at once.
 - Phone `service/link/`: the same pure pieces in Kotlin (`LinkSession`, `LinkBeacon`, `LinkPairing`,
   `LinkBrain`/`NetMemory`, JVM tests in `LinkCoreTest`), plus `LinkStore` (switch, "stopped by hand", secrets in
   a KeyStore AES box), `LinkListener` (TLS 46002), `LinkBeaconService` (UDP 46003), `LinkPairingClient`,
