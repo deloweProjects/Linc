@@ -34,6 +34,12 @@ Off (either side) means protocol v31 and exactly the old paths. A v31 phone or P
 - **PC**: every C# file except the XAML views compiled locally on Linux; every Linux-runnable harness
   green (`applaunchsim` and `packagesim` need Windows, same as before these changes).
 - **CI**: see "CI" below.
+- **Review**: an adversarial review of build A (each finding checked by two skeptics) found real bugs,
+  all fixed in `0a52842` and covered by new tests where a test can reach them. The main ones: a timed-out
+  SMS could be re-sent by a resume; the session could be offered to another phone; the `linc://pair`
+  link could be opened from a web page with no way to tell (now a check code on both screens, local
+  addresses only); a 15 s app repair could freeze the PC's window on Disconnect; the phone did network
+  writes under its session lock. linclink.md §13 lists them all.
 
 ## What is NOT verified (needs your hardware)
 
@@ -71,7 +77,8 @@ Logs and phone Settings › Logs › Copy log, and send both.
    few seconds with no cable.
 4. **Phone restart.** Restart the phone, don't open anything. It should connect on its own once it's on Wi-Fi.
 5. **Pair without a cable.** PC: Add a phone › Wi-Fi. Point the phone's camera at the top code (the Linc
-   one), tap the link, tap Pair. It should say Paired and connect.
+   one) and tap the link. The phone shows six digits: they must match the ones under the code on the PC.
+   Tap Pair. It should say Paired and connect.
 6. **Blip.** While connected over Wi-Fi, turn the phone's Wi-Fi off for 3 seconds and back on. Nothing
    should show on the PC.
 7. **Old way.** Turn the new engine off on the PC: it reconnects the way it always did.
