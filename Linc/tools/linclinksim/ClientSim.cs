@@ -58,6 +58,21 @@ static class ClientSim
                 $"every event from the phone arrived once, in order ({events.Count}/30)");
         }
 
+        // Make-before-break: a better route (the cable) resumes the session while the current one
+        // is still up. The phone closes the old route as it resumes, so the PC may hear that loss
+        // first; the supervisor ignores it when the session is attached again (IsSessionDetached).
+        var (pcEndM, phoneEndM) = Duplex.Pair();
+        _ = phone.ServeAsync(phoneEndM);
+        var shellM = new CompanionClient { PcId = "pc1" };
+        var helloM = await shellM.ConnectAsync(pcEndM, "test", Timeout(5), resume: client);
+        await Task.Delay(100);
+        check(helloM.Resumed && !client.IsDetached,
+            "a route taking over while the old one is still up leaves the session attached (a loss heard on the way is stale)");
+        var afterHandoff = client.SmsSendAsync("555", "after handoff", Timeout(5));
+        check(await Task.WhenAny(afterHandoff, Task.Delay(5000)) == afterHandoff && afterHandoff.IsCompletedSuccessfully,
+            "...and requests carry on over the new route");
+        all.Add(afterHandoff);
+
         // A request given up on while the session waits must not run when it resumes (a retried SMS
         // would go out twice): its kept frame becomes a numbered no-op.
         var (pcEndG, phoneEndG) = Duplex.Pair();

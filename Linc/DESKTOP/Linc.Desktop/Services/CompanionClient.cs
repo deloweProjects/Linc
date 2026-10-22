@@ -95,7 +95,16 @@ public sealed class CompanionClient : IDisposable
     public bool HasLinkSession => _link is not null;
 
     /// <summary>True when the session has no transport right now and is waiting for a resume.</summary>
-    public bool IsDetached => _link is not null && _stream is null;
+    public bool IsDetached
+    {
+        get
+        {
+            lock (_transportLock)
+            {
+                return _link is not null && _stream is null;
+            }
+        }
+    }
 
     /// <summary>Set on a client whose hello resumed another client's session: use that one.</summary>
     public CompanionClient? ResumedInto { get; private set; }
@@ -147,6 +156,11 @@ public sealed class CompanionClient : IDisposable
             // message and rethrow — the caller (ConnectionSupervisor) logs the LincException.
             tcp.Dispose();
             throw new LincException(CompanionUnreachable, ex);
+        }
+        catch (OperationCanceledException)
+        {
+            tcp.Dispose(); // the attempt was called off mid-connect: nothing of it stays open
+            throw;
         }
         ChannelOpener = (channel, token, openCt) => OpenAdbChannelAsync(localPort, channel, token, openCt);
         return await ConnectAsync(tcp.GetStream(), appVersion, ct, owner: tcp, resume);

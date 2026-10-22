@@ -207,7 +207,17 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
   - the cable-in push speaks adb's `host:track-devices` itself (the library's DeviceMonitor spins on a closed
     server connection and restarts the adb server on its own);
   - the installer's firewall rule has its own name and a declined permission prompt is silent;
-  - a phone updated from an older build stays stopped if it was, until Linc is started once.
+  - a phone updated from an older build stays stopped if it was, until Linc is started once;
+  - a second review, of the fixes: a route taking over while the old one is still up (cable in over Wi-Fi) no
+    longer counts as a loss (the phone closes the old route as it resumes; the supervisor checks the session
+    is attached again before lingering); the pairing listener stays up after a phone paired through it
+    (background connections off), since that phone's channels come back through it; the phone's listener
+    queues a burst of the PC's channel dials (thumbnails) instead of turning them away (8 handshakes at once,
+    64 waiting); a replayed beacon announcement isn't news; a cancelled app repair closes its probe socket;
+    the same pairing link tapped twice joins the pairing under way.
+  - Known and left: the first cable connection of a phone paired only by QR code starts a fresh session
+    instead of resuming its Wi-Fi one (pages reconnect once), because the cable's new record has no pinned
+    certificate yet; the two records merge on that connect.
 - Not in A (as planned): Bluetooth (B), wireless-debugging re-arm after a reboot (B), Wi-Fi Direct and USB
   tethering (C).
 

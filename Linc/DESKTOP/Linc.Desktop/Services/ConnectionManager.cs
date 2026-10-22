@@ -106,6 +106,12 @@ public interface IConnectionManager
     bool HasResumableSession { get; }
 
     /// <summary>
+    /// True while the live v32 session has no transport (it lost one and none has taken over yet).
+    /// False again once a resume carried it on, which can happen before a reported loss is handled.
+    /// </summary>
+    bool IsSessionDetached { get; }
+
+    /// <summary>
     /// The address of the far end of the CURRENT control connection, or null when the link is
     /// not one whose peer address means anything (v18). Populated for Direct TLS only: on an
     /// ADB link the socket is a loopback forward, so its peer is 127.0.0.1 and naming that as
@@ -193,6 +199,8 @@ public sealed class ConnectionManager(
     public event Action<IReadOnlyList<string>, int>? PhoneWhere;
 
     public bool HasResumableSession => _companion is { HasLinkSession: true };
+
+    public bool IsSessionDetached => _companion is { IsDetached: true };
 
     /// <summary>A new protocol client, offering v32 only while the new connection engine is on.</summary>
     private CompanionClient NewClient() => new()
@@ -519,6 +527,11 @@ public sealed class ConnectionManager(
             {
                 companion.Dispose();
                 throw; // it's answering, just with another PC: nothing to repair
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                companion.Dispose(); // called off (disconnect, phone or engine switch): close this probe's socket too
+                throw;
             }
             catch (Exception ex) when (!ct.IsCancellationRequested && ex is LincException or OperationCanceledException)
             {

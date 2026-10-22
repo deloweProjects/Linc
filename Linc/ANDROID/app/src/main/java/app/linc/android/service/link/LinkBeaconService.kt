@@ -36,8 +36,7 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
     private var socket: DatagramSocket? = null
 
     /** An announcement asked for before the socket was open (Linc just started, the phone just booted): sent once it is. */
-    @Volatile
-    private var queuedAnnounce: String? = null
+    private val queuedAnnounce = java.util.concurrent.atomic.AtomicReference<String?>(null)
     private var multicastLock: WifiManager.MulticastLock? = null
     private val lastAnswered = mutableMapOf<String, Long>()
 
@@ -57,10 +56,7 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
                     continue
                 }
                 socket = udp
-                queuedAnnounce?.let { why ->
-                    queuedAnnounce = null
-                    announce(why)
-                }
+                queuedAnnounce.getAndSet(null)?.let { announce(it) } // see announce: exactly one side sends it
                 val buffer = ByteArray(64)
                 try {
                     while (isActive) {
@@ -135,7 +131,10 @@ class LinkBeaconService(private val context: Context, private val scope: Corouti
     /** Say "I'm here" to every paired PC on every network the phone is on (cheap: 23 bytes each). */
     fun announce(why: String) {
         val udp = socket ?: run {
-            queuedAnnounce = why
+            queuedAnnounce.set(why)
+            // The socket may have opened between the check and the queueing; whichever side takes
+            // the queued reason first sends it, so it goes out exactly once.
+            if (socket != null) queuedAnnounce.getAndSet(null)?.let { announce(it) }
             return
         }
         scope.launch(Dispatchers.IO) {

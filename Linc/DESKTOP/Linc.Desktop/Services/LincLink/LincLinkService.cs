@@ -57,6 +57,10 @@ public sealed class LincLinkService(
     private readonly object _lock = new();
     private readonly string _memoryPath = Path.Combine(registry.RootPath, "link-memory.json");
     private readonly ConcurrentDictionary<string, List<(IPEndPoint At, DateTime SeenUtc)>> _sightings = new();
+    private readonly ConcurrentDictionary<string, DateTime> _reportedUtc = new(); // "phoneId|endpoint" → last PhoneSpotted
+    private readonly List<(byte[] Nonce, DateTime SeenUtc)> _announced = []; // announcements already taken (a replay is not news)
+    private static readonly TimeSpan AnnounceKeep = TimeSpan.FromMinutes(2); // longer than a tag is valid (±1 30 s slot)
+    private static readonly TimeSpan AnnounceGap = TimeSpan.FromSeconds(2);
     private readonly List<(byte[] Nonce, DateTime SentUtc)> _nonces = [];
     private NetMemory? _memory;
     private UdpClient? _probe;
@@ -264,22 +268,42 @@ public sealed class LincLinkService(
             }
             var at = new IPEndPoint(from.Address, packet.Port);
             var list = _sightings.GetOrAdd(phoneId, _ => []);
-            bool news;
+            var nowUtc = DateTime.UtcNow;
             lock (list)
             {
-                var nowUtc = DateTime.UtcNow;
-                news = !list.Any(s => s.At.Equals(at) && nowUtc - s.SeenUtc < SightingNews);
                 list.RemoveAll(s => s.At.Equals(at) || nowUtc - s.SeenUtc > SightingKeep);
                 list.Insert(0, (at, nowUtc));
             }
+            // Replies are reported (and logged) once per place per 30 s: every probe burst gets
+            // four, and each report wakes the dialler. An announcement always is: the phone sends
+            // one only when something changed (it booted, joined a Wi-Fi, lost its PC).
+            var key = $"{phoneId}|{at}";
+            var since = _reportedUtc.TryGetValue(key, out var reported) ? nowUtc - reported : TimeSpan.MaxValue;
+            var news = packet.Role == LinkBeacon.RoleAnnounce
+                ? since >= AnnounceGap && FirstAnnouncement(packet.Nonce, nowUtc) // a copy sent again by someone else isn't news
+                : since >= SightingNews;
             if (news)
             {
-                // Reported (and logged) once per place per 30 s: every probe burst gets four
-                // replies, and each report wakes the dialler.
+                _reportedUtc[key] = nowUtc;
                 log.Log(LogLevel.Info, $"LincLink: the phone {(packet.Role == LinkBeacon.RoleReply ? "answered" : "announced itself")} at {at}.");
                 PhoneSpotted?.Invoke(phoneId, at);
             }
             return;
+        }
+    }
+
+    /// <summary>True the first time an announcement's nonce is seen (kept past the tag's validity).</summary>
+    private bool FirstAnnouncement(byte[] nonce, DateTime nowUtc)
+    {
+        lock (_announced)
+        {
+            _announced.RemoveAll(a => nowUtc - a.SeenUtc > AnnounceKeep);
+            if (_announced.Any(a => a.Nonce.AsSpan().SequenceEqual(nonce)))
+            {
+                return false;
+            }
+            _announced.Add((nonce, nowUtc));
+            return true;
         }
     }
 

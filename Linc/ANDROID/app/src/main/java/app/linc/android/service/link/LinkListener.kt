@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The phone's LincLink listener (v32, port 46002, linclink.md §3): the PC dials the phone here,
@@ -25,8 +26,9 @@ import kotlinx.coroutines.launch
  * served exactly as a link the phone dialled.
  *
  * Anyone on the network can open a connection, so a stranger costs little: at most
- * [MAX_HANDSHAKES] handshakes at once (more are closed at once), each given [HANDSHAKE_DEADLINE_MS]
- * in all, and only IPv4 is listened on (behind the Wi-Fi's router, never a global IPv6 address).
+ * [MAX_HANDSHAKES] handshakes at once (the next ones wait their turn, up to [MAX_UNPROVEN] in all;
+ * beyond that they are closed at once), each given [HANDSHAKE_DEADLINE_MS] in all, and only IPv4 is
+ * listened on (behind the Wi-Fi's router, never a global IPv6 address).
  */
 class LinkListener(
     private val context: Context,
@@ -34,7 +36,10 @@ class LinkListener(
     private val server: SocketServer,
 ) {
     private var job: Job? = null
-    private val handshakes = java.util.concurrent.Semaphore(MAX_HANDSHAKES)
+    private val handshakes = kotlinx.coroutines.sync.Semaphore(MAX_HANDSHAKES)
+
+    /** Connections accepted and not yet through their handshake, waiting ones included. */
+    private val unproven = java.util.concurrent.atomic.AtomicInteger(0)
 
     @Volatile
     private var socket: SSLServerSocket? = null
@@ -59,11 +64,23 @@ class LinkListener(
                 try {
                     while (isActive) {
                         val client = listening.accept() as SSLSocket
-                        if (!handshakes.tryAcquire()) {
+                        if (unproven.incrementAndGet() > MAX_UNPROVEN) {
+                            unproven.decrementAndGet()
                             runCatching { client.close() } // a flood: a real PC dials again
                             continue
                         }
-                        launch(Dispatchers.IO) { handle(client) }
+                        launch(Dispatchers.IO) {
+                            // The PC opens a channel per thumbnail or icon, so a burst of a dozen
+                            // is normal: those wait their turn (suspended, no thread) rather than
+                            // being turned away; only a flood beyond MAX_UNPROVEN is.
+                            val turn = withTimeoutOrNull(HANDSHAKE_DEADLINE_MS) { handshakes.acquire(); true } ?: false
+                            if (!turn) {
+                                unproven.decrementAndGet()
+                                runCatching { client.close() }
+                                return@launch
+                            }
+                            handle(client)
+                        }
                     }
                 } catch (_: IOException) {
                     // closed by stop(), or the network went away: reopen unless stopped
@@ -87,7 +104,7 @@ class LinkListener(
         return TransportStore.pcs(context).any { it.cert == b64 } || LinkPairingClient.pendingHash() == LinkPairing.certHash(der)
     }
 
-    /** Called holding one of [handshakes]; gives it back once the handshake is over, either way. */
+    /** Called holding one of [handshakes]; gives it (and its place in [unproven]) back once the handshake is over, either way. */
     private fun handle(client: SSLSocket) {
         var holding = true
         // A peer that sends a byte every few seconds would never trip the read timeout alone.
@@ -101,6 +118,7 @@ class LinkListener(
             client.startHandshake() // the trust manager above refuses everyone else
             deadline.cancel()
             handshakes.release()
+            unproven.decrementAndGet()
             holding = false
             client.soTimeout = 0
             val der = client.session.peerCertificates.firstOrNull()?.encoded ?: return
@@ -116,13 +134,17 @@ class LinkListener(
             // a stranger, or a PC that hung up mid-handshake: nothing to say
         } finally {
             deadline.cancel()
-            if (holding) handshakes.release()
+            if (holding) {
+                handshakes.release()
+                unproven.decrementAndGet()
+            }
             runCatching { client.close() }
         }
     }
 
     private companion object {
         const val MAX_HANDSHAKES = 8
+        const val MAX_UNPROVEN = 64
         const val HANDSHAKE_DEADLINE_MS = 5_000L
     }
 }

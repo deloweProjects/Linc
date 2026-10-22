@@ -150,6 +150,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             // The phone may dial in to pair. With background connections off nothing listens, so
             // listen for as long as the code shows, and no longer (ClosePairing).
             _listeningForPairing |= _listener is null;
+            _pairedThisWindow = false;
             token = _pairing.Open(DateTime.UtcNow);
         }
         Start(); // harmless when already listening
@@ -161,20 +162,32 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     public void ClosePairing()
     {
         bool stop;
+        bool keep;
         lock (_pairing)
         {
             _pairing.Close();
-            stop = _listeningForPairing && !registry.BackgroundConnectionEnabled;
+            var onlyForPairing = _listeningForPairing && !registry.BackgroundConnectionEnabled;
+            // A phone that just paired may be connected through this listener, and its channels
+            // (files, video, the terminal) come back through it too: it stays until Linc restarts.
+            keep = onlyForPairing && _pairedThisWindow;
+            stop = onlyForPairing && !_pairedThisWindow;
             _listeningForPairing = false;
         }
         if (stop)
         {
             Stop();
         }
+        else if (keep)
+        {
+            log.Log(LogLevel.Info, "Kept direct connections on for the phone that just paired (background connection is off; they stop when Linc restarts).");
+        }
     }
 
     /// <summary>True when the listener runs only because a pairing code is showing.</summary>
     private bool _listeningForPairing;
+
+    /// <summary>A phone paired while this code was showing (see ClosePairing).</summary>
+    private bool _pairedThisWindow;
 
     private bool PairingOpen()
     {
@@ -220,6 +233,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         lock (_pairing)
         {
             ok = _pairing.TryConsume(proof, phoneCertDer, CertificateDer, DateTime.UtcNow);
+            _pairedThisWindow |= ok;
         }
         var reply = Envelope.Create(MessageType.LinkPair, ok
             ? new JsonObject { ["ok"] = true, ["name"] = Environment.MachineName, ["pcId"] = PcId }

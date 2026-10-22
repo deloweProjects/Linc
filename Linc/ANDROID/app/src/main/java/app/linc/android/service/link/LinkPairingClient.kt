@@ -64,7 +64,9 @@ object LinkPairingClient {
      */
     suspend fun pair(context: Context, invite: PairingInvite): String? {
         val job = Pending(invite, android.os.SystemClock.elapsedRealtime() + WINDOW_MS, CompletableDeferred())
-        pending.set(job)
+        // A newer code replaces one still pairing: that one ends quietly (its await is cancelled),
+        // so only the newer one reports how it went.
+        pending.getAndSet(job)?.done?.cancel()
         LogStore.log(LogLevel.INFO, "Pairing with ${invite.name} from its code: dialling it and listening for it")
         // Only addresses on a local network: a link from anywhere can't make the phone dial out.
         val (lan, elsewhere) = invite.addresses.partition { LinkPairing.isLanAddress(it) }
@@ -132,6 +134,12 @@ object LinkPairingClient {
 
     /** For the UI: pair in the background, then [done] on the main thread with the PC's name (null: didn't pair). */
     fun pairInBackground(context: Context, invite: PairingInvite, done: (String?) -> Unit) {
+        if (active()?.invite?.token?.contentEquals(invite.token) == true) {
+            // The same code tapped again (the camera still shows its link once the pairing screen
+            // closes): the pairing already under way answers, once.
+            LogStore.log(LogLevel.INFO, "Pairing with ${invite.name} is already under way")
+            return
+        }
         val app = context.applicationContext
         scope.launch {
             val name = pair(app, invite)

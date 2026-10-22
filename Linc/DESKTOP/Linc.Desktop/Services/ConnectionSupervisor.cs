@@ -1308,10 +1308,22 @@ public sealed class ConnectionSupervisor(
                 {
                     return;
                 }
+                if (why == LinkSignal.TransportLost && !connection.IsSessionDetached)
+                {
+                    // A resume already carried the session onto another transport while this
+                    // waited for the gate: a handoff made before the old route closed (the phone
+                    // closes it as it resumes). Nothing was lost; nothing to do.
+                    return;
+                }
                 StopHealthLoop();
                 // LincLink: a v32 session whose transport died lingers the same way, invisibly,
                 // while every route is raced and the next transport resumes the session.
                 var lingers = why == LinkSignal.TransportLost && Engine && connection.HasResumableSession;
+                if (lingers)
+                {
+                    log.Log(LogLevel.Info, $"The {Describe(Device?.Transport ?? LinkTransport.DirectTls)} under the link ended; " +
+                        $"keeping the session for {LinkBrain.LingerGrace.TotalSeconds:0} s while Linc finds another way to the phone.");
+                }
                 if (lingers || LinkPolicy.OnLiveLinkLost(why, IsWifiPossible()) == LostLink.HandOff)
                 {
                     var generation = ++_handoffGeneration;
@@ -1451,12 +1463,7 @@ public sealed class ConnectionSupervisor(
     }
 
     /// <summary>The live session's transport died (v32): linger invisibly and race for another.</summary>
-    private void OnTransportLost()
-    {
-        log.Log(LogLevel.Info, $"The {Describe(Device?.Transport ?? LinkTransport.DirectTls)} under the link ended; " +
-            $"keeping the session for {LinkBrain.LingerGrace.TotalSeconds:0} s while Linc finds another way to the phone.");
-        OnLinkDropped(LinkSignal.TransportLost);
-    }
+    private void OnTransportLost() => OnLinkDropped(LinkSignal.TransportLost); // logged there, once it is known to be a loss
 
     private void OnPhoneWhere(IReadOnlyList<string> addresses, int port)
     {
