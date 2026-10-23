@@ -69,6 +69,69 @@ object TlsIdentity {
         return socket
     }
 
+    /**
+     * v32 (LincLink): this phone's TLS listener, which the PC dials. Mutual TLS with this phone's
+     * KeyStore identity; a client is accepted only when [trust] says so (a paired PC's exact
+     * certificate, or the PC whose QR code is being paired) — anyone else fails the handshake.
+     */
+    fun serverSocket(port: Int, trust: (X509Certificate) -> Boolean): javax.net.ssl.SSLServerSocket {
+        ensureCertificate()
+        val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
+        val keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+            .apply { init(keyStore, null) }.keyManagers
+        val trustPaired = object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+                if (chain.isEmpty() || !trust(chain[0])) {
+                    throw java.security.cert.CertificateException("client is not a paired Linc PC")
+                }
+            }
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) =
+                throw java.security.cert.CertificateException("server role only")
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+        }
+        val context = SSLContext.getInstance("TLS")
+        context.init(keyManagers, arrayOf(trustPaired), null)
+        val server = context.serverSocketFactory.createServerSocket() as javax.net.ssl.SSLServerSocket
+        server.reuseAddress = true
+        // IPv4 only: the PC dials the phone's Wi-Fi address, and a global IPv6 address may be
+        // reachable from beyond the router.
+        server.bind(java.net.InetSocketAddress(java.net.InetAddress.getByAddress(ByteArray(4)), port))
+        server.needClientAuth = true
+        return server
+    }
+
+    /**
+     * v32 pairing by QR code: dial a PC that must present the certificate whose SHA-256 is
+     * [pcCertSha256] (from the code). Returns the socket and the PC's certificate (DER).
+     */
+    fun connectByHash(host: String, port: Int, pcCertSha256: String, timeoutMs: Int): Pair<SSLSocket, ByteArray> {
+        ensureCertificate()
+        val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
+        val keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+            .apply { init(keyStore, null) }.keyManagers
+        var presented: ByteArray? = null
+        val trustHash = object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) =
+                throw java.security.cert.CertificateException("client role only")
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                if (chain.isEmpty() || app.linc.android.service.link.LinkPairing.certHash(chain[0].encoded) != pcCertSha256) {
+                    throw java.security.cert.CertificateException("this isn't the PC in the pairing code")
+                }
+                presented = chain[0].encoded
+            }
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+        }
+        val context = SSLContext.getInstance("TLS")
+        context.init(keyManagers, arrayOf(trustHash), null)
+        val socket = context.socketFactory.createSocket() as SSLSocket
+        runCatching { socket.tcpNoDelay = true }
+        socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
+        socket.soTimeout = timeoutMs
+        socket.startHandshake()
+        socket.soTimeout = 0
+        return socket to (presented ?: throw java.security.cert.CertificateException("no certificate"))
+    }
+
     private fun ensureCertificate(): X509Certificate {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         (keyStore.getCertificate(ALIAS) as? X509Certificate)?.let { return it }

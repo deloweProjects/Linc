@@ -54,6 +54,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     private readonly IPairingService _pairing;
     private readonly IPhoneSetupService _setup;
     private readonly IDeviceRegistry _registry;
+    private readonly ITlsTransportService _tls;
     private readonly ILogService _log;
     private readonly DispatcherQueue _dispatcher;
     private readonly HashSet<string> _knownBefore;
@@ -74,6 +75,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         IPairingService pairing,
         IPhoneSetupService setup,
         IDeviceRegistry registry,
+        ITlsTransportService tls,
         ILogService log)
     {
         _supervisor = supervisor;
@@ -82,6 +84,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         _pairing = pairing;
         _setup = setup;
         _registry = registry;
+        _tls = tls;
         _log = log;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         _knownBefore = new HashSet<string>(registry.KnownDevices.Select(d => d.Serial), StringComparer.OrdinalIgnoreCase);
@@ -111,6 +114,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         _supervisor.StateChanged += OnSupervisorStateChanged;
         _discovery.PairingServiceSeen += OnPairingServiceSeen;
         _usbWatcher.UsbDeviceSeen += OnUsbDeviceSeen;
+        _tls.PhonePaired += OnLincPaired;
     }
 
     // ---- Step state ----
@@ -156,6 +160,33 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
     }
 
     // ---- Wi-Fi pairing ----
+
+    /// <summary>
+    /// LincLink (v32): Linc's own pairing code, for a phone with Linc installed — no cable and no
+    /// debugging. The phone's camera opens the <c>linc://pair</c> link it carries.
+    /// </summary>
+    [ObservableProperty]
+    public partial ImageSource? LincQrImage { get; set; }
+
+    public bool ShowLincCode => _registry.LincLinkEnabled;
+
+    /// <summary>
+    /// The six digits the phone shows before it pairs, worked out from the code on both sides: the
+    /// same number on both screens means the phone scanned this PC's code and not someone else's.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? LincCheckCode { get; set; }
+
+    private void OnLincPaired(string model, System.Net.IPEndPoint? listener)
+    {
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (_disposed || Step != OnboardingStep.PrepareWifi) return;
+            CheckingTitle = $"Paired with {model} — connecting…";
+            CheckingDetail = "No cable or debugging needed: the two find each other on the Wi-Fi.";
+            EnterChecking(OnboardingFlow.PhoneFound(Step));
+        });
+    }
 
     [ObservableProperty]
     public partial ImageSource? QrImage { get; set; }
@@ -247,6 +278,12 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         ErrorMessage = null;
         Arm(newPhoneOnly: route != OnboardingRoute.AlreadySetUp);
         var next = OnboardingFlow.Choose(Step, route);
+        if (next == OnboardingStep.PrepareWifi && _registry.LincLinkEnabled)
+        {
+            var invite = _tls.OpenPairing();
+            LincQrImage = CreateQrImage(LinkPairing.ToUri(invite));
+            LincCheckCode = $"The phone will show {LinkPairing.CheckCode(invite.PcCertSha256, invite.Token)}. Pair only if it does.";
+        }
         if (next == OnboardingStep.Checking)
         {
             CheckingTitle = "Looking for your phone…";
@@ -445,6 +482,8 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         _supervisor.StateChanged -= OnSupervisorStateChanged;
         _discovery.PairingServiceSeen -= OnPairingServiceSeen;
         _usbWatcher.UsbDeviceSeen -= OnUsbDeviceSeen;
+        _tls.PhonePaired -= OnLincPaired;
+        _tls.ClosePairing();
         // Left before finishing: stop expecting a phone and go back to normal reconnecting, so a
         // cancelled "add" can't leave the link paused or waiting for a phone nobody is adding.
         if (_armed && !_finished)

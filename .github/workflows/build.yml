@@ -109,6 +109,17 @@ jobs:
           New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
           msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:Configuration=Release -p:Platform=x64 -v:m
 
+      # The installer is otherwise only compiled by release.ps1, so a mistake in Linc.iss would
+      # first show at release time. Compile it against this publish output (not uploaded).
+      - name: Compile the installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $publish = "Linc\DESKTOP\Linc.Desktop\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish"
+          & $iscc /DAppVersion=0.0.0.1 "/DSourceDir=$((Resolve-Path $publish).Path)" "/DOutputDir=$env:RUNNER_TEMP" /Q Linc\installer\Linc.iss
+          if ($LASTEXITCODE -ne 0) { Write-Error "Linc.iss didn't compile ($LASTEXITCODE)"; exit 1 }
+
       # Each harness exits 0 when green and 1 when not (CONTRIBUTING.md), and must run from Linc/.
       # Skipped: they need a real phone, Bluetooth adapter, live hotspot link or hardware H.264
       # encoder (mirrorsim; the runner VM only has the Basic Render Driver), none of which a

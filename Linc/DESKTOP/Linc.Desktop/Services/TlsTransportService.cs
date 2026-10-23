@@ -53,6 +53,45 @@ public interface ITlsTransportService : IDisposable
     /// completes when the matching connection arrives.
     /// </summary>
     Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct);
+
+    /// <summary>The link with this session token ended: its dial-backs will never come.</summary>
+    void DropChannelWaiters(string sessionToken);
+
+    /// <summary>This PC's certificate (DER), for the pairing proof and the QR code's hash.</summary>
+    byte[] CertificateDer { get; }
+
+    /// <summary>
+    /// v32: dial the phone's LincLink listener with mutual TLS — this PC's certificate, the
+    /// phone's pinned. Outbound, so Windows Firewall never stands in the way.
+    /// </summary>
+    Task<SslStream> DialPhoneAsync(IPEndPoint phone, string phoneCertBase64, CancellationToken ct);
+
+    /// <summary>v32: dial a phone that just scanned this PC's QR code (any certificate, only while the window is open).</summary>
+    Task<(SslStream Ssl, byte[] PhoneCert)> DialPhoneForPairingAsync(IPEndPoint phone, CancellationToken ct);
+
+    /// <summary>v32: dial a typed channel to the phone (a PC-dialled link): the header is already written.</summary>
+    Task<Stream> DialPhoneChannelAsync(IPEndPoint phone, string phoneCertBase64, int channel, string sessionToken, CancellationToken ct);
+
+    /// <summary>
+    /// v32: open the QR pairing window (5 minutes, one use) and return what the code carries. The
+    /// listener starts if it wasn't running. A second call replaces the code.
+    /// </summary>
+    PairingInvite OpenPairing();
+
+    void ClosePairing();
+
+    /// <summary>The pairing window's token while it is open (the UDP pairing probe is keyed by it), else null.</summary>
+    byte[]? PairingToken { get; }
+
+    /// <summary>
+    /// v32: finish a pairing on a connection whose phone presented an unknown certificate while the
+    /// window is open: read its <c>link.pair</c>, check the proof, pin it. True when paired.
+    /// </summary>
+    /// <param name="phoneListener">Where the phone's LincLink listener is, when known, so the PC can dial it next.</param>
+    Task<bool> CompletePairingAsync(Stream stream, byte[] phoneCertDer, IPEndPoint? phoneListener, CancellationToken ct);
+
+    /// <summary>A phone was just paired by QR code: its model, and its listener when known. The supervisor adopts it next.</summary>
+    event Action<string, IPEndPoint?>? PhonePaired;
 }
 
 /// <summary>
@@ -73,8 +112,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     /// (app icons over the bulk channel): one dial-back matched, the rest arrived to an empty slot,
     /// were taken for new control connections and dropped, and their fetches hung for 8 s each.
     /// </summary>
-    private readonly ConcurrentDictionary<(int Channel, string Token), ConcurrentQueue<TaskCompletionSource<Stream>>> _channelWaiters = new();
-    private int _waiting;
+    private readonly DialBackWaiters<Stream> _channelWaiters = new();
 
     private TcpListener? _listener;
     private ServiceDiscovery? _advertiser;
@@ -89,6 +127,202 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     public string PcId => Convert.ToHexString(SHA256.HashData(_identity.Value.Export(X509ContentType.Cert)))[..16].ToLowerInvariant();
 
     public event Action<Stream, IPEndPoint?>? ControlArrived;
+    public event Action<string, IPEndPoint?>? PhonePaired;
+
+    private readonly PairingWindow _pairing = new();
+
+    public byte[] CertificateDer => _identity.Value.Export(X509ContentType.Cert);
+
+    public byte[]? PairingToken
+    {
+        get
+        {
+            lock (_pairing)
+            {
+                return _pairing.IsOpen(DateTime.UtcNow) ? _pairing.CurrentToken : null;
+            }
+        }
+    }
+
+    public PairingInvite OpenPairing()
+    {
+        byte[] token;
+        lock (_pairing)
+        {
+            // The phone may dial in to pair. With background connections off nothing listens, so
+            // listen for as long as the code shows, and no longer (ClosePairing).
+            _listeningForPairing |= _listener is null;
+            _pairedThisWindow = false;
+            token = _pairing.Open(DateTime.UtcNow);
+        }
+        Start(); // harmless when already listening
+        log.Log(LogLevel.Info, "Showing a pairing code for 5 minutes (QR, no cable needed).");
+        return new PairingInvite(LinkPairing.CertHash(CertificateDer), LanAddresses().Select(a => a.ToString()).Where(LinkPairing.IsLanAddress).ToList(), // the phone dials nothing else
+            TlsPort, token, Environment.MachineName);
+    }
+
+    public void ClosePairing()
+    {
+        bool stop;
+        bool keep;
+        lock (_pairing)
+        {
+            _pairing.Close();
+            var onlyForPairing = _listeningForPairing && !registry.BackgroundConnectionEnabled;
+            // A phone that just paired may be connected through this listener, and its channels
+            // (files, video, the terminal) come back through it too: it stays until Linc restarts.
+            keep = onlyForPairing && _pairedThisWindow;
+            stop = onlyForPairing && !_pairedThisWindow;
+            _listeningForPairing = false;
+        }
+        if (stop)
+        {
+            Stop();
+        }
+        else if (keep)
+        {
+            log.Log(LogLevel.Info, "Kept direct connections on for the phone that just paired (background connection is off; they stop when Linc restarts).");
+        }
+    }
+
+    /// <summary>True when the listener runs only because a pairing code is showing.</summary>
+    private bool _listeningForPairing;
+
+    /// <summary>A phone paired while this code was showing (see ClosePairing).</summary>
+    private bool _pairedThisWindow;
+
+    private bool PairingOpen()
+    {
+        lock (_pairing)
+        {
+            return _pairing.IsOpen(DateTime.UtcNow);
+        }
+    }
+
+    public async Task<bool> CompletePairingAsync(Stream stream, byte[] phoneCertDer, IPEndPoint? phoneListener, CancellationToken ct)
+    {
+        // The phone speaks first on a pairing connection: one link.pair, then this side answers.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        var json = await Framing.ReadAsync(stream, timeout.Token);
+        if (json is null)
+        {
+            return false;
+        }
+        Envelope request;
+        try
+        {
+            request = Envelope.Parse(json);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+        if (request.Type != MessageType.LinkPair || (string?)request.Payload["proof"] is not { } proofText)
+        {
+            return false;
+        }
+        byte[] proof;
+        try
+        {
+            proof = Convert.FromBase64String(proofText);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        bool ok;
+        lock (_pairing)
+        {
+            ok = _pairing.TryConsume(proof, phoneCertDer, CertificateDer, DateTime.UtcNow);
+            _pairedThisWindow |= ok;
+        }
+        var reply = Envelope.Create(MessageType.LinkPair, ok
+            ? new JsonObject { ["ok"] = true, ["name"] = Environment.MachineName, ["pcId"] = PcId }
+            : new JsonObject { ["ok"] = false }, replyTo: request.Id);
+        await Framing.WriteAsync(stream, reply.ToJson(), timeout.Token);
+        if (!ok)
+        {
+            log.Log(LogLevel.Warn, "A phone tried to pair with an old or wrong code; ignored.");
+            return false;
+        }
+        var model = (string?)request.Payload["model"] is { Length: > 0 } m ? m : "Android phone";
+        var certBase64 = Convert.ToBase64String(phoneCertDer);
+        registry.SaveQrPairedPhone(LinkSecretStore.PhoneIdOf(certBase64)!, model, certBase64);
+        log.Log(LogLevel.Info, $"Paired with {model} by QR code (no cable).");
+        PhonePaired?.Invoke(model, phoneListener);
+        return true;
+    }
+
+    public async Task<SslStream> DialPhoneAsync(IPEndPoint phone, string phoneCertBase64, CancellationToken ct) =>
+        (await DialPhoneCoreAsync(phone, Convert.FromBase64String(phoneCertBase64), limitSendBuffer: false, ct)).Ssl;
+
+    public Task<(SslStream Ssl, byte[] PhoneCert)> DialPhoneForPairingAsync(IPEndPoint phone, CancellationToken ct) =>
+        DialPhoneCoreAsync(phone, [], limitSendBuffer: false, ct);
+
+    public async Task<Stream> DialPhoneChannelAsync(IPEndPoint phone, string phoneCertBase64, int channel, string sessionToken, CancellationToken ct)
+    {
+        var (ssl, _) = await DialPhoneCoreAsync(phone, Convert.FromBase64String(phoneCertBase64),
+            limitSendBuffer: channel is VideoChannel or AudioChannel, ct);
+        try
+        {
+            var header = new JsonObject { ["channel"] = channel, ["sessionToken"] = sessionToken };
+            await Framing.WriteAsync(ssl, header.ToJsonString(), ct);
+            return ssl;
+        }
+        catch
+        {
+            ssl.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// TCP, then mutual TLS: this PC presents its identity; the phone must present exactly
+    /// <paramref name="pinnedPhoneCert"/>, or — with <paramref name="pinnedPhoneCert"/> empty, only
+    /// while the pairing window is open — any certificate, which the caller then pairs or drops.
+    /// </summary>
+    internal async Task<(SslStream Ssl, byte[] PhoneCert)> DialPhoneCoreAsync(
+        IPEndPoint phone, byte[] pinnedPhoneCert, bool limitSendBuffer, CancellationToken ct)
+    {
+        var client = new TcpClient(phone.AddressFamily) { NoDelay = true };
+        try
+        {
+            if (limitSendBuffer)
+            {
+                LimitSendBuffer(client);
+            }
+            await client.ConnectAsync(phone.Address, phone.Port, ct);
+            var pairing = pinnedPhoneCert.Length == 0;
+            var ssl = new SslStream(client.GetStream(), leaveInnerStreamOpen: false,
+                (_, cert, _, _) => cert is not null &&
+                    (pairing ? PairingOpen() : cert.GetRawCertData().AsSpan().SequenceEqual(pinnedPhoneCert)));
+            try
+            {
+                using var handshake = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                handshake.CancelAfter(TimeSpan.FromSeconds(5));
+                await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                {
+                    TargetHost = "linc-phone",
+                    ClientCertificates = [_identity.Value],
+                    LocalCertificateSelectionCallback = (_, _, _, _, _) => _identity.Value,
+                    // Pinning replaces chain validation; the callback above is the whole check.
+                    CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+                }, handshake.Token);
+                return (ssl, ssl.RemoteCertificate?.GetRawCertData() ?? []);
+            }
+            catch
+            {
+                ssl.Dispose();
+                throw;
+            }
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
 
 
     public void Start()
@@ -206,26 +440,12 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         }
     }
 
-    public Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct)
-    {
-        var waiter = new TaskCompletionSource<Stream>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _channelWaiters.GetOrAdd((channel, sessionToken), _ => new()).Enqueue(waiter);
-        Interlocked.Increment(ref _waiting);
-        // A cancelled waiter stays queued but completed; TakeWaiter skips it.
-        ct.Register(() => { if (waiter.TrySetCanceled(ct)) Interlocked.Decrement(ref _waiting); });
-        return waiter.Task;
-    }
+    // Each waiter ends by itself (its caller giving up, 10 s at most, or its session ending): a
+    // stale one made every control dial-in wait out the header read (DialBackWaiters).
+    public Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct) =>
+        _channelWaiters.Add(channel, sessionToken, ct);
 
-    /// <summary>The oldest still-waiting request for this dial-back, if any.</summary>
-    private TaskCompletionSource<Stream>? TakeWaiter(int channel, string token)
-    {
-        if (!_channelWaiters.TryGetValue((channel, token), out var queue)) return null;
-        while (queue.TryDequeue(out var waiter))
-        {
-            if (!waiter.Task.IsCompleted) return waiter;
-        }
-        return null;
-    }
+    public void DropChannelWaiters(string sessionToken) => _channelWaiters.DropSession(sessionToken);
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
     {
@@ -258,13 +478,16 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             // (it had to come back over ADB and re-pair before Direct TLS worked again). Which
             // phone it was is read back from the certificate by the supervisor.
             var pinned = DeviceAdmission.PinnedCertificates(registry.KnownDevices.Select(d => d.PhoneCertBase64));
-            if (pinned.Count == 0)
+            var pairing = PairingOpen();
+            if (pinned.Count == 0 && !pairing)
             {
                 client.Dispose();
                 return; // not TLS-paired yet — nothing can authenticate
             }
+            // While the QR pairing window is open (v32) an unknown phone may connect, but only to
+            // send its proof; CompletePairingAsync below pins it or drops it.
             ssl = new SslStream(client.GetStream(), leaveInnerStreamOpen: false,
-                (_, cert, _, _) => cert is not null && DeviceAdmission.MatchesAny(cert.GetRawCertData(), pinned));
+                (_, cert, _, _) => cert is not null && (DeviceAdmission.MatchesAny(cert.GetRawCertData(), pinned) || pairing));
             using var handshakeTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             handshakeTimeout.CancelAfter(TimeSpan.FromSeconds(5));
             await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
@@ -279,25 +502,32 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
                 ssl.Dispose();
                 return;
             }
+            var presented = ssl.RemoteCertificate.GetRawCertData();
+            if (!DeviceAdmission.MatchesAny(presented, pinned))
+            {
+                using (ssl)
+                {
+                    // The phone redials as a paired phone; the PC may dial its listener too.
+                    var listener = client.Client.RemoteEndPoint is IPEndPoint from ? new IPEndPoint(from.Address, LinkProtocol.PhonePort) : null;
+                    await CompletePairingAsync(ssl, presented, listener, ct);
+                }
+                return;
+            }
 
             // Channel dial-backs announce themselves with a header frame immediately;
             // control connections stay silent (the desktop speaks first). Only try the
             // read when a dial-back is actually expected.
-            if (Volatile.Read(ref _waiting) > 0)
+            if (_channelWaiters.Pending > 0)
             {
                 var header = await TryReadHeaderAsync(ssl);
                 if (header is not null)
                 {
                     var channel = (int?)header["channel"] ?? -1;
                     var token = (string?)header["sessionToken"] ?? "";
-                    if (TakeWaiter(channel, token) is { } waiter)
+                    if (channel is VideoChannel or AudioChannel) LimitSendBuffer(client);
+                    if (_channelWaiters.Complete(channel, token, ssl))
                     {
-                        if (channel is VideoChannel or AudioChannel) LimitSendBuffer(client);
-                        if (waiter.TrySetResult(ssl))
-                        {
-                            Interlocked.Decrement(ref _waiting);
-                            return; // ownership handed to the waiter
-                        }
+                        return; // ownership handed to the waiter
                     }
                     ssl.Dispose(); // unknown/stale dial-back
                     return;
@@ -308,7 +538,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             // no telling repeat control dials from dial-backs that missed their waiter.
             log.Log(LogLevel.Info,
                 $"Phone connected directly (no ADB) from {client.Client.RemoteEndPoint}" +
-                (_channelWaiters.IsEmpty ? "" : $"; {_channelWaiters.Count} channel dial-back(s) pending but this connection sent no header"));
+                (_channelWaiters.Pending == 0 ? "" : $"; {_channelWaiters.Pending} channel dial-back(s) pending but this connection sent no header"));
             // Read the endpoint here, while the TcpClient is still in scope — this is the only
             // point in the process where it is reachable at all (M13b §2, v18).
             ControlArrived?.Invoke(ssl, client.Client.RemoteEndPoint as IPEndPoint);
@@ -347,11 +577,15 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         try { client.Client.SendBufferSize = 64 * 1024; } catch { /* keep the default */ }
     }
 
-    /// <summary>Reads one JSON frame if it arrives within 3 s; null means "control connection".</summary>
+    /// <summary>
+    /// Reads one JSON frame if it arrives within <see cref="LinkBrain.DialBackHeaderWait"/>; null
+    /// means "control connection". A dial-back sends its header at once, and the phone gives a
+    /// control link only 5 s for the PC's hello, so this wait must stay short.
+    /// </summary>
     private static async Task<JsonObject?> TryReadHeaderAsync(SslStream ssl)
     {
         var readTask = Framing.ReadAsync(ssl, CancellationToken.None);
-        var winner = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(3)));
+        var winner = await Task.WhenAny(readTask, Task.Delay(LinkBrain.DialBackHeaderWait));
         if (winner != readTask)
         {
             return null; // silence ⇒ control (no bytes were consumed)

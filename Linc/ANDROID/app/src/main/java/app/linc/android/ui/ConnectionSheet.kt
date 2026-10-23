@@ -84,7 +84,12 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
             PcsSection()
             if (state is ServiceState.Listening) {
                 HelperText(
-                    "Linc finds your PC on the same Wi-Fi, over the USB cable, or on the PC's hotspot. Keep Linc open on the PC.",
+                    "Linc finds your PC on the same Wi-Fi, over the USB cable, or on the PC's hotspot. Keep Linc open on the PC." +
+                        // LincLink's pairing by code: only with the new engine (and a PC that has it).
+                        if (app.linc.android.service.link.LinkStore.engineOn(context)) {
+                            " No cable, and a PC this phone hasn't met? On the PC, choose Add a phone, then \"Wi-Fi — scan a QR code\", " +
+                                "and point this phone's camera at the top code."
+                        } else "",
                     modifier = Modifier.padding(horizontal = Kit.gutter),
                 )
             }
@@ -101,6 +106,8 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
                             if (needsNotificationPermission(context)) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                             else startCompanion(context)
                         } else {
+                            // Stopped by hand: a restart or opening Linc leaves it stopped (LincLink).
+                            app.linc.android.service.link.LinkStore.setUserStopped(context, true)
                             context.stopService(Intent(context, CompanionService::class.java))
                         }
                     },
@@ -116,6 +123,14 @@ internal fun needsNotificationPermission(context: Context): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
 
+/** Apply a connection-engine change: Linc's service restarts with it (a running link reconnects). */
+internal fun restartCompanionIfRunning(context: Context) {
+    if (app.linc.android.service.CompanionStateHolder.state.value is ServiceState.Stopped) return
+    context.stopService(Intent(context, CompanionService::class.java))
+    startCompanion(context)
+}
+
 internal fun startCompanion(context: Context) {
+    app.linc.android.service.link.LinkStore.setUserStopped(context, false)
     runCatching { context.startForegroundService(Intent(context, CompanionService::class.java)) }
 }

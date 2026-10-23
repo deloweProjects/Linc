@@ -35,7 +35,11 @@ import java.util.Locale
  *  - logs whether Linc is exempt from battery optimisation — the fix the user can apply in
  *    Settings → "Stay connected in the background".
  */
-class ConnectionWatch(private val context: Context) {
+class ConnectionWatch(
+    private val context: Context,
+    /** LincLink: a strong "the PC may be reachable now" moment (screen on, Wi-Fi joined), to announce the phone. */
+    private val onStrongEvent: (String) -> Unit = {},
+) {
 
     private var wifiLock: WifiManager.WifiLock? = null
     private var network: ConnectivityManager.NetworkCallback? = null
@@ -48,6 +52,7 @@ class ConnectionWatch(private val context: Context) {
                 Intent.ACTION_SCREEN_ON -> {
                     log("Screen on")
                     ReconnectSignal.poke("screen on")
+                    onStrongEvent("screen on")
                 }
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED ->
                     log(if (power?.isDeviceIdleMode == true) "Phone entered Doze (deep sleep)" else "Phone left Doze")
@@ -73,6 +78,7 @@ class ConnectionWatch(private val context: Context) {
                 override fun onAvailable(n: Network) {
                     log("Wi-Fi connected")
                     ReconnectSignal.poke("Wi-Fi connected")
+                    onStrongEvent("Wi-Fi connected")
                 }
                 override fun onLost(n: Network) = log("Wi-Fi lost")
             }

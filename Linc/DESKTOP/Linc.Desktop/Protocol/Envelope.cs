@@ -9,7 +9,7 @@ namespace Linc.Desktop.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int Version = 31;
+    public const int Version = 32;
 
     /// <summary>Lowest version this app can still speak (peers may negotiate down to it).</summary>
     public const int MinVersion = 0;
@@ -184,6 +184,13 @@ public static class MessageType
     public const string AdbDown = "adb.down";                  // phone → desktop
     public const string AdbArm = "adb.arm";                    // desktop → phone
     public const string AdbAck = "adb.ack";                    // desktop → phone
+
+    // v32 — LincLink (Vibe/agent/design/linclink.md): one session over many routes.
+    public const string LinkAck = "link.ack";       // either way: {ack, echo?}; never sequenced
+    public const string LinkPair = "link.pair";     // phone → desktop, inside the PC's pairing window only
+    public const string LinkSecret = "link.secret"; // desktop → phone: {secret, gen}
+    public const string LinkWhere = "link.where";   // either way: {addrs, port}
+    public const string LinkNoop = "link.noop";     // either way: a numbered frame that does nothing (stands in for a request given up on)
 }
 
 public static class Topic
@@ -199,7 +206,12 @@ public sealed record Envelope(
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("replyTo")] string? ReplyTo,
-    [property: JsonPropertyName("payload")] JsonObject Payload)
+    [property: JsonPropertyName("payload")] JsonObject Payload,
+    // v32 (LincLink): the frame's number in its session and the highest number received, so a
+    // session can move to another transport and replay what was lost. Absent before v32 and on
+    // the hello; never written as null, so an older peer sees exactly the envelope it always did.
+    [property: JsonPropertyName("seq"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Seq = null,
+    [property: JsonPropertyName("ack"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Ack = null)
 {
     public static Envelope Create(string type, JsonObject? payload = null, string? replyTo = null) =>
         new(ProtocolConstants.Version, type, Guid.NewGuid().ToString(), replyTo, payload ?? []);

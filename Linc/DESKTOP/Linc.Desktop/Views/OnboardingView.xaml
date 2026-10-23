@@ -154,6 +154,27 @@
                         <!-- 2b. Prepare: Wi-Fi -->
                         <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsPrepareWifi, Mode=OneWay}">
                             <TextBlock Style="{StaticResource TitleText}" Text="Connect over Wi-Fi" />
+                            <!-- LincLink: pair with Linc itself — no cable, no debugging. The phone's camera
+                                 opens the linc://pair link in this code; Linc there asks, then pairs. -->
+                            <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.ShowLincCode, Mode=OneWay}">
+                                <TextBlock
+                                    Style="{StaticResource BodyText}"
+                                    TextWrapping="Wrap"
+                                    Text="Pair without a cable: with Linc on the phone, point the phone's camera at this code and tap the link it shows. No debugging needed." />
+                                <Border Background="White" CornerRadius="{StaticResource ShapeLarge}" Padding="16" HorizontalAlignment="Center">
+                                    <Image Source="{x:Bind ViewModel.LincQrImage, Mode=OneWay}" Width="200" Height="200" />
+                                </Border>
+                                <TextBlock
+                                    Style="{StaticResource BodyText}"
+                                    HorizontalAlignment="Center"
+                                    TextWrapping="Wrap"
+                                    Text="{x:Bind ViewModel.LincCheckCode, Mode=OneWay}" />
+                                <TextBlock
+                                    Style="{StaticResource BodyText}"
+                                    Foreground="{ThemeResource OnSurfaceVariantBrush}"
+                                    TextWrapping="Wrap"
+                                    Text="Or pair over wireless debugging instead:" />
+                            </StackPanel>
                             <TextBlock
                                 Style="{StaticResource BodyText}"
                                 TextWrapping="Wrap"

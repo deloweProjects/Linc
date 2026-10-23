@@ -1,5 +1,14 @@
 # Connection logic — what it is, what's wrong, what it becomes
 
+> **2026-10-22: LincLink.** The new connection engine (protocol v32, Settings › Connection › New connection
+> engine, on in the LincLink test builds) is designed in [`linclink.md`](linclink.md) and lives inside the
+> same `ConnectionSupervisor` described below. What changes with it on: a v32 session survives its transport
+> (12 s linger, resume, nothing replayed twice); the PC dials the phone (TCP 46002) as well as the phone
+> dialling the PC; a private UDP beacon (46003) finds the phone; every route is raced and remembered per
+> network; ADB reaching the phone with its app not answering is *connected* while the app is started; the
+> cable is seen through adb's device list, not only the 3 s poll. With it off, everything below is exactly
+> how Linc connects. This file describes that old path (D-081) and stays the reference for it.
+
 _Written 2026-10-11 for 1.0.0.11 (D-081). Protocol v23; nothing here changes the wire._
 
 The owner's bar: "it just works". The phone and the PC find each other on their own, the best

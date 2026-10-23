@@ -401,7 +401,8 @@ public partial class AppShellViewModel : ObservableObject
     {
         if (message is null) return "";
         if (IsLostMessage(message)) return "Connection lost — Linc reconnects by itself";
-        if (message.Contains("reach the companion app", StringComparison.OrdinalIgnoreCase))
+        if (message.Contains("reach the companion app", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("reach the Linc app", StringComparison.OrdinalIgnoreCase))
         {
             return "Can't reach the Linc app on the phone — open Linc there";
         }

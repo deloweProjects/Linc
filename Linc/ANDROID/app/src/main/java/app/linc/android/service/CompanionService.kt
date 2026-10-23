@@ -36,10 +36,14 @@ class CompanionService : Service() {
     private var blePresence: BlePresenceAdvertiser? = null
     private var callWatcher: CallStateWatcher? = null
     private var watch: ConnectionWatch? = null
+    /** LincLink (v32): the session host, the TLS listener the PC dials, and the LAN beacon. */
+    private var linkRuntime: app.linc.android.service.link.LinkRuntime? = null
 
     override fun onCreate() {
         super.onCreate()
         LogStore.init(this)
+        // Running, however it was started: from now on Linc may start by itself again (LinkStore).
+        app.linc.android.service.link.LinkStore.noteRunning(this)
         // The first line of every run says what this is and who made it (Provenance.kt).
         LogStore.log(LogLevel.INFO, Provenance.banner(BuildConfig.VERSION_NAME))
         ClipboardHistoryStore.init(this)
@@ -177,14 +181,16 @@ class CompanionService : Service() {
                     AdbAnnouncer.announceNow(this, reason)
                 },
                 gate = gate,
+                link = app.linc.android.service.link.LinkRuntime(this, scope).also { linkRuntime = it },
             ).also { it.start() }
             presence = PresenceClient(this, scope, server!!, gate).also { it.start() }
+            linkRuntime?.start(server!!)
             // A BLE hint costs nothing when it fails: no radio, no grant or no certificate all
             // just mean the PC never hears it (M04, D-034).
             blePresence = BlePresenceAdvertiser(this, scope).also { it.start() }
             callWatcher = CallStateWatcher(this).also { it.start() }
             LogStore.log(LogLevel.INFO, "Companion service started")
-            watch = ConnectionWatch(this).also { it.start() }
+            watch = ConnectionWatch(this) { why -> linkRuntime?.announce(why) }.also { it.start() }
         }
         return START_STICKY
     }
@@ -196,6 +202,8 @@ class CompanionService : Service() {
         callWatcher?.stop()
         callWatcher = null
         presence?.stop()
+        linkRuntime?.stop()
+        linkRuntime = null
         presence = null
         blePresence?.stop()
         blePresence = null

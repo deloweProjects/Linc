@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -8,7 +9,9 @@ using Linc.Desktop.Protocol;
 
 namespace Linc.Desktop.Services;
 
-public sealed record CompanionHello(string App, string AppVersion, int V);
+/// <param name="Resumed">v32: this hello resumed the PC's existing session on a new transport
+/// (nothing was lost; subscriptions and requests carry on), rather than starting a new one.</param>
+public sealed record CompanionHello(string App, string AppVersion, int V, bool Resumed = false);
 
 public sealed record PhotoItem(string Id, string Path, long TakenAt);
 
@@ -57,6 +60,70 @@ public sealed class CompanionClient : IDisposable
     private readonly ConcurrentDictionary<string, TaskCompletionSource<Envelope>> _pending = new();
     private Stream? _stream;
     private IDisposable? _owner;
+    private volatile bool _disposed;
+
+    // ---- v32 LincLink session (Vibe/agent/design/linclink.md §4) ------------------------------
+    // A session outlives its transport: when the stream dies, requests stay pending and frames
+    // stay numbered and kept, and the next transport's hello resumes it (TakeTransportAsync).
+    // All null below v32, where everything works exactly as before.
+    private readonly object _linkLock = new();
+    // Guards which stream is the session's transport (_stream, _owner, _transportGen, the
+    // keepalive's echo clock): the swap to a resumed transport and a read loop's end are decided
+    // under it, so an old route closing during a resume can never take the new one down with it.
+    private readonly object _transportLock = new();
+    private LinkSession? _link;
+    private int _transportGen;
+    private CompanionClient? _sink;
+    private int _sinkGen;
+    private readonly object _sinkLock = new(); // this client's read loop ending vs. handing it to a session
+    private bool _loopEnded;
+    // Set by ConnectionManager.Install: until then a dying transport fails its requests at once, as
+    // below v32, instead of holding the not-yet-live session (and the supervisor's gate) open.
+    private bool _adopted;
+    private string? _helloId;
+    private TaskCompletionSource? _helloDecided;
+    private long _lastHeardMs;
+    private long? _echoSentMs;
+    private CancellationTokenSource? _keepalive;
+    private static readonly Stopwatch Clock = Stopwatch.StartNew();
+    private static long NowMs => Clock.ElapsedMilliseconds;
+
+    /// <summary>The highest version offered in hello. 31 keeps LincLink off (Settings › Connection).</summary>
+    public int MaxVersion { get; set; } = ProtocolConstants.Version;
+
+    /// <summary>True while this client holds a v32 session, which a new transport can resume.</summary>
+    public bool HasLinkSession => _link is not null;
+
+    /// <summary>True when the session has no transport right now and is waiting for a resume.</summary>
+    public bool IsDetached
+    {
+        get
+        {
+            lock (_transportLock)
+            {
+                return _link is not null && _stream is null;
+            }
+        }
+    }
+
+    /// <summary>Set on a client whose hello resumed another client's session: use that one.</summary>
+    public CompanionClient? ResumedInto { get; private set; }
+
+    /// <summary>v32: the phone's LincLink id (its certificate hash) and the link-secret generation it holds.</summary>
+    public string? PhoneLinkId { get; private set; }
+    public int PhoneSecretGen { get; private set; }
+
+    /// <summary>v32: where the phone says it can be dialled (<c>link.where</c>), newest last.</summary>
+    public event Action<IReadOnlyList<string>, int>? PhoneWhere;
+
+    /// <summary>The last <c>link.where</c>, kept for a subscriber that attaches after it arrived (Install).</summary>
+    public (IReadOnlyList<string> Addresses, int Port)? LastWhere { get; private set; }
+
+    /// <summary>
+    /// v32: the transport under the session died. The session waits for another (nothing pending
+    /// is failed); the supervisor finds one. Fires on the dying transport's read loop.
+    /// </summary>
+    public event Action? TransportLost;
 
     /// <summary>The v5 session token from the phone's hello reply, or null on a pre-v5 link.</summary>
     public string? SessionToken { get; private set; }
@@ -75,7 +142,7 @@ public sealed class CompanionClient : IDisposable
     public event Action<Envelope>? MessageReceived;
 
     /// <summary>Convenience for the ADB transport: dial the forwarded loopback port.</summary>
-    public async Task<CompanionHello> ConnectAsync(int localPort, string appVersion, CancellationToken ct)
+    public async Task<CompanionHello> ConnectAsync(int localPort, string appVersion, CancellationToken ct, CompanionClient? resume = null)
     {
         var tcp = new TcpClient();
         try
@@ -90,17 +157,28 @@ public sealed class CompanionClient : IDisposable
             tcp.Dispose();
             throw new LincException(CompanionUnreachable, ex);
         }
+        catch (OperationCanceledException)
+        {
+            tcp.Dispose(); // the attempt was called off mid-connect: nothing of it stays open
+            throw;
+        }
         ChannelOpener = (channel, token, openCt) => OpenAdbChannelAsync(localPort, channel, token, openCt);
-        return await ConnectAsync(tcp.GetStream(), appVersion, ct, owner: tcp);
+        return await ConnectAsync(tcp.GetStream(), appVersion, ct, owner: tcp, resume);
     }
 
     /// <summary>Runs the handshake over any established transport stream (ADB or Direct TLS).</summary>
+    /// <param name="resume">v32: the live or detached session this transport should carry on, if
+    /// the phone still holds it; otherwise the phone starts a fresh one, exactly as before.</param>
     public async Task<CompanionHello> ConnectAsync(
-        Stream stream, string appVersion, CancellationToken ct, IDisposable? owner = null)
+        Stream stream, string appVersion, CancellationToken ct, IDisposable? owner = null, CompanionClient? resume = null)
     {
-        _stream = stream;
-        _owner = owner;
-        _ = ReceiveLoopAsync();
+        int gen;
+        lock (_transportLock)
+        {
+            _stream = stream;
+            _owner = owner;
+            gen = ++_transportGen;
+        }
 
         var hello = Envelope.Create(MessageType.Hello, new JsonObject
         {
@@ -115,14 +193,182 @@ public sealed class CompanionClient : IDisposable
             // Informational only (Provenance.cs); optional, older phones ignore it.
             ["author"] = Provenance.Author,
             ["minV"] = ProtocolConstants.MinVersion,
-            ["maxV"] = ProtocolConstants.Version,
+            ["maxV"] = MaxVersion,
         });
-        var reply = await RequestAsync(hello, MessageType.Hello, ct);
-        SessionToken = (string?)reply.Payload["sessionToken"];
-        return new CompanionHello(
-            App: (string?)reply.Payload["app"] ?? "linc-android",
-            AppVersion: (string?)reply.Payload["appVersion"] ?? "?",
-            V: (int?)reply.Payload["v"] ?? ProtocolConstants.MinVersion);
+        if (MaxVersion >= LinkProtocol.Version)
+        {
+            // v32: offer the session to resume (an older phone ignores the field).
+            hello.Payload["link"] = resume?.ResumeOffer() ?? new JsonObject { ["recv"] = 0 };
+        }
+        // The read loop waits after the hello reply until this side has decided whether the phone
+        // resumed a session: frames the phone replays right after its reply belong to that session.
+        _helloId = hello.Id;
+        _helloDecided = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = ReceiveLoopAsync(stream, gen);
+        try
+        {
+            var reply = await RequestAsync(hello, MessageType.Hello, ct);
+            SessionToken = (string?)reply.Payload["sessionToken"];
+            var result = new CompanionHello(
+                App: (string?)reply.Payload["app"] ?? "linc-android",
+                AppVersion: (string?)reply.Payload["appVersion"] ?? "?",
+                V: (int?)reply.Payload["v"] ?? ProtocolConstants.MinVersion);
+            if (result.V >= LinkProtocol.Version && reply.Payload["link"] is JsonObject link)
+            {
+                PhoneLinkId = (string?)link["id"];
+                PhoneSecretGen = (int?)link["gen"] ?? 0;
+                var session = (string?)link["session"];
+                if ((bool?)link["resumed"] == true && resume is not null && session is not null)
+                {
+                    if (PhoneLinkId is null || PhoneLinkId != resume.PhoneLinkId)
+                    {
+                        // Only the phone the session belongs to may carry it on (its id is the hash of
+                        // the certificate it answered with); another one claiming it gets nothing.
+                        throw new LincException(CompanionUnreachable);
+                    }
+                    if (!await resume.TakeTransportAsync(this, session, (long?)link["recv"] ?? 0))
+                    {
+                        // The phone resumed, but this side can't replay what it lacks (it shouldn't
+                        // happen: the phone checks `keep`). Drop the session so the next transport
+                        // starts fresh instead of two sides counting differently.
+                        resume.AbandonSession();
+                        throw new LincException(CompanionUnreachable);
+                    }
+                    ResumedInto = resume;
+                    return result with { Resumed = true };
+                }
+                if (!string.IsNullOrEmpty(session))
+                {
+                    lock (_linkLock)
+                    {
+                        _link = new LinkSession(session);
+                    }
+                    _lastHeardMs = NowMs;
+                    StartKeepalive();
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            _helloDecided.TrySetResult();
+        }
+    }
+
+    /// <summary>What this session's next hello offers: its id, what it has received, and the oldest frame it can replay.</summary>
+    private JsonObject ResumeOffer()
+    {
+        lock (_linkLock)
+        {
+            return _link is { } link
+                ? new JsonObject { ["session"] = link.Id, ["recv"] = link.Received, ["keep"] = link.FirstKept }
+                : new JsonObject { ["recv"] = 0 };
+        }
+    }
+
+    private void AbandonSession()
+    {
+        lock (_linkLock)
+        {
+            _link = null;
+        }
+    }
+
+    /// <summary>
+    /// v32: the phone resumed this session on <paramref name="shell"/>'s new transport. Move that
+    /// transport here, replay every frame the phone hasn't acknowledged, and close the old one.
+    /// The shell's read loop keeps reading the new stream and hands its frames to this client.
+    /// </summary>
+    private async Task<bool> TakeTransportAsync(CompanionClient shell, string session, long peerReceived)
+    {
+        Stream? oldStream = null;
+        IDisposable? oldOwner = null;
+        var deadOnArrival = false;
+        int gen;
+        await _writeLock.WaitAsync(); // nothing goes out on either transport while they swap
+        try
+        {
+            IReadOnlyList<string>? replay;
+            lock (_linkLock)
+            {
+                replay = _link is { } link && link.Id == session ? link.ReplayAfter(peerReceived) : null;
+            }
+            Stream stream;
+            lock (_transportLock)
+            {
+                if (replay is null || shell._stream is not { } fresh || _disposed)
+                {
+                    return false;
+                }
+                stream = fresh;
+                oldStream = _stream;
+                oldOwner = _owner;
+                gen = ++_transportGen; // before the new stream is published: the old loop's end is now stale
+                _stream = stream;
+                _owner = shell._owner;
+                shell._stream = null;
+                shell._owner = null;
+                _lastHeardMs = NowMs;
+                _echoSentMs = null;
+            }
+            // Hand the shell's read loop over to this session, unless that loop already ended (the new
+            // transport died between the hello and here): then it is this session's loss to report.
+            lock (shell._sinkLock)
+            {
+                if (shell._loopEnded)
+                {
+                    deadOnArrival = true;
+                }
+                else
+                {
+                    shell._sinkGen = gen;
+                    shell._sink = this;
+                }
+            }
+            if (shell.ChannelOpener is { } opener)
+            {
+                ChannelOpener = opener; // the new transport's way to open channels (ADB: its forward port)
+            }
+            if (!deadOnArrival)
+            {
+                try
+                {
+                    foreach (var json in replay)
+                    {
+                        await Framing.WriteAsync(stream, json, CancellationToken.None);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    // The new transport died already; its read loop reports it, and the frames are still kept.
+                }
+            }
+        }
+        finally
+        {
+            _writeLock.Release();
+            oldStream?.Dispose();
+            oldOwner?.Dispose();
+        }
+        if (deadOnArrival)
+        {
+            OnTransportEnded(gen);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// ConnectionManager installed this client as the live link: from now on a dying transport
+    /// leaves the session waiting for a resume. True when it has no transport already (it died
+    /// between the hello and now), so the caller reports the loss at once.
+    /// </summary>
+    public bool MarkAdopted()
+    {
+        lock (_transportLock)
+        {
+            _adopted = true;
+            return _link is not null && _stream is null;
+        }
     }
 
     /// <summary>v9: asks the phone to dial back a channel connection (used by the TLS opener).</summary>
@@ -412,11 +658,9 @@ public sealed class CompanionClient : IDisposable
     /// </summary>
     public async Task SendAsync(Envelope envelope, CancellationToken ct)
     {
-        var stream = _stream ?? throw new InvalidOperationException("not connected");
-        await _writeLock.WaitAsync(ct);
         try
         {
-            await Framing.WriteAsync(stream, envelope.ToJson(), ct);
+            await WriteAsync(envelope, ct);
         }
         catch (IOException ex)
         {
@@ -425,19 +669,184 @@ public sealed class CompanionClient : IDisposable
             // and-forget push swallows this by design; the health loop handles reconnect).
             throw new LincException(CompanionUnreachable, ex);
         }
+    }
+
+    /// <summary>
+    /// The one way a frame goes out. On a v32 session it is numbered, carries the ack, and is kept
+    /// until the phone acknowledges it; with no transport (between routes) it is only kept, and the
+    /// next transport replays it. Below v32 it is written exactly as before.
+    /// </summary>
+    /// <returns>The frame's seq on a v32 session (so a caller that gives up can neutralise it), else null.</returns>
+    private async Task<long?> WriteAsync(Envelope envelope, CancellationToken ct)
+    {
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            string json;
+            bool sequenced;
+            long? stamped = null;
+            lock (_linkLock)
+            {
+                sequenced = _link is not null && envelope.Type != MessageType.LinkAck;
+                if (_link is { } link && sequenced)
+                {
+                    var seq = link.Stamp();
+                    envelope = envelope with { Seq = seq, Ack = link.Received };
+                    json = envelope.ToJson();
+                    link.Keep(seq, json);
+                    link.AckSent(link.Received);
+                    stamped = seq;
+                }
+                else
+                {
+                    json = envelope.ToJson();
+                }
+            }
+            Stream? stream;
+            bool adopted;
+            lock (_transportLock)
+            {
+                stream = _stream;
+                adopted = _adopted;
+            }
+            if (stream is null)
+            {
+                if (sequenced && adopted)
+                {
+                    return stamped; // between transports: kept, and replayed when the session resumes
+                }
+                if (sequenced)
+                {
+                    throw new LincException(CompanionUnreachable); // not live yet: fail the attempt now
+                }
+                throw new InvalidOperationException("not connected");
+            }
+            try
+            {
+                await Framing.WriteAsync(stream, json, ct);
+            }
+            catch (Exception ex) when (sequenced && ex is IOException or ObjectDisposedException)
+            {
+                // The transport is dying under a session: the frame is kept, the read loop reports the loss.
+            }
+            return stamped;
+        }
         finally
         {
             _writeLock.Release();
         }
     }
 
-    private async Task ReceiveLoopAsync()
+    /// <summary>
+    /// A request this side gave up on (timed out, cancelled): if its frame is still kept for a
+    /// replay, swap it for a numbered no-op, so a resume can never run what was reported as failed
+    /// (an SMS the user then sends again would go out twice). If the phone already acknowledged it,
+    /// it ran, just as a lost reply always could.
+    /// </summary>
+    private void Neutralize(long? seq)
+    {
+        if (seq is not { } s)
+        {
+            return;
+        }
+        var placeholder = (Envelope.Create(MessageType.LinkNoop) with { Seq = s, Ack = 0 }).ToJson();
+        lock (_linkLock)
+        {
+            _link?.Neutralize(s, placeholder);
+        }
+    }
+
+    private async Task SendLinkAckAsync(bool echo)
+    {
+        long ack;
+        lock (_linkLock)
+        {
+            if (_link is not { } link)
+            {
+                return;
+            }
+            ack = link.Received;
+            link.AckSent(ack);
+        }
+        try
+        {
+            await WriteAsync(Envelope.Create(MessageType.LinkAck, new JsonObject { ["ack"] = ack, ["echo"] = echo }), CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // A dead transport: the keepalive's timeout or the read loop reports it.
+        }
+    }
+
+    /// <summary>
+    /// v32 keepalive: after <see cref="LinkBrain.KeepaliveIdle"/> with nothing heard, ask the phone
+    /// to echo; no echo within <see cref="LinkBrain.KeepaliveTimeout"/> means the transport is
+    /// half-open (Wi-Fi gone without a FIN), so close it and let the session find another. Also
+    /// sends a bare ack when one is due and nothing outgoing carried it.
+    /// </summary>
+    private void StartKeepalive()
+    {
+        _keepalive?.Cancel();
+        _keepalive = new CancellationTokenSource();
+        var ct = _keepalive.Token;
+        _ = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(1000, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return; // the client was disposed
+                }
+                Stream stream;
+                var now = NowMs;
+                var halfOpen = false;
+                lock (_transportLock)
+                {
+                    if (_stream is not { } live)
+                    {
+                        continue; // between transports: nothing to keep alive
+                    }
+                    stream = live;
+                    if (_echoSentMs is { } sent && now - sent > (long)LinkBrain.KeepaliveTimeout.TotalMilliseconds)
+                    {
+                        _echoSentMs = null;
+                        halfOpen = true;
+                    }
+                }
+                if (halfOpen)
+                {
+                    stream.Dispose(); // ends that transport's read loop, which reports the loss
+                    continue;
+                }
+                bool due;
+                lock (_linkLock)
+                {
+                    due = _link?.AckDue(now) == true;
+                }
+                if (_echoSentMs is null && now - _lastHeardMs > (long)LinkBrain.KeepaliveIdle.TotalMilliseconds)
+                {
+                    _echoSentMs = now;
+                    await SendLinkAckAsync(echo: true);
+                }
+                else if (due)
+                {
+                    await SendLinkAckAsync(echo: false);
+                }
+            }
+        }, ct);
+    }
+
+    private async Task ReceiveLoopAsync(Stream stream, int gen)
     {
         try
         {
             while (true)
             {
-                var json = await Framing.ReadAsync(_stream!, CancellationToken.None);
+                var json = await Framing.ReadAsync(stream, CancellationToken.None);
                 if (json is null)
                 {
                     break; // clean close
@@ -451,20 +860,129 @@ public sealed class CompanionClient : IDisposable
                 {
                     continue; // garbled messages are ignored per spec
                 }
-                if (envelope.ReplyTo is not null && _pending.TryRemove(envelope.ReplyTo, out var pending))
+                (Volatile.Read(ref _sink) ?? this).Handle(envelope);
+                if (_helloDecided is { } decided && envelope.ReplyTo is { } replyTo && replyTo == _helloId)
                 {
-                    pending.TrySetResult(envelope);
-                }
-                else
-                {
-                    MessageReceived?.Invoke(envelope);
+                    await decided.Task; // see ConnectAsync: what follows may belong to a resumed session
                 }
             }
         }
         catch (Exception)
         {
-            // Socket died; fall through to fail the waiters.
+            // Socket died; fall through.
         }
+        CompanionClient? sink;
+        int sinkGen;
+        lock (_sinkLock)
+        {
+            _loopEnded = true;
+            sink = _sink;
+            sinkGen = _sinkGen;
+        }
+        if (sink is not null)
+        {
+            sink.OnTransportEnded(sinkGen);
+        }
+        else
+        {
+            OnTransportEnded(gen);
+        }
+    }
+
+    private void Handle(Envelope envelope)
+    {
+        _lastHeardMs = NowMs;
+        _echoSentMs = null;
+        if (envelope.Type == MessageType.LinkAck)
+        {
+            lock (_linkLock)
+            {
+                if ((long?)envelope.Payload["ack"] is { } ack)
+                {
+                    _link?.OnAck(ack);
+                }
+            }
+            if ((bool?)envelope.Payload["echo"] == true)
+            {
+                _ = SendLinkAckAsync(echo: false);
+            }
+            return;
+        }
+        lock (_linkLock)
+        {
+            if (_link is { } link)
+            {
+                if (envelope.Ack is { } ack)
+                {
+                    link.OnAck(ack);
+                }
+                if (envelope.Seq is { } seq && link.Accept(seq, NowMs) == FrameArrival.Duplicate)
+                {
+                    return; // a replay this side already handled: never twice
+                }
+            }
+        }
+        if (envelope.Type == MessageType.LinkNoop)
+        {
+            return; // it only takes up its number
+        }
+        if (envelope.Type == MessageType.LinkWhere && envelope.Payload["addrs"] is JsonArray addrs)
+        {
+            var list = addrs.Select(a => (string?)a).Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a!).ToList();
+            var port = (int?)envelope.Payload["port"] ?? LinkProtocol.PhonePort;
+            LastWhere = (list, port); // it usually arrives before Install subscribes (see LastWhere)
+            PhoneWhere?.Invoke(list, port);
+            return;
+        }
+        if (envelope.ReplyTo is not null && _pending.TryRemove(envelope.ReplyTo, out var pending))
+        {
+            pending.TrySetResult(envelope);
+        }
+        else
+        {
+            MessageReceived?.Invoke(envelope);
+        }
+    }
+
+    /// <summary>A transport's read loop ended. A v32 session waits for another; anything else fails its waiters as before.</summary>
+    private void OnTransportEnded(int gen)
+    {
+        Stream? stream;
+        IDisposable? owner;
+        bool lingers;
+        lock (_transportLock)
+        {
+            if (gen != _transportGen)
+            {
+                return; // an old transport the session already moved off
+            }
+            if (_link is null || _disposed)
+            {
+                stream = null;
+                owner = null;
+                lingers = false; // below v32 (or disposed): exactly as before, the stream stays as it was
+            }
+            else
+            {
+                stream = _stream;
+                owner = _owner;
+                _stream = null;
+                _owner = null;
+                lingers = _adopted;
+            }
+        }
+        stream?.Dispose();
+        owner?.Dispose();
+        if (lingers)
+        {
+            TransportLost?.Invoke();
+            return;
+        }
+        FailPending();
+    }
+
+    private void FailPending()
+    {
         foreach (var key in _pending.Keys.ToList())
         {
             if (_pending.TryRemove(key, out var waiter))
@@ -476,25 +994,18 @@ public sealed class CompanionClient : IDisposable
 
     private async Task<Envelope> RequestAsync(Envelope request, string expectedReplyType, CancellationToken ct)
     {
-        var stream = _stream ?? throw new InvalidOperationException("not connected");
         var pending = new TaskCompletionSource<Envelope>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[request.Id] = pending;
+        long? seq = null;
         try
         {
-            await _writeLock.WaitAsync(ct);
-            try
-            {
-                await Framing.WriteAsync(stream, request.ToJson(), ct);
-            }
-            finally
-            {
-                _writeLock.Release();
-            }
+            seq = await WriteAsync(request, ct);
 
             // A live link answers quickly; a zombie link answers never.
             var completed = await Task.WhenAny(pending.Task, Task.Delay(ReplyTimeout, ct));
             if (completed != pending.Task)
             {
+                Neutralize(seq); // reported as failed below: a resume must not run it after all
                 ct.ThrowIfCancellationRequested();
                 throw new LincException(CompanionUnreachable);
             }
@@ -535,6 +1046,16 @@ public sealed class CompanionClient : IDisposable
         }
     }
 
+    /// <summary>v32: give the phone this pair's link secret (it keys the UDP beacon).</summary>
+    public async Task ShareLinkSecretAsync(string secretBase64, int gen, CancellationToken ct)
+    {
+        await RequestAsync(
+            Envelope.Create(MessageType.LinkSecret, new JsonObject { ["secret"] = secretBase64, ["gen"] = gen }),
+            MessageType.Ok,
+            ct);
+        PhoneSecretGen = gen;
+    }
+
     public async Task<string?> ExchangeTlsAsync(string certBase64, int tlsPort, int reversePort, CancellationToken ct)
     {
         var reply = await RequestAsync(
@@ -551,13 +1072,16 @@ public sealed class CompanionClient : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+        _keepalive?.Cancel();
         _stream?.Dispose();
         _owner?.Dispose();
+        FailPending(); // a detached session has no read loop left to do it
     }
 
     private const string CompanionUnreachable =
-        "Linc can't reach the companion app on your phone. Open Linc on the phone and " +
-        "tap “Start companion service”, then try again.";
+        "Linc can't reach the Linc app on your phone. Open Linc on the phone (if it says it's " +
+        "stopped, tap the PC card, then Start Linc) and try again.";
 }
 
 /// <summary>
@@ -565,3 +1089,10 @@ public sealed class CompanionClient : IDisposable
 /// the companion is running and answering, so nothing should try to restart it.
 /// </summary>
 public sealed class PhoneBusyException(string message) : LincException(message);
+
+/// <summary>
+/// ADB reaches the phone but its Linc app hasn't answered yet, even after Linc started it (v32
+/// engine). Not a dead end: the supervisor shows the phone as connected while it keeps repairing.
+/// </summary>
+public sealed class CompanionNotAnsweringException() : LincException(
+    "Linc is getting ready on your phone. It starts by itself over the cable; this takes a few seconds.");

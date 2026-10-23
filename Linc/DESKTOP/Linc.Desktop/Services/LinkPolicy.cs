@@ -20,6 +20,12 @@ public enum LinkSignal
     PreferenceChanged,
     UserAsked,
     AppStart,
+
+    /// <summary>LincLink (v32): a session's transport died; the session waits for another.</summary>
+    TransportLost,
+
+    /// <summary>LincLink (v32): the phone answered a UDP probe or announced itself.</summary>
+    PhoneSpotted,
 }
 
 /// <summary>
@@ -86,7 +92,8 @@ public static class LinkPolicy
     public static bool IsStrong(LinkSignal signal) => signal is
         LinkSignal.CableIn or LinkSignal.CableOut or LinkSignal.NetworkChanged or LinkSignal.Resume or
         LinkSignal.BleSighting or LinkSignal.PhoneDialledIn or LinkSignal.QuickShareSighting or
-        LinkSignal.PreferenceChanged or LinkSignal.UserAsked or LinkSignal.AppStart;
+        LinkSignal.PreferenceChanged or LinkSignal.UserAsked or LinkSignal.AppStart or
+        LinkSignal.TransportLost or LinkSignal.PhoneSpotted;
 
     /// <summary>Signals that mean a live link may have died under us: probe it now.</summary>
     public static bool ShouldProbeLiveLink(LinkSignal signal) =>
