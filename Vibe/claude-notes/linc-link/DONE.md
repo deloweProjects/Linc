@@ -136,4 +136,4 @@ Logs and phone Settings › Logs › Copy log, and send both.
 
 ## Paste back to the other session
 
-> LincLink done on `claude/linc-link` @ <commit>. Build green. Read Vibe/claude-notes/linc-link/DONE.md.
+> LincLink done on `claude/linc-link` @ 25016ee (code; this note is the commit after it). Build green. Read Vibe/claude-notes/linc-link/DONE.md.
