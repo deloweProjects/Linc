@@ -70,6 +70,12 @@ public sealed partial class MainWindow : Window
         });
 
         InitializeComponent();
+        // A test build says so everywhere it names itself (owner: "even the app says Linc Test").
+        if (BuildFlavor.IsTest)
+        {
+            Title = BuildFlavor.AppName;
+            AppTitleText.Text = $"{BuildFlavor.AppName} · {BuildFlavor.TestLabel}";
+        }
         try
         {
             // M14: the tray reads the mono variant (white L on transparency) — an opaque

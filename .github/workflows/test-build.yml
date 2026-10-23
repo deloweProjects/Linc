@@ -4,8 +4,10 @@
 # or `git push origin HEAD:test-build/<name>`), or push a tag named test-<anything>. The post lists
 # the commits on it that main doesn't have yet (an annotated tag's message is used instead).
 #
-# Unlike release.yml this creates no GitHub release, writes no update.json and merges nothing,
-# so installed copies are never offered the build: only whoever installs it from Telegram gets it.
+# Unlike release.yml this writes no update.json and merges nothing, so normal Linc is never
+# offered the build. Each test build is "Linc Test" (numbered by this workflow's run number) and is
+# also put on the test feed, the pre-release linc-test-feed (see Services/TestChannel.cs and
+# TestFeed.kt): a Linc Test already installed offers the newer one as an update.
 # The APK is signed with the owner's key (ANDROID_DEBUG_KEYSTORE, checked against the released
 # certificate as release.yml does), so it installs over an existing Linc without uninstalling.
 name: Test build to Telegram
@@ -16,7 +18,7 @@ on:
     tags: ["test-*"]
 
 permissions:
-  contents: read
+  contents: write   # the test feed's pre-release (feed job); nothing else is written
 
 concurrency:
   group: telegram-bot
@@ -56,7 +58,10 @@ jobs:
       # gradlew is committed without the executable bit, so run it through bash.
       - name: Build APK and run unit tests
         working-directory: Linc/ANDROID
-        run: bash gradlew assembleDebug testDebugUnitTest --no-daemon
+        run: |
+          name="${GITHUB_REF_NAME#test-build/}"; name="${name#test-}"; name="${name//\//-}"
+          bash gradlew assembleDebug testDebugUnitTest --no-daemon \
+            -PlincTestBuild=${{ github.run_number }} -PlincTestName="$name"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -96,7 +101,8 @@ jobs:
           $redist = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC'
           New-Item -ItemType Directory -Force $redist | Out-Null
           New-Item -ItemType Junction -Path "$redist\$($latest.Name)" -Target $latest.FullName | Out-Null
-          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:RollForward=Major -p:Configuration=Release -p:Platform=x64 -v:m
+          $tag = ($env:GITHUB_REF_NAME -replace '^test-build/', '' -replace '^test-', '' -replace '/', '-')
+          msbuild Linc\DESKTOP\Linc.Desktop\Linc.Desktop.csproj -restore -t:Publish -p:PublishProfile=Beta -p:SelfContained=false -p:RollForward=Major -p:Configuration=Release -p:Platform=x64 "-p:LincTestBuild=${{ github.run_number }}" "-p:LincTestName=$tag" -v:m
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # One file for both apps, squeezed hard (the owner: "put in 1 file then compress bro like a
@@ -125,8 +131,74 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  telegram:
+      # The PC half of the test feed: the same publish folder as a zip, which a running Linc Test
+      # unpacks into its own store and switches to (TestInstall.cs).
+      - name: Zip the PC app for the test feed
+        shell: pwsh
+        run: |
+          $publish = 'Linc\DESKTOP\Linc.Desktop\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish'
+          Compress-Archive -Path "$publish\*" -DestinationPath "linc-test-${{ github.run_number }}-pc.zip" -CompressionLevel Optimal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-pc-zip
+          path: linc-test-*-pc.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  # The test feed: one pre-release, linc-test-feed, holding the newest two test builds and
+  # test-update.json, which a Linc Test reads to offer an update. Its files go up first and the
+  # manifest last, so the manifest never names a file that isn't there yet.
+  feed:
     needs: [android, windows]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      N: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4   # for Releases/TEST-NOTES.md, the update card's text
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-apk
+          path: feed
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-pc-zip
+          path: feed
+
+      - name: Put the build on the test feed
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"; tag=linc-test-feed
+          name="${GITHUB_REF_NAME#test-build/}"; name="${name#test-}"; name="${name//\//-}"
+          cd feed
+          mv app-debug.apk "linc-test-$N.apk"
+          apk_sha=$(sha256sum "linc-test-$N.apk" | cut -d' ' -f1)
+          pc_sha=$(sha256sum "linc-test-$N-pc.zip" | cut -d' ' -f1)
+          if ! gh release view "$tag" -R "$repo" >/dev/null 2>&1; then
+            gh release create "$tag" -R "$repo" --prerelease --target "$GITHUB_SHA" \
+              --title "Linc test builds (not a release)" \
+              --notes "Test builds of Linc (\"Linc Test\") update themselves from here. Normal Linc never looks here; use the latest release instead."
+          fi
+          gh release upload "$tag" -R "$repo" --clobber "linc-test-$N.apk" "linc-test-$N-pc.zip"
+          base="https://github.com/$repo/releases/download/$tag"
+          notes=$(grep -v '^#' "$GITHUB_WORKSPACE/Releases/TEST-NOTES.md" 2>/dev/null | sed '/./,$!d' | head -3 | tr '\n' ' ' | cut -c1-400 || true)
+          [ -n "$notes" ] || notes="A newer test build of Linc."
+          jq -n --arg notes "$notes" --argjson build "$N" --arg name "$name" --arg commit "$GITHUB_SHA" \
+            --arg apk "$base/linc-test-$N.apk" --arg apksha "$apk_sha" \
+            --arg pc "$base/linc-test-$N-pc.zip" --arg pcsha "$pc_sha" \
+            '{build: $build, name: $name, commit: $commit, notes: $notes,
+              android: {url: $apk, sha256: $apksha}, desktop: {url: $pc, sha256: $pcsha}}' > test-update.json
+          cat test-update.json
+          gh release upload "$tag" -R "$repo" --clobber test-update.json
+          # Keep the newest two builds' files; older ones only take space.
+          gh release view "$tag" -R "$repo" --json assets -q '.assets[].name' | while read -r asset; do
+            n=$(echo "$asset" | sed -n 's/^linc-test-\([0-9]*\).*/\1/p')
+            if [ -n "$n" ] && [ "$n" -lt $((N - 1)) ]; then gh release delete-asset "$tag" "$asset" -R "$repo" -y; fi
+          done
+
+  telegram:
+    needs: [android, windows, feed]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
@@ -192,7 +264,7 @@ jobs:
             notes=$(git log --no-merges --format='• %s' origin/main..HEAD | grep -v '^• WIP' | head -12)
             [ -n "$notes" ] || notes=$(git log -1 --format=%s)
           fi
-          msg="🧪 Linc test release: $name"$'\n'"A preview for testing, not the next update. Your installed Linc won't offer it, and it installs over the one you have (no need to uninstall)."$'\n\n'"What's new:"$'\n'"$notes"$'\n\n'"One file for both apps, packed small. Open it on the PC (Windows 11 opens .7z; else 7-Zip)."$'\n'"💻 PC: close Linc, then run Linc.Desktop.exe in the Linc PC folder."$'\n'"📱 Phone: install \"Linc phone app.apk\" (copy it to the phone, or Device → More: install an app on the PC)."$'\n'"Found a problem? Send the logs from Settings → Logs."
+          msg="🧪 Linc Test build ${{ github.run_number }}: $name"$'\n'"A preview for testing, not the next update. Normal Linc won't offer it; it installs over the one you have (no need to uninstall). Already on Linc Test? It offers this as an update by itself."$'\n\n'"What's new:"$'\n'"$notes"$'\n\n'"One file for both apps, packed small. Open it on the PC (Windows 11 opens .7z; else 7-Zip)."$'\n'"💻 PC: close Linc, then run Linc.Desktop.exe in the Linc PC folder."$'\n'"📱 Phone: install \"Linc phone app.apk\" (copy it to the phone, or Device → More: install an app on the PC)."$'\n'"Found a problem? Send the logs from Settings → Logs."
           runtime=""
           if [ -f dist/windowsdesktop-runtime-8-win-x64.exe ]; then
             runtime="dist/windowsdesktop-runtime-8-win-x64.exe"

@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.linc.android.BuildConfig
+import app.linc.android.service.TestFeed
 import app.linc.android.service.AdbArmOutcome
 import app.linc.android.service.AdbArmRules
 import app.linc.android.service.AdbArming
@@ -259,7 +260,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
             item { SectionHeader("About") }
             item {
                 SettingsGroup(rows = listOf(
-                    { s -> SettingsRow("Linc for Android", s, LincSymbols.Smartphone, value = "Version ${BuildConfig.VERSION_NAME}") },
+                    { s -> SettingsRow("Linc for Android", s, LincSymbols.Smartphone, value = "Version ${BuildConfig.VERSION_NAME}" +
+                        if (BuildConfig.TEST_BUILD > 0) " · ${TestFeed.label(BuildConfig.TEST_BUILD, BuildConfig.TEST_NAME)}" else "") },
                     { s -> SettingsRow("Developer", s, LincSymbols.Info, value = "deloweProjects (${ProjectLinks.DEVELOPER}, ${ProjectLinks.DEVELOPER_HANDLE})",
                         onClick = { openLink(context, ProjectLinks.DEVELOPER_GITHUB) }) },
                     { s -> SettingsRow("Telegram channel", s, LincSymbols.Send, supporting = "News, new versions and help — t.me/LincApp",

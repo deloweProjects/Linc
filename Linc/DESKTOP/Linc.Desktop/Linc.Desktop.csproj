@@ -72,6 +72,14 @@
     </Content>
   </ItemGroup>
 
+  <!-- A test build (test-build.yml passes -p:LincTestBuild=<run number> -p:LincTestName=<branch>)
+       is "Linc Test" and follows the test feed; see Services/TestChannel.cs. Normal builds carry
+       neither, so nothing about them changes. -->
+  <ItemGroup Condition="'$(LincTestBuild)' != ''">
+    <AssemblyMetadata Include="LincTestBuild" Value="$(LincTestBuild)" />
+    <AssemblyMetadata Include="LincTestName" Value="$(LincTestName)" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AdvancedSharpAdbClient" Version="3.6.16" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

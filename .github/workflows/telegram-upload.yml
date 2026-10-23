@@ -26,6 +26,8 @@ concurrency:
 
 jobs:
   upload:
+    # The test feed (linc-test-feed) is a pre-release that test-build.yml keeps and posts itself.
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: ubuntu-latest
     timeout-minutes: 120
     services:

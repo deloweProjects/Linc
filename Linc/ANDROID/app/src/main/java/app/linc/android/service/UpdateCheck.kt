@@ -65,6 +65,11 @@ object UpdateCheck {
             val sha = str(android, "sha256")
             _offer.value = if (action != UpdateAction.None && latest != null && apk != null && !sha.isNullOrBlank()) {
                 Offer(latest, str(manifest, "notes"), apk, sha, forced = action == UpdateAction.Forced)
+            } else if (BuildConfig.TEST_BUILD > 0) {
+                // A test build also follows the test feed; a real release above still wins.
+                val feed = runCatching { fetch(TestFeed.FEED_URL) }.getOrNull()
+                TestFeed.offer(feed, BuildConfig.TEST_BUILD, if (force) null else UpdateSettings.skippedVersion(app))
+                    ?.let { Offer(it.label, it.notes ?: "A newer test build of Linc.", it.apkUrl, it.sha256, forced = false) }
             } else null
             val message = when {
                 manifest == null -> "Couldn't reach the update server — try again later"
@@ -91,7 +96,7 @@ object UpdateCheck {
         _progress.value = 0f
         scope.launch {
             val dir = File(app.cacheDir, "updates").apply { mkdirs() }
-            val file = File(dir, "linc-${o.version}.apk")
+            val file = File(dir, "linc-${o.version.filter { it.isLetterOrDigit() || it in ".-" }}.apk")
             val ok = runCatching { download(o.url, file) { _progress.value = it } }.isSuccess
             _progress.value = null
             when {

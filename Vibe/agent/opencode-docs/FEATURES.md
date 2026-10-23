@@ -151,6 +151,7 @@ Control is a set of full-screen pages; the **Pages** button or the edge handle o
 
 | What | Where | Settings (default) |
 |---|---|---|
+| **Test builds (Linc Test)** | A test build names itself "Linc Test" (window, tray, launcher, About, logs) and offers newer test builds from the test feed (`linc-test-feed` pre-release): the PC unpacks and restarts into it, the phone hands it to Android's installer. Hash-checked like releases; normal Linc never sees them. | Same switch as updates |
 | **Updates** | Both: Settings › Updates. Both apps read `Releases/update.json`; an optional update can be skipped, `minimumSupported` forces one; a download whose SHA-256 doesn't match is refused. The phone shows progress and hands the APK to Android's installer. | Keep Linc up to date (on) |
 | **Installer** | `Linc-Setup-<version>.exe` (Inno Setup, no admin). Uninstalling puts back the microphone and display scale, removes the Explorer menus and autostart, and asks whether to delete Linc's data. VB-CABLE stays installed. | — |
 | **Start on sign-in** | PC: Settings › Startup › Start Linc when I sign in (opens quietly in the tray). | Off |

@@ -29,6 +29,7 @@
                 Width="18" Height="18"
                 VerticalAlignment="Center" />
             <TextBlock
+                x:Name="AppTitleText"
                 Grid.Column="1"
                 Text="Linc"
                 FontSize="13"

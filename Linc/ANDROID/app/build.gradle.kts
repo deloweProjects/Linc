@@ -22,6 +22,13 @@ android {
         versionName = "1.0.0.18"
         // Authorship, stated openly (see Provenance.kt and NOTICE); informational only.
         buildConfigField("String", "AUTHOR", "\"deloweProjects\"")
+        // A test build (test-build.yml: -PlincTestBuild=<run number> -PlincTestName=<branch>) is
+        // "Linc Test" and follows the test feed (TestFeed.kt). A normal build has 0 and "".
+        val testBuild = (project.findProperty("lincTestBuild") as String?)?.toIntOrNull()?.takeIf { it > 0 } ?: 0
+        val testName = (project.findProperty("lincTestName") as String?).orEmpty().filter { it.isLetterOrDigit() || it in "-._" }
+        buildConfigField("int", "TEST_BUILD", testBuild.toString())
+        buildConfigField("String", "TEST_NAME", "\"$testName\"")
+        manifestPlaceholders["appLabel"] = if (testBuild > 0) "Linc Test" else "Linc"
     }
 
     buildTypes {

@@ -20,6 +20,16 @@ From a cloud session, use the GitHub MCP tool `actions_run_trigger` (method `run
 workflow file name as the id, ref `main`). Then confirm the run finished green, and report a
 failure with its log rather than saying it was sent. Details: `telegram-uploader/README.md`.
 
+## Test builds
+
+A `test-build/<name>` branch (or `test-<name>` tag) runs `test-build.yml`: both apps are built as
+**"Linc Test"**, numbered by the run number, posted to Telegram, and put on the **test feed**, the
+pre-release `linc-test-feed` (`test-update.json` plus the newest two builds). An installed Linc Test
+offers a newer test build as an update by itself (PC: unpacks into `%LOCALAPPDATA%\Linc\test-builds`
+and restarts; phone: Android's installer). Normal Linc never reads the feed. Code:
+`Services/TestChannel.cs`, `TestInstall.cs`, phone `service/TestFeed.kt`. Only post when the owner
+says "send".
+
 ## Releases
 
 - From a cloud session: dispatch `.github/workflows/release.yml` ("Release") on `main` with

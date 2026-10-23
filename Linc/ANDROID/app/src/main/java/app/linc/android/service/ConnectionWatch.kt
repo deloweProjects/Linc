@@ -1,6 +1,7 @@
 package app.linc.android.service
 
 import android.annotation.SuppressLint
+import app.linc.android.BuildConfig
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.BroadcastReceiver
@@ -172,7 +173,8 @@ class ConnectionWatch(private val context: Context) {
             val pkg = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
             val power = context.getSystemService(PowerManager::class.java)
             appendLine("Linc phone log — ${stamp.format(Date())}")
-            appendLine("App: ${pkg?.versionName} (${pkg?.longVersionCode})")
+            appendLine("App: ${pkg?.versionName} (${pkg?.longVersionCode})" +
+                if (BuildConfig.TEST_BUILD > 0) " · ${TestFeed.label(BuildConfig.TEST_BUILD, BuildConfig.TEST_NAME)}" else "")
             appendLine("${app.linc.android.Provenance.banner(pkg?.versionName ?: "?")} (${app.linc.android.Provenance.COPYRIGHT})")
             appendLine("Phone: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Connection: ${CompanionStateHolder.state.value}")

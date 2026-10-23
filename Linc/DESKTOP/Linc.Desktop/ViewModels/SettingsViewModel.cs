@@ -110,7 +110,8 @@ public partial class SettingsViewModel : ObservableObject
         ShellCommand = "";
         // M12 (B2.3): labelled so a beta tester can unambiguously report their version. The
         // full four-part version release.ps1 stamps: ToString(3) cut every release to "1.0.0".
-        AppVersionText = AboutVersion(System.Reflection.Assembly.GetExecutingAssembly().GetName().Version);
+        AppVersionText = AboutVersion(System.Reflection.Assembly.GetExecutingAssembly().GetName().Version)
+            + (BuildFlavor.IsTest ? $" · {BuildFlavor.TestLabel}" : "");
 
         _supervisor.StateChanged += () => _dispatcher.TryEnqueue(() =>
         {

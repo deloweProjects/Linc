@@ -19,5 +19,6 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\UpdateDecision.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\UpdateManifest.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\UpdateCheckService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\TestChannel.cs" />
   </ItemGroup>
 </Project>

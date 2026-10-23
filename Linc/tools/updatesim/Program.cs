@@ -33,7 +33,7 @@ using Linc.Desktop.Services;
 Console.WriteLine("=== Linc Auto-Update Verification Harness (updatesim) ===");
 
 var failures = new List<string>();
-const int Total = 7;
+const int Total = 8;
 
 void Check(int index, bool ok, string passText, string failText, string failure)
 {
@@ -325,6 +325,39 @@ Check(7, seededOk,
     "the committed manifest is seeded to the shipped version — nothing prompts until the owner deliberately bumps it.",
     "the committed Releases/update.json would prompt or force an update on a current build.",
     "the seeded Releases/update.json does not yield None");
+
+// ---------------------------------------------------------------------------------------
+// 8. The test feed (test builds update themselves): only a newer test build with a PC file and a
+//    hash is offered, a skipped build stays skipped, and a normal build (0) never sees the feed.
+// ---------------------------------------------------------------------------------------
+Console.WriteLine($"\n[8/{Total}] The test feed offers only a newer, verifiable test build...");
+{
+    var feed = TestManifest.TryParse("""
+        { "build": "43", "name": "linclink-b", "base": "1.0.0.18", "notes": "n",
+          "desktop": { "url": "https://github.com/x/linc-test-43-pc.zip", "sha256": "ab" },
+          "android": { "url": "https://github.com/x/linc-test-43.apk", "sha256": "cd" } }
+        """);
+    var feedRows = new (string What, bool Ok)[]
+    {
+        ("the feed parses (a build number may come as a string)", feed is { Build: 43, Name: "linclink-b" }),
+        ("test build 42 is offered 43", TestChannel.Offer(feed, 42, null) is { Build: 43 }),
+        ("test build 43 is not offered itself", TestChannel.Offer(feed, 43, null) is null),
+        ("test build 44 is not offered an older one", TestChannel.Offer(feed, 44, null) is null),
+        ("a normal build never follows the test feed", TestChannel.Offer(feed, 0, null) is null),
+        ("a skipped build stays skipped", TestChannel.Offer(feed, 42, "Test build 43 (linclink-b)") is null),
+        ("skipping an older build doesn't hide a newer one", TestChannel.Offer(feed, 42, "Test build 41 (linclink-a)") is not null),
+        ("no hash: nothing offered", TestChannel.Offer(feed! with { Desktop = new UpdateAsset("https://github.com/x/a.zip", null) }, 42, null) is null),
+        ("not https: nothing offered", TestChannel.Offer(feed! with { Desktop = new UpdateAsset("http://github.com/x/a.zip", "ab") }, 42, null) is null),
+        ("garbage parses to nothing", TestManifest.TryParse("{ not json") is null && TestChannel.Offer(null, 42, null) is null),
+        ("the label names the build", TestChannel.Label(43, "linclink-b") == "Test build 43 (linclink-b)" && TestChannel.Label(7, null) == "Test build 7"),
+        ("this harness is not a test build", !BuildFlavor.IsTest && BuildFlavor.AppName == "Linc"),
+    };
+    foreach (var (what, ok) in feedRows) Sub(ok, what);
+    Check(8, feedRows.All(r => r.Ok),
+        "a test build is offered exactly a newer test build that can be verified; normal builds never are.",
+        "the test feed offered the wrong build (see the rows above).",
+        "test feed decision");
+}
 
 // ---------------------------------------------------------------------------------------
 Console.WriteLine();

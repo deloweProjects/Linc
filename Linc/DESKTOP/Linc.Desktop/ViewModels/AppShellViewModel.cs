@@ -130,10 +130,13 @@ public partial class AppShellViewModel : ObservableObject
         // offer has to arrive here to be shown - the card lives on the shell, not on a page.
         updates.Checked += action => _dispatcher.TryEnqueue(() =>
         {
+            _testOffer = null;
             UpdateAction = action;
             UpdateVersion = _updates.Latest?.Latest;
             UpdateNotes = _updates.Latest?.Notes;
+            if (action == UpdateAction.None) _ = CheckTestFeedAsync(); // a test build: its own feed too
         });
+        if (BuildFlavor.IsTest) _ = Task.Run(() => TestInstall.Prune(registry.RootPath));
     }
 
     // ---- M17b B4: what the user sees ----
@@ -166,6 +169,11 @@ public partial class AppShellViewModel : ObservableObject
 
     public bool HasUpdateProblem => !string.IsNullOrWhiteSpace(UpdateProblem);
 
+    /// <summary>The newer test build on offer (test builds only), or null.</summary>
+    private TestManifest? _testOffer;
+
+    private static readonly HttpClient TestFeedHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
+
     private async Task CheckForUpdatesAsync()
     {
         // Everything below the gate inside CheckAsync is skipped when checking is off, so with
@@ -173,6 +181,9 @@ public partial class AppShellViewModel : ObservableObject
         var action = await _updates.CheckAsync().ConfigureAwait(false);
         if (action == UpdateAction.None)
         {
+            // A test build also follows the test feed: a newer test build is offered the same way,
+            // and a real release (above) still wins when there is one.
+            await CheckTestFeedAsync().ConfigureAwait(false);
             return;
         }
 
@@ -184,11 +195,41 @@ public partial class AppShellViewModel : ObservableObject
         });
     }
 
+    /// <summary>Test builds only: a newer build on the test feed becomes the update card's offer.</summary>
+    private async Task CheckTestFeedAsync()
+    {
+        if (!BuildFlavor.IsTest || !_registry.UpdatesEnabled)
+        {
+            return;
+        }
+        TestManifest? feed;
+        try
+        {
+            feed = TestManifest.TryParse(await TestFeedHttp.GetStringAsync(TestChannel.FeedUrl).ConfigureAwait(false));
+        }
+        catch (Exception)
+        {
+            return; // offline or no feed yet: nothing to offer
+        }
+        if (TestChannel.Offer(feed, BuildFlavor.TestBuild, _registry.SkippedUpdateVersion) is not { } offer)
+        {
+            return;
+        }
+        _dispatcher.TryEnqueue(() =>
+        {
+            _testOffer = offer;
+            UpdateAction = UpdateAction.Optional;
+            UpdateVersion = TestChannel.Label(offer.Build, offer.Name);
+            UpdateNotes = string.IsNullOrWhiteSpace(offer.Notes) ? "A newer test build of Linc." : offer.Notes;
+        });
+    }
+
     /// <summary>B4: records THIS version only, so the next release asks again.</summary>
     [RelayCommand]
     private void SkipUpdate()
     {
         _registry.SaveSkippedUpdateVersion(UpdateVersion);
+        _testOffer = null;
         UpdateAction = UpdateAction.None;
     }
 
@@ -199,6 +240,11 @@ public partial class AppShellViewModel : ObservableObject
     [RelayCommand]
     private async Task ApplyUpdateAsync()
     {
+        if (_testOffer is { } test)
+        {
+            await ApplyTestBuildAsync(test).ConfigureAwait(false);
+            return;
+        }
         if (_updates.Latest is not { } manifest)
         {
             return;
@@ -214,6 +260,32 @@ public partial class AppShellViewModel : ObservableObject
         }
 
         LaunchInstaller(path);
+    }
+
+    /// <summary>A test build: download, check the hash, unzip beside the others, start it, exit.</summary>
+    private async Task ApplyTestBuildAsync(TestManifest test)
+    {
+        _dispatcher.TryEnqueue(() => UpdateProblem = null);
+        var asManifest = new UpdateManifest($"test-{test.Build}", null, test.Notes, test.Desktop, null);
+        var (ok, path, message) = await _updates.DownloadAndVerifyAsync(asManifest, Path.GetTempPath()).ConfigureAwait(false);
+        if (!ok || path is null)
+        {
+            _dispatcher.TryEnqueue(() => UpdateProblem = message);
+            return;
+        }
+        var (exe, problem) = await Task.Run(() => TestInstall.Unpack(path, _registry.RootPath, test.Build)).ConfigureAwait(false);
+        if (exe is null)
+        {
+            _dispatcher.TryEnqueue(() => UpdateProblem = problem);
+            return;
+        }
+        var log = App.Services.GetRequiredService<ILogService>();
+        log.Log(LogLevel.Info, $"Updating to {TestChannel.Label(test.Build, test.Name)} from {BuildFlavor.TestLabel}.");
+        Task.Run(() => PcVoiceAccess.RestoreAllMics(log)).Wait(TimeSpan.FromSeconds(3));
+        Task.Run(() => PcTabletMode.RestorePending(log)).Wait(TimeSpan.FromSeconds(3));
+        Task.Run(() => App.Services.GetRequiredService<IMirrorService>().Dispose()).Wait(TimeSpan.FromSeconds(8));
+        TestInstall.Start(exe);
+        Environment.Exit(0);
     }
 
     /// <summary>
@@ -357,8 +429,8 @@ public partial class AppShellViewModel : ObservableObject
     public event Action<bool>? TrayStateChanged;
 
     public string TrayText => _supervisor.State == LinkState.Connected
-        ? $"Linc — connected to {_supervisor.Device?.Model}"
-        : $"Linc — {StateWord}";
+        ? $"{BuildFlavor.AppName} — connected to {_supervisor.Device?.Model}"
+        : $"{BuildFlavor.AppName} — {StateWord}";
 
     /// <summary>The tray menu's phone line: "Pixel 7 — connected" (a label, not a command).</summary>
     public string TrayPhoneText => _supervisor.State == LinkState.Connected
