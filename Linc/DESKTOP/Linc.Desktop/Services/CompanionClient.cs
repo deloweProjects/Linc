@@ -1080,8 +1080,8 @@ public sealed class CompanionClient : IDisposable
     }
 
     private const string CompanionUnreachable =
-        "Linc can't reach the companion app on your phone. Open Linc on the phone and " +
-        "tap “Start companion service”, then try again.";
+        "Linc can't reach the Linc app on your phone. Open Linc on the phone (if it says it's " +
+        "stopped, tap the PC card, then Start Linc) and try again.";
 }
 
 /// <summary>

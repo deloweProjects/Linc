@@ -111,15 +111,29 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
         "android.permission.BLUETOOTH_ADVERTISE",
     ];
 
-    public async Task<bool> IsInstalledAsync(DeviceData device, CancellationToken ct)
+    public async Task<bool> IsInstalledAsync(DeviceData device, CancellationToken ct) =>
+        await InstalledStateAsync(device, ct) != false;
+
+    /// <summary>
+    /// True installed, false absent, null unknown: an adb that dropped mid-command (an error, or no
+    /// end marker) proves nothing, and used to read as "absent", offering to install Linc over a
+    /// running Linc (build A's field test, twice). See <see cref="LinkBrain.CompanionInstalled"/>.
+    /// </summary>
+    private async Task<bool?> InstalledStateAsync(DeviceData device, CancellationToken ct)
     {
-        var output = await ShellAsync(device, $"pm list packages {ProtocolConstants.CompanionPackage}", ct);
-        return output.Contains(ProtocolConstants.CompanionPackage, StringComparison.Ordinal);
+        var output = await ShellAsync(device, $"pm list packages {ProtocolConstants.CompanionPackage}; echo \"pm-exit:$?\"", ct);
+        return LinkBrain.CompanionInstalled(output);
     }
 
     public async Task<bool> EnsureReadyAsync(DeviceData device, CancellationToken ct)
     {
-        var installed = await IsInstalledAsync(device, ct);
+        var state = await InstalledStateAsync(device, ct);
+        if (state is null)
+        {
+            log.Log(LogLevel.Info, "Couldn't tell whether Linc is installed on the phone (adb didn't answer cleanly); not offering to install it.");
+            return false;
+        }
+        var installed = state.Value;
         if (!installed && SkipCompanionInstall && onboarding.IsActive)
         {
             log.Log(LogLevel.Warn, "The phone doesn't seem to have the Linc app, but you asked not to install it. " +

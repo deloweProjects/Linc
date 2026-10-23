@@ -310,8 +310,15 @@ public sealed class ConnectionManager(
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(openCt);
                     timeout.CancelAfter(TimeSpan.FromSeconds(8));
                     var arrival = tls.AwaitChannelAsync(channel, token, timeout.Token);
-                    await live.RequestChannelOpenAsync(channel, timeout.Token);
-                    return await arrival;
+                    try
+                    {
+                        await live.RequestChannelOpenAsync(channel, timeout.Token);
+                        return await arrival;
+                    }
+                    finally
+                    {
+                        timeout.Cancel(); // a request that failed must not leave its waiter behind (DialBackWaiters)
+                    }
                 };
             }
             if (!hello.Resumed)
@@ -743,8 +750,15 @@ public sealed class ConnectionManager(
         // Arm the waiter BEFORE asking, or a phone that dials back quickly arrives before
         // anything is registered to receive it.
         var arrival = tls.AwaitChannelAsync(channel, token, timeout.Token);
-        await companion.RequestChannelOpenAsync(channel, timeout.Token);
-        return await arrival;
+        try
+        {
+            await companion.RequestChannelOpenAsync(channel, timeout.Token);
+            return await arrival;
+        }
+        finally
+        {
+            timeout.Cancel(); // a request that failed must not leave its waiter behind (DialBackWaiters)
+        }
     }
 
     public Task SendNotificationActionAsync(string key, int index, CancellationToken ct)
@@ -825,6 +839,7 @@ public sealed class ConnectionManager(
         PcDialled = pcDialled;
         if (old is not null && fresh)
         {
+            DropDialBacks(old);
             old.Dispose();
         }
         // v32: the transport may have died, or the phone said where it listens, before the
@@ -882,8 +897,21 @@ public sealed class ConnectionManager(
         }
     }
 
+    /// <summary>A link that ends takes its pending channel dial-backs with it.</summary>
+    private void DropDialBacks(CompanionClient companion)
+    {
+        if (companion.SessionToken is { } token && token != _companion?.SessionToken)
+        {
+            tls.DropChannelWaiters(token);
+        }
+    }
+
     public void Disconnect()
     {
+        if (_companion is { SessionToken: { } token })
+        {
+            tls.DropChannelWaiters(token);
+        }
         _companion?.Dispose();
         _companion = null;
         Current = null;

@@ -52,6 +52,28 @@ Off (either side) means protocol v31 and exactly the old paths. A v31 phone or P
   installer's firewall rule has its own name. linclink.md §13 lists everything, plus the one thing left: a
   phone paired only by QR code starts a fresh session (pages reconnect once) on its first cable connection.
 
+## Field test of build A (2026-10-23, Pixel 7 + Windows 11): what went wrong, and the fixes
+
+What worked on your hardware: re-pairing after a reinstall, the PC dialling the phone on 46002 (32–641 ms),
+beacon replies, sessions carrying on across routes ("nothing lost"), the first USB start (764 ms).
+
+What didn't, and what changed (each rule checked in `linclinksim`, "the field test of build A"):
+
+1. **Stuck in a 5 s loop ("Read timed out") for ten minutes.** Two things added up past the phone's 5 s wait
+   for the PC's hello: channel dial-back waiters left behind by a failed request (every phone dial-in first
+   waited 3 s for a header), and the supervisor's gate held by a 15 s app repair over a flapping cable. Now a
+   waiter ends by itself (its caller giving up, 10 s at most, or its link ending; `DialBackWaiters`), the
+   header wait is 1.5 s, and with the new engine a direct link waits at most 1 s for the gate before the
+   attempt holding it is called off. Worst case before the PC's hello: 3.5 s.
+2. **USB flapping after "fixed port 5555".** `adb tcpip 5555` restarts the phone's adb, which cut USB and
+   wireless debugging. Never done with the new engine, and never while any ADB route is in use.
+3. **"Install Linc?" while Linc was running.** An adb that dropped mid-check read as "not installed". Now only a
+   clean answer from the phone's package manager counts; anything else offers nothing.
+4. **Old words.** "…tap 'Start companion service'" is now "Open Linc on the phone (if it says it's stopped, tap
+   the PC card, then Start Linc)"; the log's "The the USB cable under the link ended" reads properly.
+5. **A forgotten address retried all night** (every 66 s, wireless debugging off on that network). It now waits
+   30 min, or until the PC's network changes.
+
 ## What is NOT verified (needs your hardware)
 
 Nothing below has run on a real phone or PC. Each is written against the documented APIs and compiled,
@@ -106,7 +128,12 @@ Logs and phone Settings › Logs › Copy log, and send both.
 6. **Blip.** While connected over Wi-Fi, turn the phone's Wi-Fi off for 3 seconds and back on. Nothing
    should show on the PC.
 7. **Old way.** Turn the new engine off on the PC: it reconnects the way it always did.
+8. **Cable and Wi-Fi together, ten minutes** (the field-test case). Phone on the cable and the same Wi-Fi, leave
+   it. Home stays Connected; the PC's log has no "fixed port 5555" line and no endless "Read timed out" on the
+   phone; USB doesn't come and go.
+9. **No false install.** With Linc installed on the phone, the PC never asks to install it, even while the
+   cable is plugged and unplugged.
 
 ## Paste back to the other session
 
-> LincLink done on `claude/linc-link` @ a157459 (code; this note is the commit after it). Build green. Read Vibe/claude-notes/linc-link/DONE.md.
+> LincLink done on `claude/linc-link` @ <commit>. Build green. Read Vibe/claude-notes/linc-link/DONE.md.

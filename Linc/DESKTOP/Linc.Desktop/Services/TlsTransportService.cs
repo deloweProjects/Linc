@@ -54,6 +54,9 @@ public interface ITlsTransportService : IDisposable
     /// </summary>
     Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct);
 
+    /// <summary>The link with this session token ended: its dial-backs will never come.</summary>
+    void DropChannelWaiters(string sessionToken);
+
     /// <summary>This PC's certificate (DER), for the pairing proof and the QR code's hash.</summary>
     byte[] CertificateDer { get; }
 
@@ -109,8 +112,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
     /// (app icons over the bulk channel): one dial-back matched, the rest arrived to an empty slot,
     /// were taken for new control connections and dropped, and their fetches hung for 8 s each.
     /// </summary>
-    private readonly ConcurrentDictionary<(int Channel, string Token), ConcurrentQueue<TaskCompletionSource<Stream>>> _channelWaiters = new();
-    private int _waiting;
+    private readonly DialBackWaiters<Stream> _channelWaiters = new();
 
     private TcpListener? _listener;
     private ServiceDiscovery? _advertiser;
@@ -438,26 +440,12 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         }
     }
 
-    public Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct)
-    {
-        var waiter = new TaskCompletionSource<Stream>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _channelWaiters.GetOrAdd((channel, sessionToken), _ => new()).Enqueue(waiter);
-        Interlocked.Increment(ref _waiting);
-        // A cancelled waiter stays queued but completed; TakeWaiter skips it.
-        ct.Register(() => { if (waiter.TrySetCanceled(ct)) Interlocked.Decrement(ref _waiting); });
-        return waiter.Task;
-    }
+    // Each waiter ends by itself (its caller giving up, 10 s at most, or its session ending): a
+    // stale one made every control dial-in wait out the header read (DialBackWaiters).
+    public Task<Stream> AwaitChannelAsync(int channel, string sessionToken, CancellationToken ct) =>
+        _channelWaiters.Add(channel, sessionToken, ct);
 
-    /// <summary>The oldest still-waiting request for this dial-back, if any.</summary>
-    private TaskCompletionSource<Stream>? TakeWaiter(int channel, string token)
-    {
-        if (!_channelWaiters.TryGetValue((channel, token), out var queue)) return null;
-        while (queue.TryDequeue(out var waiter))
-        {
-            if (!waiter.Task.IsCompleted) return waiter;
-        }
-        return null;
-    }
+    public void DropChannelWaiters(string sessionToken) => _channelWaiters.DropSession(sessionToken);
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
     {
@@ -529,21 +517,17 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             // Channel dial-backs announce themselves with a header frame immediately;
             // control connections stay silent (the desktop speaks first). Only try the
             // read when a dial-back is actually expected.
-            if (Volatile.Read(ref _waiting) > 0)
+            if (_channelWaiters.Pending > 0)
             {
                 var header = await TryReadHeaderAsync(ssl);
                 if (header is not null)
                 {
                     var channel = (int?)header["channel"] ?? -1;
                     var token = (string?)header["sessionToken"] ?? "";
-                    if (TakeWaiter(channel, token) is { } waiter)
+                    if (channel is VideoChannel or AudioChannel) LimitSendBuffer(client);
+                    if (_channelWaiters.Complete(channel, token, ssl))
                     {
-                        if (channel is VideoChannel or AudioChannel) LimitSendBuffer(client);
-                        if (waiter.TrySetResult(ssl))
-                        {
-                            Interlocked.Decrement(ref _waiting);
-                            return; // ownership handed to the waiter
-                        }
+                        return; // ownership handed to the waiter
                     }
                     ssl.Dispose(); // unknown/stale dial-back
                     return;
@@ -554,7 +538,7 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
             // no telling repeat control dials from dial-backs that missed their waiter.
             log.Log(LogLevel.Info,
                 $"Phone connected directly (no ADB) from {client.Client.RemoteEndPoint}" +
-                (_channelWaiters.IsEmpty ? "" : $"; {_channelWaiters.Count} channel dial-back(s) pending but this connection sent no header"));
+                (_channelWaiters.Pending == 0 ? "" : $"; {_channelWaiters.Pending} channel dial-back(s) pending but this connection sent no header"));
             // Read the endpoint here, while the TcpClient is still in scope — this is the only
             // point in the process where it is reachable at all (M13b §2, v18).
             ControlArrived?.Invoke(ssl, client.Client.RemoteEndPoint as IPEndPoint);
@@ -593,11 +577,15 @@ public sealed class TlsTransportService(IDeviceRegistry registry, ILogService lo
         try { client.Client.SendBufferSize = 64 * 1024; } catch { /* keep the default */ }
     }
 
-    /// <summary>Reads one JSON frame if it arrives within 3 s; null means "control connection".</summary>
+    /// <summary>
+    /// Reads one JSON frame if it arrives within <see cref="LinkBrain.DialBackHeaderWait"/>; null
+    /// means "control connection". A dial-back sends its header at once, and the phone gives a
+    /// control link only 5 s for the PC's hello, so this wait must stay short.
+    /// </summary>
     private static async Task<JsonObject?> TryReadHeaderAsync(SslStream ssl)
     {
         var readTask = Framing.ReadAsync(ssl, CancellationToken.None);
-        var winner = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(3)));
+        var winner = await Task.WhenAny(readTask, Task.Delay(LinkBrain.DialBackHeaderWait));
         if (winner != readTask)
         {
             return null; // silence ⇒ control (no bytes were consumed)

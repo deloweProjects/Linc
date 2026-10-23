@@ -218,6 +218,10 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
   - Known and left: the first cable connection of a phone paired only by QR code starts a fresh session
     instead of resuming its Wi-Fi one (pages reconnect once), because the cable's new record has no pinned
     certificate yet; the two records merge on that connect.
+- **After the field test of build A (2026-10-23)**: dial-back waiters end by themselves (`DialBackWaiters`); the
+  header wait is 1.5 s and a direct link waits at most 1 s for the supervisor's gate before the attempt holding
+  it is called off (the PC's hello within 3.5 s of the phone's 5 s); no `adb tcpip` with the engine on or any ADB
+  route in use; "not installed" only on a clean `pm` answer; a forgotten address is spotted again after 30 min.
 - Not in A (as planned): Bluetooth (B), wireless-debugging re-arm after a reboot (B), Wi-Fi Direct and USB
   tethering (C).
 

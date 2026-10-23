@@ -16,6 +16,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\NetMemory.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\RouteRace.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\LinkBrain.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincLink\DialBackWaiters.cs" />
     <!-- The PC's real protocol client, run against a fake v32 phone over in-memory links (ClientSim.cs). -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\CompanionClient.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LincException.cs" />

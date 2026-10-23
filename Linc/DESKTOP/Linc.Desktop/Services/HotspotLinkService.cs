@@ -393,7 +393,17 @@ public sealed class HotspotLinkService(
             // restarts adbd, which cut a friend's brand-new link 10 s after first setup (D-078).
             if (port != HotspotConnector.AdbTcpPort)
             {
-                if (connection.Current?.Transport == LinkTransport.AdbWireless)
+                // Build A's field test: the move cut the USB link too, and USB flapped for the rest
+                // of the session. adbd restarting cuts every ADB route, so: never with the new
+                // engine (its direct link needs no fixed port), never with any ADB route in use.
+                var adbInUse = connection.Current?.Transport is LinkTransport.AdbUsb or LinkTransport.AdbWireless || connection.HasAdb;
+                if (!LinkBrain.MayMoveAdbToFixedPort(registry.LincLinkEnabled, adbInUse))
+                {
+                    log.Log(LogLevel.Info, registry.LincLinkEnabled
+                        ? $"Leaving {result.Endpoint} on its own port: moving it restarts the phone's adb, and the new connection engine doesn't need it."
+                        : $"Not moving {result.Endpoint} to port {HotspotConnector.AdbTcpPort} now: an ADB link to the phone is in use, and the move restarts it.");
+                }
+                else if (connection.Current?.Transport == LinkTransport.AdbWireless)
                 {
                     log.Log(LogLevel.Info, $"Not moving {result.Endpoint} to port {HotspotConnector.AdbTcpPort} now: the link to the phone runs over wireless debugging, and the move restarts it.");
                 }

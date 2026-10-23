@@ -60,6 +60,53 @@ Console.WriteLine("--- session numbering");
 }
 
 // ---------------------------------------------------------------------------------------------
+Console.WriteLine("--- the field test of build A (2026-10-23)");
+{
+    // 1a. Dial-back waiters end by themselves. The bug: a request failed before its 8 s timer ran,
+    // its token source was disposed, the waiter stayed forever, and every control dial-in then
+    // waited out the header read first.
+    var waiters = new DialBackWaiters<string>();
+    var orphanSource = new CancellationTokenSource();
+    var orphan = waiters.Add(3, "tok", orphanSource.Token, TimeSpan.FromMilliseconds(200));
+    orphanSource.Dispose(); // what the failed request did
+    True(waiters.Pending == 1, "a dial-back waiter is pending while it waits");
+    await Task.WhenAny(orphan, Task.Delay(2000));
+    True(waiters.Pending == 0 && orphan.IsCanceled, "a waiter whose caller vanished ends by itself (10 s at most in the app)");
+    var a = waiters.Add(5, "s1", CancellationToken.None);
+    var b = waiters.Add(2, "s1", CancellationToken.None);
+    var c = waiters.Add(2, "s2", CancellationToken.None);
+    waiters.DropSession("s1");
+    True(a.IsCanceled && b.IsCanceled && !c.IsCompleted && waiters.Pending == 1, "a link that ends drops its own waiters, and only those");
+    True(waiters.Complete(2, "s2", "stream") && c.Result == "stream" && waiters.Pending == 0, "a dial-back still goes to its waiter");
+    True(!waiters.Complete(2, "s2", "late"), "...and a second one for it finds none");
+
+    // 1b. The phone gives a link 5 s to hear the PC; the PC's worst case now fits inside.
+    True(LinkBrain.PcHelloWorstCase < LinkBrain.PhoneHelloWait,
+        $"the PC's hello leaves within {LinkBrain.PcHelloWorstCase.TotalSeconds:0.0} s, inside the phone's {LinkBrain.PhoneHelloWait.TotalSeconds:0} s (was 3 s header + a 15 s repair)");
+
+    // 2. adb tcpip never with the new engine, never with an ADB route in use.
+    True(!LinkBrain.MayMoveAdbToFixedPort(engineOn: true, anyAdbRouteInUse: false) &&
+         !LinkBrain.MayMoveAdbToFixedPort(engineOn: false, anyAdbRouteInUse: true) &&
+         LinkBrain.MayMoveAdbToFixedPort(engineOn: false, anyAdbRouteInUse: false),
+        "adbd is only restarted for a fixed port with the engine off and no ADB route in use");
+
+    // 3. Only a clean "not installed" offers an install.
+    True(LinkBrain.CompanionInstalled("package:app.linc.android\npm-exit:0") == true, "pm listing Linc: installed");
+    True(LinkBrain.CompanionInstalled("pm-exit:0") == false, "pm ran and listed nothing: absent (an install may be offered)");
+    True(LinkBrain.CompanionInstalled("") is null && LinkBrain.CompanionInstalled("error: device offline") is null &&
+         LinkBrain.CompanionInstalled("cmd: Failure calling service package\npm-exit:1") is null,
+        "adb dropping or pm failing is unknown, never \"absent\": no install offer over a running Linc");
+
+    // 5. A forgotten address isn't re-spotted every minute.
+    True(LinkBrain.SpotRetry(forgotten: true) >= TimeSpan.FromMinutes(30) && LinkBrain.SpotRetry(forgotten: false) == TimeSpan.FromSeconds(60),
+        "an address forgotten after five failures is spotted again after 30 min, not 60 s");
+
+    // 4. Plain words.
+    var line = LinkBrain.RouteEndedLine("the USB cable", LinkBrain.LingerGrace);
+    True(!line.Contains("The the") && !line.Contains("The a ") && line.Contains("the USB cable"), $"the route-ended line reads right: \"{line}\"");
+}
+
+// ---------------------------------------------------------------------------------------------
 Console.WriteLine("--- a session riding transports that die mid-stream");
 {
     // Requests from the PC, each answered by the phone; unsolicited events from the phone. The

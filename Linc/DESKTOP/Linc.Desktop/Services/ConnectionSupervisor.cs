@@ -565,7 +565,8 @@ public sealed class ConnectionSupervisor(
     private readonly CancellationTokenSource _spotCts = new();
     private readonly Dictionary<string, DateTime> _spottedAt = new(StringComparer.Ordinal);
     private static readonly TimeSpan SpotInterval = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan SpotRetry = TimeSpan.FromSeconds(60);
+    /// <summary>Hosts whose wireless-debugging address was just forgotten (failed five times): spotted again only after a long pause.</summary>
+    private readonly HashSet<string> _forgottenHosts = new(StringComparer.OrdinalIgnoreCase);
 
     private static string? HostOf(string address)
     {
@@ -615,7 +616,10 @@ public sealed class ConnectionSupervisor(
                 if (match?.Serial != active) continue;
                 lock (_spottedAt)
                 {
-                    if (_spottedAt.TryGetValue(address, out var last) && DateTime.UtcNow - last < SpotRetry) break;
+                    // An address forgotten for failing five times (wireless debugging off on this
+                    // network) waits 30 min, not 60 s: build A's field test retried one all night.
+                    var forgotten = _forgottenHosts.Contains(address);
+                    if (_spottedAt.TryGetValue(address, out var last) && DateTime.UtcNow - last < LinkBrain.SpotRetry(forgotten)) break;
                     _spottedAt[address] = DateTime.UtcNow;
                 }
                 log.Log(LogLevel.Info, $"Spotted {match.Model} on this network at {address} (by its Wi-Fi address); connecting.");
@@ -1054,7 +1058,20 @@ public sealed class ConnectionSupervisor(
     private async Task AdoptDirectAsync(System.IO.Stream stream, System.Net.IPEndPoint? peer, bool pcDialled)
     {
         {
-            await _gate.WaitAsync();
+            // The phone gives a direct link (either way round) 5 s to hear the PC's hello. With the
+            // new engine an attempt still holding the gate (an app repair over a flapping cable, up
+            // to 15 s) is called off after a moment, so a direct link is never lost behind it (build
+            // A's field test looped "Read timed out" for ten minutes). The cable's poll tries again.
+            if (!Engine)
+            {
+                await _gate.WaitAsync();
+            }
+            else if (!await _gate.WaitAsync(LinkBrain.AdoptGateWait))
+            {
+                log.Log(LogLevel.Info, "The phone is on a direct link while another connect is still going; calling that one off so the phone hears this PC in time.");
+                CancelAttempt();
+                await _gate.WaitAsync();
+            }
             try
             {
                 // TLS is the lowest-priority transport, so ShouldEngage adopts it only when idle
@@ -1321,8 +1338,7 @@ public sealed class ConnectionSupervisor(
                 var lingers = why == LinkSignal.TransportLost && Engine && connection.HasResumableSession;
                 if (lingers)
                 {
-                    log.Log(LogLevel.Info, $"The {Describe(Device?.Transport ?? LinkTransport.DirectTls)} under the link ended; " +
-                        $"keeping the session for {LinkBrain.LingerGrace.TotalSeconds:0} s while Linc finds another way to the phone.");
+                    log.Log(LogLevel.Info, LinkBrain.RouteEndedLine(Describe(Device?.Transport ?? LinkTransport.DirectTls), LinkBrain.LingerGrace));
                 }
                 if (lingers || LinkPolicy.OnLiveLinkLost(why, IsWifiPossible()) == LostLink.HandOff)
                 {
@@ -1626,8 +1642,14 @@ public sealed class ConnectionSupervisor(
         }
     }
 
-    private void OnNetworkAddressChanged(object? sender, EventArgs e) =>
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        lock (_spottedAt)
+        {
+            _forgottenHosts.Clear(); // another network: its addresses are worth a try again
+        }
         Nudge(LinkSignal.NetworkChanged, "The PC's network changed");
+    }
 
     private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
     {
@@ -1829,6 +1851,13 @@ public sealed class ConnectionSupervisor(
             registry.SaveLastHostPort(null);
         }
         log.Log(LogLevel.Info, $"Forgot {address}: it failed {EndpointBackoff.ForgetAfter} times in a row, so it is probably an old address.");
+        if (HostOf(address) is { } host)
+        {
+            lock (_spottedAt)
+            {
+                _forgottenHosts.Add(host);
+            }
+        }
     }
 
     /// <summary>
