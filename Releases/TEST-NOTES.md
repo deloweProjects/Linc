@@ -1,4 +1,7 @@
 # What's new in the current test release (shown in the Telegram post; plain lines, no headings below)
+• The phone and the PC now always agree on how they are connected (USB or Wi-Fi) and whether ADB is up
+• ADB turns itself back on: after a restart or a Wi-Fi change Linc switches wireless debugging on again (needs the cable once, if it says so)
+• Tools says "No ADB" when the phone is connected without it, and gets ADB back by itself
 • Connection fixes from your test: no more endless connect-and-drop loop, the cable no longer breaks after a Wi-Fi switch, no false "install Linc?" prompt, clearer messages
 • Test builds are now "Linc Test" and update themselves: when a newer test build is out, Linc Test offers it (PC restarts into it; the phone asks Android to update). No more reinstalling from Telegram
 • New connection engine (on by default; Settings › Connection on both apps turns it off): the PC and phone find each other faster on any Wi-Fi, the PC can dial the phone itself, and a short drop or a cable pulled with Wi-Fi around doesn't show
