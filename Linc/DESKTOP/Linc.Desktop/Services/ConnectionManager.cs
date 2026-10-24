@@ -112,7 +112,7 @@ public interface IConnectionManager
     bool IsSessionDetached { get; }
 
     /// <summary>v32: tell the phone the link state this PC sees (route, ADB); only when it changed. No-op below v32.</summary>
-    Task SendLinkStateAsync(string route, bool adb, string? adbVia);
+    Task SendLinkStateAsync(string route, bool adb, string? adbVia, bool arming = false);
 
     /// <summary>How ADB reaches the live phone right now, whatever the link rides on: "cable", "wireless" or null.</summary>
     Task<string?> AdbViaAsync(CancellationToken ct);
@@ -208,15 +208,15 @@ public sealed class ConnectionManager(
 
     public bool IsSessionDetached => _companion is { IsDetached: true };
 
-    private (CompanionClient Client, string Route, bool Adb, string? Via)? _sentLinkState;
+    private (CompanionClient Client, string Route, bool Adb, string? Via, bool Arming)? _sentLinkState;
 
-    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia)
+    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia, bool arming = false)
     {
         if (_companion is not { HasLinkSession: true } companion)
         {
             return;
         }
-        var state = (companion, route, adb, adbVia);
+        var state = (companion, route, adb, adbVia, arming);
         if (_sentLinkState == state)
         {
             return; // the phone already shows exactly this
@@ -224,7 +224,7 @@ public sealed class ConnectionManager(
         _sentLinkState = state;
         try
         {
-            await companion.SendLinkStateAsync(route, adb, adbVia, CancellationToken.None);
+            await companion.SendLinkStateAsync(route, adb, adbVia, CancellationToken.None, arming);
         }
         catch (Exception ex) when (ex is LincException or IOException or InvalidOperationException)
         {

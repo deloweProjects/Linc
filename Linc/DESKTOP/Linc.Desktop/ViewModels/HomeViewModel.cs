@@ -1596,7 +1596,9 @@ RefreshGradient();
     public bool ShowAdbChip => _registry.LincLinkEnabled && _registry.PairedSerial is not null;
     public bool AdbUp => _supervisor.AdbUp;
     public bool AdbDown => !_supervisor.AdbUp;
-    public string AdbChipTip => _supervisor.AdbUp
+    public string AdbChipTip => _supervisor.AdbArming
+        ? "Turning on ADB: Linc asked the phone to switch wireless debugging back on."
+        : _supervisor.AdbUp
         ? "ADB is up too: Mirror, Tools and fast file copies are ready."
         : "ADB isn't up. Everything else works; Mirror, Tools and fast file copies need the USB cable or wireless debugging.";
 

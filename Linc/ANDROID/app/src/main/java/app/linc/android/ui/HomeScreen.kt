@@ -108,6 +108,7 @@ fun HomeScreen(
         connection = connection,
         transport = transportLabel(context, link, pcLink),
         adb = pcLink?.adb,
+        adbArming = pcLink?.arming == true,
         exempt = exempt,
         everPaired = paired || connection is ServiceState.Connected,
         media = media,
@@ -129,6 +130,7 @@ private fun HomeContent(
     transport: String?,
     /** The PC's ADB state (v32 link.state), or null when the PC hasn't said (older PCs). */
     adb: Boolean? = null,
+    adbArming: Boolean = false,
     exempt: Boolean,
     everPaired: Boolean,
     media: PcMedia?,
@@ -182,7 +184,7 @@ private fun HomeContent(
                 }
             }
             item("hero") {
-                ConnectionHero(connection, transport, adb, onClick = { connectionSheet = true }, onMirror = onMirror)
+                ConnectionHero(connection, transport, adb, adbArming, onClick = { connectionSheet = true }, onMirror = onMirror)
             }
             if (connected != null) {
                 item("pc-stats") { PcStatsRow(onOpen = { onNavigate(HomeDestination.Pc) }) }
@@ -272,7 +274,7 @@ private fun HomeContent(
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ConnectionHero(connection: ServiceState, transport: String?, adb: Boolean?, onClick: () -> Unit, onMirror: () -> Unit) {
+private fun ConnectionHero(connection: ServiceState, transport: String?, adb: Boolean?, adbArming: Boolean, onClick: () -> Unit, onMirror: () -> Unit) {
     val connected = connection as? ServiceState.Connected
     val (label, quality) = when (connection) {
         is ServiceState.Connected -> "Connected" to Quality.Good
@@ -317,7 +319,9 @@ private fun ConnectionHero(connection: ServiceState, transport: String?, adb: Bo
                     StatusChip(label, quality)
                     if (connected != null && transport != null) StatusChip(if (usb) "USB" else transport.removePrefix("Wi-Fi ").let { if (it.startsWith("(")) "Wi-Fi" else it }, Quality.Good)
                     // The same ADB chip as the PC's, from what the PC says (link.state).
-                    if (connected != null && adb != null) StatusChip("ADB", if (adb) Quality.Good else Quality.Off)
+                    if (connected != null && adb != null) {
+                        StatusChip(if (adbArming) "ADB…" else "ADB", if (adb) Quality.Good else if (adbArming) Quality.Fair else Quality.Off)
+                    }
                 }
             }
         }

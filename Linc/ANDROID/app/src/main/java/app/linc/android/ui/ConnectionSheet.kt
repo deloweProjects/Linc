@@ -78,6 +78,8 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
                 }) },
                 // What the PC says about ADB (v32 link.state); absent from an older PC.
                 pcLink?.takeIf { connected != null }?.let { p -> { s -> SettingsRow("ADB", s, LincSymbols.Usb, value = when {
+                    p.arming -> "Turning on…"
+                    !p.adb && !app.linc.android.service.AdbArming.isPermissionHeld(context) -> "Not up · grant needed: plug in the cable once"
                     !p.adb -> "Not up"
                     p.adbVia == "cable" -> "Up, over the cable"
                     p.adbVia == "wireless" -> "Up, over wireless debugging"

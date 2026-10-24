@@ -821,7 +821,7 @@ as before.
 | `link.where` | phone → desktop | `{addrs: [IPv4…], port: 46002}` | Where the PC can dial this phone (its Wi-Fi/Ethernet/tethering addresses), sent on every session start and resume. |
 | `link.pair` | phone → desktop, first frame | `{proof: base64, model}` → `{ok, name, pcId}` | Pairing by QR code, below. Accepted only inside the PC's pairing window. |
 | `link.noop` | either way, numbered | `{}` | Does nothing; holds the `seq` of a request given up on (above). |
-| `link.state` | desktop → phone, numbered | `{route: "usb"\|"wifi"\|"direct", adb: bool, adbVia?: "cable"\|"wireless"}` | How the two are connected, as the PC sees it: sent on connect and on every change. The phone shows exactly this ("Connected over USB" for `usb`, else "over Wi-Fi", plus the ADB chip); anything it doesn't understand is shown as nothing. `usb` includes a direct link riding adb reverse. |
+| `link.state` | desktop → phone, numbered | `{route: "usb"\|"wifi"\|"direct", adb: bool, adbVia?: "cable"\|"wireless", arming?: true}` | How the two are connected, as the PC sees it: sent on connect and on every change. `arming`: the PC just asked the phone to turn wireless debugging on (`adb.arm`, now / 30 s / 2 min / every 10 min while a v32 session has no ADB route) and ADB isn't up yet: "turning on…". The phone shows exactly this ("Connected over USB" for `usb`, else "over Wi-Fi", plus the ADB chip); anything it doesn't understand is shown as nothing. `usb` includes a direct link riding adb reverse. |
 
 ### The phone's listener (TCP 46002)
 

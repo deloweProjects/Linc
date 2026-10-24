@@ -121,6 +121,11 @@ Console.WriteLine("--- one source of truth for the link state (test build B)");
         "the route: the cable (also a direct link over adb reverse), wireless debugging, or Linc's own Wi-Fi link");
     True(LinkBrain.RouteCaption("usb") == "Connected over USB" && LinkBrain.RouteCaption("direct") == "Connected over Wi-Fi" && LinkBrain.RouteCaption("wifi") == "Connected over Wi-Fi",
         "the PC's words for each route (the phone maps the same: USB cable / Wi-Fi)");
+    var schedule = Enumerable.Range(0, 6).Select(LinkBrain.ArmDelay).ToList();
+    True(schedule[0] == TimeSpan.Zero && schedule[1] == TimeSpan.FromSeconds(30) && schedule[2] == TimeSpan.FromMinutes(2) &&
+         schedule.Skip(3).All(d => d == TimeSpan.FromMinutes(10)),
+        "connected without ADB: the PC asks the phone to turn wireless debugging on now, then 30 s, 2 min, every 10 min");
+    True(LinkBrain.ArmWindow < LinkBrain.ArmDelay(1), "\"turning on…\" ends before the next ask");
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -85,6 +85,12 @@ green, and grey again when adb drops it. Checked in `linclinksim` ("one source o
 changes ends on what the PC sent last, nothing shows before the first, a change sent while the route was
 down arrives on the resume, an older phone gets nothing; the phone's rule in `PcLinkTest`.
 
+Second report, same build: "connected to Wi-Fi but no ADB, all pairing is done, so why". Android had
+switched wireless debugging off. Now the engine turns it back on: the PC asks the phone (now, 30 s, 2 min,
+every 10 min while connected without ADB), and the phone does it itself after a restart or on joining a
+Wi-Fi where it was used before. Both ADB chips say "turning on…" meanwhile; without the one-time grant the
+phone's Connection sheet says "grant needed: plug in the cable once".
+
 ## What is NOT verified (needs your hardware)
 
 Nothing below has run on a real phone or PC. Each is written against the documented APIs and compiled,
@@ -146,6 +152,8 @@ Logs and phone Settings › Logs › Copy log, and send both.
    cable is plugged and unplugged.
 10. **Both screens agree.** Plug the cable in, unplug it, turn wireless debugging on and off. Each time, the
     phone's Home says the same as the PC's ("Connected over USB" / "over Wi-Fi") and both ADB chips match.
+11. **ADB comes back by itself.** Connected over Wi-Fi, turn wireless debugging off on the phone (or restart the
+    phone). Within a few seconds both ADB chips say "turning on…", then green, with no taps.
 
 ## Paste back to the other session
 

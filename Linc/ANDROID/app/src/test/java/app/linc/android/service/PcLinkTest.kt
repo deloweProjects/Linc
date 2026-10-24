@@ -36,4 +36,18 @@ class PcLinkTest {
         CompanionStateHolder.setPcLink(null)
         assertNull(CompanionStateHolder.pcLink.value)
     }
+
+    @Test fun turningOnOnlyWhileAdbIsDown() {
+        assertEquals(true, CompanionStateHolder.PcLink.from("direct", false, null, true)!!.arming)
+        assertEquals(false, CompanionStateHolder.PcLink.from("usb", true, "cable", true)!!.arming)
+        assertEquals(false, from("direct", false, null)!!.arming)
+    }
+
+    @Test fun subnetIsTheNetworkNotThePhone() {
+        val a = app.linc.android.service.link.LinkBrain.subnetOf(byteArrayOf(10, 5, 48, 24), 24)
+        val b = app.linc.android.service.link.LinkBrain.subnetOf(byteArrayOf(10, 5, 48, 77), 24)
+        assertEquals("10.5.48.0/24", a)
+        assertEquals(a, b) // a new DHCP lease is the same network
+        assertEquals("192.168.0.0/16", app.linc.android.service.link.LinkBrain.subnetOf(byteArrayOf(192.toByte(), 168.toByte(), 7, 9), 16))
+    }
 }

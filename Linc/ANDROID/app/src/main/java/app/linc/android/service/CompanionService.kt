@@ -288,7 +288,7 @@ class CompanionService : Service() {
         scope.launch {
             kotlinx.coroutines.flow.combine(CompanionStateHolder.state, CompanionStateHolder.pcLink) { state, pc ->
                 if (state is CompanionStateHolder.ServiceState.Connected && pc != null) {
-                    "Connected over ${if (pc.route == "usb") "USB" else "Wi-Fi"} · ADB ${if (pc.adb) "up" else "not up"}"
+                    "Connected over ${if (pc.route == "usb") "USB" else "Wi-Fi"} · ADB ${if (pc.adb) "up" else if (pc.arming) "turning on…" else "not up"}"
                 } else null
             }.distinctUntilChanged().collect { text ->
                 runCatching {

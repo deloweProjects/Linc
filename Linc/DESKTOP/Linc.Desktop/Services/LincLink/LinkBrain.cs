@@ -258,6 +258,23 @@ public static class LinkBrain
         adbUsb ? "usb" : adbWireless ? "wifi" : directPeer is "127.0.0.1" or "::1" ? "usb" : "direct";
 
     public static string RouteCaption(string route) => route == "usb" ? "Connected over USB" : "Connected over Wi-Fi";
+
+    /// <summary>
+    /// Re-arming wireless debugging (brief item 8; test build B: "connected to Wi-Fi but no ADB,
+    /// all pairing is done"). Android turns the switch off after a reboot or a Wi-Fi change; with
+    /// a v32 session up and no ADB route the PC asks the phone (<c>adb.arm</c>) at once, then after
+    /// 30 s, 2 min, and every 10 min; a network change or a new connection starts over.
+    /// </summary>
+    public static TimeSpan ArmDelay(int asksSoFar) => asksSoFar switch
+    {
+        0 => TimeSpan.Zero,
+        1 => TimeSpan.FromSeconds(30),
+        2 => TimeSpan.FromMinutes(2),
+        _ => TimeSpan.FromMinutes(10),
+    };
+
+    /// <summary>How long after an ask "turning on…" is shown while ADB isn't up yet.</summary>
+    public static readonly TimeSpan ArmWindow = TimeSpan.FromSeconds(20);
 }
 
 /// <summary>v32 numbers shared by both sides (PROTOCOL.md §v32); the message names are in

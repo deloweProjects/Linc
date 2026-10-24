@@ -228,6 +228,14 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
   on every change, and the phone's Home, Connection sheet and notification show exactly that (an older PC:
   the phone's own view, as before). The PC's ADB chip follows adb itself (checked every 3 s), so wireless
   debugging coming online under a direct link turns it green.
+- **Re-arming wireless debugging (brief item 8, after test build B).** Android turns the switch off after a
+  reboot or a Wi-Fi change. While a v32 session has no ADB route the PC asks the phone (`adb.arm`) at once,
+  after 30 s, 2 min, then every 10 min (a network change or a new connection starts over), and picks the
+  announced port up on the hotspot path, with no `tcpip` move; `link.state` carries `arming` ("turning on…").
+  The phone turns it on itself after a restart or on joining a Wi-Fi where the PC's ADB has run over
+  wireless debugging before (remembered by network fingerprint), never elsewhere; without the one-time
+  grant it says so once, and the Connection sheet says "grant needed: plug in the cable once". Tools leaves
+  the asking to the engine and keeps its button for a retry.
 - Not in A (as planned): Bluetooth (B), wireless-debugging re-arm after a reboot (B), Wi-Fi Direct and USB
   tethering (C).
 

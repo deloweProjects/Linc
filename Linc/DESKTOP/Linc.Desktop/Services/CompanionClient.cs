@@ -741,7 +741,7 @@ public sealed class CompanionClient : IDisposable
     /// v32: tell the phone how the two are connected, as this PC sees it (<c>link.state</c>), so
     /// both screens say the same. Below v32 nothing is sent: an older phone keeps its own view.
     /// </summary>
-    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia, CancellationToken ct)
+    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia, CancellationToken ct, bool arming = false)
     {
         if (!HasLinkSession)
         {
@@ -751,6 +751,10 @@ public sealed class CompanionClient : IDisposable
         if (adbVia is not null)
         {
             payload["adbVia"] = adbVia;
+        }
+        if (arming)
+        {
+            payload["arming"] = true; // this PC asked the phone to turn wireless debugging on: "turning on…"
         }
         await WriteAsync(Envelope.Create(MessageType.LinkState, payload), ct);
     }

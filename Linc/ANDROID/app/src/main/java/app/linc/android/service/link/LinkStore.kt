@@ -32,6 +32,19 @@ object LinkStore {
 
     fun engineOn(context: Context): Boolean = prefs(context).getBoolean(KEY_ENGINE, true)
 
+    // ---- networks where the PC reached this phone over wireless debugging ---------------------
+
+    private const val KEY_ADB_NETWORKS = "linkAdbNetworks"
+
+    /** Wireless debugging carried the PC's ADB on this network (by [LinkBrain.fingerprint]): Linc may turn it on here by itself. */
+    fun rememberAdbNetwork(context: Context, network: String) {
+        val known = adbNetworks(context)
+        if (network in known) return
+        prefs(context).edit().putStringSet(KEY_ADB_NETWORKS, (known + network).toList().takeLast(20).toSet()).apply()
+    }
+
+    fun adbNetworks(context: Context): Set<String> = prefs(context).getStringSet(KEY_ADB_NETWORKS, emptySet()).orEmpty()
+
     fun setEngineOn(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_ENGINE, on).apply()
 
     /** The highest protocol version to negotiate: 32 with the new engine, 31 without it. */

@@ -144,7 +144,7 @@ public partial class ToolsViewModel : ObservableObject
             : "Plug it in with a USB cable, or pair it over Wi-Fi on the Device page. Tools needs USB debugging on; the Linc app doesn't have to be running.";
 
     /// <summary>Linc is connected without ADB: the phone can switch wireless debugging on itself.</summary>
-    public bool CanTurnOnWireless => LincConnected && !HasPhone && !_arming;
+    public bool CanTurnOnWireless => LincConnected && !HasPhone && !_arming && !_link.AdbArming;
 
     private bool _arming;
     private object? _autoArmedFor;
@@ -262,7 +262,8 @@ public partial class ToolsViewModel : ObservableObject
             // Connected without ADB: ask the phone to turn wireless debugging on, once per
             // connection, without waiting for a tap (the button stays for a retry).
             var device = _link.Device;
-            if (CanTurnOnWireless && device is not null && !ReferenceEquals(device, _autoArmedFor))
+            // With the new engine the supervisor does this itself, on a schedule (LinkBrain.ArmDelay).
+            if (!_link.ArmsAdbItself && CanTurnOnWireless && device is not null && !ReferenceEquals(device, _autoArmedFor))
             {
                 _autoArmedFor = device;
                 _ = TurnOnWirelessAsync();

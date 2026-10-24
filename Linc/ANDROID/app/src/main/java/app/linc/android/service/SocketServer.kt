@@ -900,6 +900,7 @@ class SocketServer(
                         (message.payload["route"] as? JsonPrimitive)?.contentOrNull,
                         (message.payload["adb"] as? JsonPrimitive)?.booleanOrNull,
                         (message.payload["adbVia"] as? JsonPrimitive)?.contentOrNull,
+                        (message.payload["arming"] as? JsonPrimitive)?.booleanOrNull,
                     ))
                     continue
                 }

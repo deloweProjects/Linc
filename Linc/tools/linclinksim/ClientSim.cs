@@ -156,6 +156,9 @@ static class ClientSim
         await shellL2.ConnectAsync(pcEndL2, "test", Timeout(5), resume: client);
         await WaitFor(() => phone.Shown == ("usb", false, null), 3000);
         check(phone.Shown == ("usb", false, null), "a change sent while the route was down reaches the phone on the resume");
+        await client.SendLinkStateAsync("direct", false, null, Timeout(5), arming: true);
+        await WaitFor(() => phone.Arming, 2000);
+        check(phone.Arming && phone.Shown == ("direct", false, null), "\"turning on ADB…\" reaches the phone with the state it belongs to");
 
         // The phone rebooted: it no longer holds the session, so the resume is refused cleanly.
         phone.Reboot();
@@ -252,6 +255,7 @@ sealed class FakeLinkPhone
     /// <summary>What the phone's screens show from the PC's link.state, or null before the PC said anything.</summary>
     public (string Route, bool Adb, string? Via)? Shown;
     public int LinkStates;
+    public bool Arming;
     public bool SawSeq;
 
     private sealed class Session(string id)
@@ -378,6 +382,7 @@ sealed class FakeLinkPhone
                 Shown = route is "usb" or "wifi" or "direct" && adb is { } a
                     ? (route, a, a ? (string?)message.Payload["adbVia"] : null)
                     : null;
+                Arming = (bool?)message.Payload["arming"] == true && adb == false;
                 LinkStates++;
                 continue;
             }

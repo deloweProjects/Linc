@@ -32,6 +32,14 @@ object LinkBrain {
         return if (high <= BACKOFF_BASE_MS) BACKOFF_BASE_MS else random.nextLong(BACKOFF_BASE_MS, high + 1)
     }
 
+    /** "192.168.1.0/24" for the IPv4 address bytes [address] with [prefix] bits. */
+    fun subnetOf(address: ByteArray, prefix: Int): String {
+        val bits = address.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xff) }
+        val mask = if (prefix <= 0) 0L else (0xffffffffL shl (32 - prefix)) and 0xffffffffL
+        val net = bits and mask
+        return "${net shr 24 and 0xff}.${net shr 16 and 0xff}.${net shr 8 and 0xff}.${net and 0xff}/$prefix"
+    }
+
     /**
      * A short id for the network the phone is on, from what Android gives without the location
      * permission (the gateway and the subnet; the SSID when it happens to be readable). Nothing

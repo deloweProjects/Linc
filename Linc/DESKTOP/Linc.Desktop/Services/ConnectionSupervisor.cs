@@ -112,6 +112,12 @@ public interface IConnectionSupervisor : IDisposable
     /// <summary>The ADB chip: true when ADB carries the link or reaches the phone beside it (Mirror, Tools, fast files).</summary>
     bool AdbUp => false;
 
+    /// <summary>The engine asked the phone to turn wireless debugging on and ADB isn't up yet ("turning on…").</summary>
+    bool AdbArming => false;
+
+    /// <summary>True when the engine re-arms wireless debugging by itself (the new engine on); pages then only offer a retry.</summary>
+    bool ArmsAdbItself => false;
+
     /// <summary>The live link's route as both screens word it ("usb", "wifi", "direct"; LinkBrain.Route), or null.</summary>
     string? Route => null;
 
@@ -251,6 +257,45 @@ public sealed class ConnectionSupervisor(
     /// </summary>
     private string? _adbVia;
 
+    // Re-arming wireless debugging (LinkBrain.ArmDelay): how many asks so far, when the next may
+    // go, and until when "turning on…" shows.
+    private int _armAsks;
+    private DateTime _nextArmUtc = DateTime.MinValue;
+    private DateTime _armingUntilUtc = DateTime.MinValue;
+    private bool _armingShown;
+
+    public bool AdbArming => !AdbUp && DateTime.UtcNow < _armingUntilUtc;
+
+    public bool ArmsAdbItself => Engine;
+
+    private void ResetArming()
+    {
+        _armAsks = 0;
+        _nextArmUtc = DateTime.MinValue;
+    }
+
+    /// <summary>A v32 session is up with no ADB route at all: ask the phone to turn wireless debugging on, on the schedule.</summary>
+    private async Task MaybeArmAsync()
+    {
+        if (!Engine || State != LinkState.Connected || AdbUp || _adbOnlySerial is not null ||
+            !connection.HasResumableSession || DateTime.UtcNow < _nextArmUtc)
+        {
+            return;
+        }
+        _nextArmUtc = DateTime.UtcNow + LinkBrain.ArmDelay(_armAsks + 1);
+        _armAsks++;
+        _armingUntilUtc = DateTime.UtcNow + LinkBrain.ArmWindow;
+        log.Log(LogLevel.Info, $"Connected without ADB: asking the phone to turn wireless debugging on (ask {_armAsks}; next in {LinkBrain.ArmDelay(_armAsks).TotalMinutes:0.#} min if it stays off).");
+        try
+        {
+            await hotspotLink.RequestArmAsync(HotspotArmFallback.Prefer, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is LincException or IOException or InvalidOperationException)
+        {
+            _armingUntilUtc = DateTime.MinValue; // the ask didn't leave; the schedule tries again
+        }
+    }
+
     public string? Route => State == LinkState.Connected && Device is { } live
         ? LinkBrain.Route(live.Transport == LinkTransport.AdbUsb, live.Transport == LinkTransport.AdbWireless, connection.PeerAddress)
         : null;
@@ -263,7 +308,8 @@ public sealed class ConnectionSupervisor(
             return;
         }
         var via = connection.HasAdb ? (live.Transport == LinkTransport.AdbUsb ? "cable" : "wireless") : _adbVia;
-        _ = Task.Run(() => connection.SendLinkStateAsync(route, AdbUp, AdbUp ? via : null));
+        var arming = AdbArming;
+        _ = Task.Run(() => connection.SendLinkStateAsync(route, AdbUp, AdbUp ? via : null, arming));
     }
 
     /// <summary>With the engine on, every 3 s while connected: does adb see the phone (by cable or wireless debugging)?</summary>
@@ -284,6 +330,12 @@ public sealed class ConnectionSupervisor(
             {
                 _adbVia = via;
                 StateChanged?.Invoke(); // the chip (here and, via link.state, on the phone) follows
+            }
+            await MaybeArmAsync();
+            if (AdbArming != _armingShown)
+            {
+                _armingShown = AdbArming;
+                StateChanged?.Invoke(); // "turning on…" starts or ends
             }
         }
     }
@@ -1054,6 +1106,7 @@ public sealed class ConnectionSupervisor(
         TransportChosenByHand = ManualTransport == device.Transport;
         if (!handedOff)
         {
+            ResetArming();
             ConnectedAtUtc = DateTimeOffset.UtcNow;
             if (_hasConnectedOnce)
             {
@@ -1697,6 +1750,7 @@ public sealed class ConnectionSupervisor(
         {
             _forgottenHosts.Clear(); // another network: its addresses are worth a try again
         }
+        ResetArming(); // and the phone's wireless debugging is worth asking for again at once
         Nudge(LinkSignal.NetworkChanged, "The PC's network changed");
     }
 
