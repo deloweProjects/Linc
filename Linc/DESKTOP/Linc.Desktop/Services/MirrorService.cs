@@ -472,6 +472,13 @@ public sealed class MirrorService(ILogService log) : IMirrorService
                 log.Log(sized ? LogLevel.Info : LogLevel.Warn,
                     $"Fill this monitor: phone {phoneW}x{phoneH} drawn at {w}x{h} for the {monitorW}x{monitorH} monitor" +
                     $"{(landscape ? ", turned sideways" : "")}{(sized ? "" : " (the phone refused the new size)")}.");
+                // The safety net on the phone itself: if the link drops and the PC can't put the
+                // screen back, the phone does, once no mirror has run for a few seconds.
+                var guarded = AdbShell(serial, PhoneShapeGuard.InstallCommand(
+                    PhoneShapeGuard.RestoreCommands(existingOverride, landscape, accel, userRotation))).Ok;
+                log.Log(guarded ? LogLevel.Info : LogLevel.Warn, guarded
+                    ? $"Fill this monitor: the phone will put its own screen back if the link drops ({PhoneShapeGuard.GraceSeconds} s after the mirror ends)."
+                    : "Fill this monitor: couldn't start the phone's own safety net; the PC puts the screen back at the next connection instead.");
             }
             catch (Exception ex)
             {
@@ -522,6 +529,7 @@ public sealed class MirrorService(ILogService log) : IMirrorService
                 }
                 if (ok)
                 {
+                    AdbShell(serial, PhoneShapeGuard.DisarmCommand); // the phone's safety net ends itself
                     File.Delete(RestoreFile);
                     log.Log(LogLevel.Info, "Fill this monitor: the phone's screen is back to its own size.");
                 }

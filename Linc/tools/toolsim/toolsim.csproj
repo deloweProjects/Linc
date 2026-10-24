@@ -15,5 +15,6 @@
       output into what the Tools page shows), so what is proven here is what the app runs.
     -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\Tools\Pure\*.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneShapeGuard.cs" />
   </ItemGroup>
 </Project>

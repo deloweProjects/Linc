@@ -19,6 +19,8 @@ Console.WriteLine("[capture, console]");
 CaptureConsoleTests.Run(Check);
 Console.WriteLine("[health, system]");
 HealthSystemTests.Run(Check);
+Console.WriteLine("[mirror: Fill this monitor's safety net]");
+ShapeGuardTests.Run(Check);
 Console.WriteLine("[commands]");
 CommandsTests.Run(Check);
 

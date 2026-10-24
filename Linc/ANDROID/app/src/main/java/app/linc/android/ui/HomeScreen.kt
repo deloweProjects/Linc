@@ -169,6 +169,7 @@ private fun HomeContent(
                     )
                 }
             }
+            item("screen-shape") { ScreenShapeCard() }
             if (!exempt) {
                 item("background") { BackgroundWarning() }
             }

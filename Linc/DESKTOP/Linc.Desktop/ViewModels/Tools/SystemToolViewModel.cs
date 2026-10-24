@@ -274,6 +274,15 @@ public partial class SystemToolViewModel(ToolsContext ctx) : ToolSection(ctx)
         Ctx.Say(r.Ok ? done : "The phone didn't restart: " + r.Text);
     }
 
+    /// <summary>"Fill this monitor" left the phone resized or turned (a link that dropped before the
+    /// PC could put it back, and a phone restarted since): its own size, auto-rotate back on, the
+    /// phone's safety net and Reset card ended, and the screen woken.</summary>
+    [RelayCommand]
+    private Task ResetScreenAsync() => Ctx.DoAsync(
+        "wm size reset; settings put system accelerometer_rotation 1; " +
+        Linc.Desktop.Services.PhoneShapeGuard.DisarmCommand + "; input keyevent 224",
+        "The phone's screen is back to its own size, with auto-rotate on.");
+
     [RelayCommand]
     private Task Restart() => RebootAsync("Restart", "The phone restarts now. Linc reconnects when it's back.",
         ["reboot"], "Restarting. Linc reconnects when the phone is back.");
