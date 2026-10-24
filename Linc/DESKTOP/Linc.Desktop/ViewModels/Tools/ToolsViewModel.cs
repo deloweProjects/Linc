@@ -134,19 +134,20 @@ public partial class ToolsViewModel : ObservableObject
     public string EmptyTitle => SelectedDevice is { Authorized: false }
         ? "Allow USB debugging on the phone"
         : LincConnected
-            ? $"{_link.Device!.Model} is connected, but Tools needs ADB"
+            ? "No ADB"
             : "Connect your phone";
 
     public string EmptyText => SelectedDevice is { Authorized: false }
         ? "The phone is asking whether to trust this PC. Tap Allow on the phone (tick \"Always allow\"), and Tools opens here."
         : LincConnected
-            ? "Tools works through USB debugging or wireless debugging. Plug in the cable, or let Linc turn on wireless debugging on the phone."
+            ? $"{_link.Device!.Model} is connected over Wi-Fi, but not over ADB, which Tools needs. Android turns wireless debugging off after a restart or a Wi-Fi change; Linc is asking the phone to turn it back on. Or plug in the cable."
             : "Plug it in with a USB cable, or pair it over Wi-Fi on the Device page. Tools needs USB debugging on; the Linc app doesn't have to be running.";
 
     /// <summary>Linc is connected without ADB: the phone can switch wireless debugging on itself.</summary>
     public bool CanTurnOnWireless => LincConnected && !HasPhone && !_arming;
 
     private bool _arming;
+    private object? _autoArmedFor;
 
     /// <summary>Asks the phone (over Linc's own link) to turn wireless debugging on; the PC then
     /// connects to it as it does after a restart, and Tools sees it within a few seconds.</summary>
@@ -258,6 +259,14 @@ public partial class ToolsViewModel : ObservableObject
             UpdateDevices(found);
             Searched = true;
             OnPropertyChanged(nameof(CanTurnOnWireless));
+            // Connected without ADB: ask the phone to turn wireless debugging on, once per
+            // connection, without waiting for a tap (the button stays for a retry).
+            var device = _link.Device;
+            if (CanTurnOnWireless && device is not null && !ReferenceEquals(device, _autoArmedFor))
+            {
+                _autoArmedFor = device;
+                _ = TurnOnWirelessAsync();
+            }
             try { await _wake.WaitAsync(TimeSpan.FromSeconds(3), ct); }
             catch (OperationCanceledException) { return; }
         }
