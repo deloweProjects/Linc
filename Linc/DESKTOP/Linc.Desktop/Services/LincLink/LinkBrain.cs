@@ -213,6 +213,51 @@ public static class LinkBrain
     /// <summary>The log line when a session's route ends (<paramref name="route"/> as Describe words it, "the USB cable").</summary>
     public static string RouteEndedLine(string route, TimeSpan keep) =>
         $"The link's route ended ({route}); keeping the session for {keep.TotalSeconds:0} s while Linc finds another way to the phone.";
+
+    // ---- one source of truth for "how are we connected" (test build B, 2026-10-24) -----------
+
+    /// <summary>
+    /// Which ADB device is this phone, and how: "cable" (a USB serial equal to its hardware
+    /// serial), "wireless" (a host:port at one of its addresses, or wireless debugging's own
+    /// adb-&lt;serial&gt;-… name), or null. Only devices adb reports online count.
+    /// </summary>
+    public static string? AdbVia(IEnumerable<(string Serial, bool Online)> devices, string? serialNo, IEnumerable<string> phoneHosts)
+    {
+        var hosts = phoneHosts.Where(h => !string.IsNullOrEmpty(h)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        string? via = null;
+        foreach (var (serial, online) in devices)
+        {
+            if (!online || string.IsNullOrEmpty(serial)) continue;
+            var colon = serial.LastIndexOf(':');
+            var isNetwork = colon > 0 && int.TryParse(serial[(colon + 1)..], out _);
+            if (!isNetwork && !string.IsNullOrEmpty(serialNo))
+            {
+                if (serial.StartsWith("adb-", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (serial.StartsWith($"adb-{serialNo}-", StringComparison.OrdinalIgnoreCase)) via ??= "wireless";
+                }
+                else if (string.Equals(serial, serialNo, StringComparison.OrdinalIgnoreCase))
+                {
+                    return "cable"; // the cable wins: it is the one Mirror and Tools prefer
+                }
+            }
+            else if (isNetwork && hosts.Contains(serial[..colon]))
+            {
+                via ??= "wireless";
+            }
+        }
+        return via;
+    }
+
+    /// <summary>
+    /// The route words both sides show: "usb" for the cable (an ADB USB link, or a direct link
+    /// that rides adb reverse over it), else "wifi" (wireless debugging) or "direct" (Linc's own
+    /// Wi-Fi link). Shown as "Connected over USB" / "Connected over Wi-Fi".
+    /// </summary>
+    public static string Route(bool adbUsb, bool adbWireless, string? directPeer) =>
+        adbUsb ? "usb" : adbWireless ? "wifi" : directPeer is "127.0.0.1" or "::1" ? "usb" : "direct";
+
+    public static string RouteCaption(string route) => route == "usb" ? "Connected over USB" : "Connected over Wi-Fi";
 }
 
 /// <summary>v32 numbers shared by both sides (PROTOCOL.md §v32); the message names are in

@@ -222,6 +222,12 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
   header wait is 1.5 s and a direct link waits at most 1 s for the supervisor's gate before the attempt holding
   it is called off (the PC's hello within 3.5 s of the phone's 5 s); no `adb tcpip` with the engine on or any ADB
   route in use; "not installed" only on a clean `pm` answer; a forgotten address is spotted again after 30 min.
+- **One source of truth for the link state (after test build B, 2026-10-24).** The phone used to judge
+  its route and ADB from the link it dialled ("directly (no ADB)") while the PC saw ADB up, so the two
+  screens disagreed. Now the PC owns it: over v32 it sends `link.state {route, adb, adbVia}` on connect and
+  on every change, and the phone's Home, Connection sheet and notification show exactly that (an older PC:
+  the phone's own view, as before). The PC's ADB chip follows adb itself (checked every 3 s), so wireless
+  debugging coming online under a direct link turns it green.
 - Not in A (as planned): Bluetooth (B), wireless-debugging re-arm after a reboot (B), Wi-Fi Direct and USB
   tethering (C).
 
@@ -229,3 +235,12 @@ builds; off = today's `ConnectionSupervisor` / `PresenceClient` untouched. Remov
 
 USB plug-in → connected < 2 s (app running) / < 10 s (app missing); same Wi-Fi, app running → < 3 s;
 blip < 5 s → invisible; phone reboot on known Wi-Fi → connected with no taps.
+
+## 14. Future (not built; the owner's ideas, 2026-10-24)
+
+- **ADB on the phone's own side.** The phone app using ADB in a limited way, Shizuku-style: wireless
+  debugging to itself (paired once), for a few powers an app can't have alone. Optional, never required.
+- **Linc on the PC with no phone app at all.** Pairing over ADB only (USB or wireless debugging) for a
+  limited Linc: mirror, files, Tools. The app stays recommended for everything else (notifications, SMS,
+  calls, clipboard, the always-on link). The PC would say clearly which features need the app.
+

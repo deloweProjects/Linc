@@ -111,6 +111,12 @@ public interface IConnectionManager
     /// </summary>
     bool IsSessionDetached { get; }
 
+    /// <summary>v32: tell the phone the link state this PC sees (route, ADB); only when it changed. No-op below v32.</summary>
+    Task SendLinkStateAsync(string route, bool adb, string? adbVia);
+
+    /// <summary>How ADB reaches the live phone right now, whatever the link rides on: "cable", "wireless" or null.</summary>
+    Task<string?> AdbViaAsync(CancellationToken ct);
+
     /// <summary>
     /// The address of the far end of the CURRENT control connection, or null when the link is
     /// not one whose peer address means anything (v18). Populated for Direct TLS only: on an
@@ -201,6 +207,52 @@ public sealed class ConnectionManager(
     public bool HasResumableSession => _companion is { HasLinkSession: true };
 
     public bool IsSessionDetached => _companion is { IsDetached: true };
+
+    private (CompanionClient Client, string Route, bool Adb, string? Via)? _sentLinkState;
+
+    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia)
+    {
+        if (_companion is not { HasLinkSession: true } companion)
+        {
+            return;
+        }
+        var state = (companion, route, adb, adbVia);
+        if (_sentLinkState == state)
+        {
+            return; // the phone already shows exactly this
+        }
+        _sentLinkState = state;
+        try
+        {
+            await companion.SendLinkStateAsync(route, adb, adbVia, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is LincException or IOException or InvalidOperationException)
+        {
+            _sentLinkState = null; // sent again on the next change or connect
+        }
+    }
+
+    public async Task<string?> AdbViaAsync(CancellationToken ct)
+    {
+        if (Current is not { } current)
+        {
+            return null;
+        }
+        try
+        {
+            var devices = await _adb.GetDevicesAsync(ct);
+            var serialNo = !string.IsNullOrEmpty(current.SerialNo) ? current.SerialNo
+                : registry.PairedSerial is { } paired && !paired.StartsWith("linc:", StringComparison.Ordinal) ? paired : null;
+            var hosts = new List<string>();
+            if (PeerAddress is { } peer) hosts.Add(peer);
+            if (registry.LastHostPort is { } last && last.LastIndexOf(':') is var colon and > 0) hosts.Add(last[..colon]);
+            return LinkBrain.AdbVia(devices.Select(d => (d.Serial ?? "", d.State == DeviceState.Online)), serialNo, hosts);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null; // the adb server isn't up: no ADB
+        }
+    }
 
     /// <summary>A new protocol client, offering v32 only while the new connection engine is on.</summary>
     private CompanionClient NewClient() => new()

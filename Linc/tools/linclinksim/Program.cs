@@ -107,6 +107,23 @@ Console.WriteLine("--- the field test of build A (2026-10-23)");
 }
 
 // ---------------------------------------------------------------------------------------------
+Console.WriteLine("--- one source of truth for the link state (test build B)");
+{
+    var phoneAt = new[] { "10.5.48.24" };
+    True(LinkBrain.AdbVia([("R5CT0001", true)], "R5CT0001", phoneAt) == "cable", "the phone's USB serial online: ADB over the cable");
+    True(LinkBrain.AdbVia([("10.5.48.24:37123", true)], "R5CT0001", phoneAt) == "wireless", "wireless debugging at the phone's address: ADB over Wi-Fi");
+    True(LinkBrain.AdbVia([("adb-R5CT0001-AbCdEf._adb-tls-connect._tcp", true)], "R5CT0001", []) == "wireless", "wireless debugging by its own mDNS name");
+    True(LinkBrain.AdbVia([("R5CT0001", false), ("10.5.48.24:37123", false)], "R5CT0001", phoneAt) is null, "offline or unauthorised devices are no ADB");
+    True(LinkBrain.AdbVia([("OTHERPHONE", true), ("10.5.48.99:5555", true)], "R5CT0001", phoneAt) is null, "another phone's ADB isn't this phone's");
+    True(LinkBrain.AdbVia([("10.5.48.24:5555", true), ("R5CT0001", true)], "R5CT0001", phoneAt) == "cable", "both at once: the cable");
+    True(LinkBrain.Route(adbUsb: true, adbWireless: false, directPeer: null) == "usb" && LinkBrain.Route(false, true, null) == "wifi" &&
+         LinkBrain.Route(false, false, "10.5.48.24") == "direct" && LinkBrain.Route(false, false, "127.0.0.1") == "usb",
+        "the route: the cable (also a direct link over adb reverse), wireless debugging, or Linc's own Wi-Fi link");
+    True(LinkBrain.RouteCaption("usb") == "Connected over USB" && LinkBrain.RouteCaption("direct") == "Connected over Wi-Fi" && LinkBrain.RouteCaption("wifi") == "Connected over Wi-Fi",
+        "the PC's words for each route (the phone maps the same: USB cable / Wi-Fi)");
+}
+
+// ---------------------------------------------------------------------------------------------
 Console.WriteLine("--- a session riding transports that die mid-stream");
 {
     // Requests from the PC, each answered by the phone; unsolicited events from the phone. The

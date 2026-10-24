@@ -88,6 +88,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val connection by CompanionStateHolder.state.collectAsState()
     val link by CompanionStateHolder.link.collectAsState()
+    val pcLink by CompanionStateHolder.pcLink.collectAsState()
     val media by PcMediaStore.state.collectAsState()
     val clips by ClipboardHistoryStore.items.collectAsState()
     val voice by PcVoiceAccess.state.collectAsState()
@@ -105,7 +106,8 @@ fun HomeScreen(
     }
     HomeContent(
         connection = connection,
-        transport = transportLabel(context, link),
+        transport = transportLabel(context, link, pcLink),
+        adb = pcLink?.adb,
         exempt = exempt,
         everPaired = paired || connection is ServiceState.Connected,
         media = media,
@@ -125,6 +127,8 @@ fun HomeScreen(
 private fun HomeContent(
     connection: ServiceState,
     transport: String?,
+    /** The PC's ADB state (v32 link.state), or null when the PC hasn't said (older PCs). */
+    adb: Boolean? = null,
     exempt: Boolean,
     everPaired: Boolean,
     media: PcMedia?,
@@ -178,7 +182,7 @@ private fun HomeContent(
                 }
             }
             item("hero") {
-                ConnectionHero(connection, transport, onClick = { connectionSheet = true }, onMirror = onMirror)
+                ConnectionHero(connection, transport, adb, onClick = { connectionSheet = true }, onMirror = onMirror)
             }
             if (connected != null) {
                 item("pc-stats") { PcStatsRow(onOpen = { onNavigate(HomeDestination.Pc) }) }
@@ -268,7 +272,7 @@ private fun HomeContent(
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ConnectionHero(connection: ServiceState, transport: String?, onClick: () -> Unit, onMirror: () -> Unit) {
+private fun ConnectionHero(connection: ServiceState, transport: String?, adb: Boolean?, onClick: () -> Unit, onMirror: () -> Unit) {
     val connected = connection as? ServiceState.Connected
     val (label, quality) = when (connection) {
         is ServiceState.Connected -> "Connected" to Quality.Good
@@ -312,6 +316,8 @@ private fun ConnectionHero(connection: ServiceState, transport: String?, onClick
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     StatusChip(label, quality)
                     if (connected != null && transport != null) StatusChip(if (usb) "USB" else transport.removePrefix("Wi-Fi ").let { if (it.startsWith("(")) "Wi-Fi" else it }, Quality.Good)
+                    // The same ADB chip as the PC's, from what the PC says (link.state).
+                    if (connected != null && adb != null) StatusChip("ADB", if (adb) Quality.Good else Quality.Off)
                 }
             }
         }
@@ -500,9 +506,18 @@ private fun NowPlaying(media: PcMedia) {
     }
 }
 
-/** "USB cable" / "Wi-Fi" / "Wi-Fi (direct)" for the live link, or null when not connected. */
-internal fun transportLabel(context: Context, link: CompanionStateHolder.Link?): String? {
+/**
+ * "USB cable" / "Wi-Fi" for the live link, or null when not connected. What the PC says
+ * ([pcLink], v32 link.state) wins: the PC owns how the two are connected, so both screens agree.
+ * Only an older PC leaves this phone to judge from its own link ("Wi-Fi (direct)" then).
+ */
+internal fun transportLabel(
+    context: Context,
+    link: CompanionStateHolder.Link?,
+    pcLink: CompanionStateHolder.PcLink? = CompanionStateHolder.pcLink.value,
+): String? {
     link ?: return null
+    pcLink?.let { return it.label }
     return when (link.route) {
         CompanionStateHolder.Route.Direct -> if (link.address == "127.0.0.1") "USB cable" else "Wi-Fi (direct)"
         CompanionStateHolder.Route.Adb -> if (usbConnected(context)) "USB cable" else "Wi-Fi"

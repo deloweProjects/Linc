@@ -112,6 +112,9 @@ public interface IConnectionSupervisor : IDisposable
     /// <summary>The ADB chip: true when ADB carries the link or reaches the phone beside it (Mirror, Tools, fast files).</summary>
     bool AdbUp => false;
 
+    /// <summary>The live link's route as both screens word it ("usb", "wifi", "direct"; LinkBrain.Route), or null.</summary>
+    string? Route => null;
+
     /// <summary>
     /// Something outside the link just saw the phone on the network (a Quick Share from it, for
     /// one). While searching, treat it like a resume: scan now and adopt whatever ADB already
@@ -240,7 +243,50 @@ public sealed class ConnectionSupervisor(
         linked: State == LinkState.Connected,
         adbReachesPhone: _adbOnlySerial is not null && State != LinkState.Connected);
 
-    public bool AdbUp => LinkBrain.AdbChipLit(State == LinkState.Connected && connection.HasAdb, _adbOnlySerial is not null);
+    public bool AdbUp => LinkBrain.AdbChipLit(State == LinkState.Connected && (connection.HasAdb || _adbVia is not null), _adbOnlySerial is not null);
+
+    /// <summary>
+    /// How adb reaches the live phone when the link itself doesn't ride on ADB (a wireless-debugging
+    /// device coming online under a direct link): the chip follows adb, not the link (test build B).
+    /// </summary>
+    private string? _adbVia;
+
+    public string? Route => State == LinkState.Connected && Device is { } live
+        ? LinkBrain.Route(live.Transport == LinkTransport.AdbUsb, live.Transport == LinkTransport.AdbWireless, connection.PeerAddress)
+        : null;
+
+    /// <summary>v32: the phone shows what this PC sends (route, ADB), so the two screens never disagree.</summary>
+    private void PublishLinkState()
+    {
+        if (!Engine || Route is not { } route || Device is not { } live)
+        {
+            return;
+        }
+        var via = connection.HasAdb ? (live.Transport == LinkTransport.AdbUsb ? "cable" : "wireless") : _adbVia;
+        _ = Task.Run(() => connection.SendLinkStateAsync(route, AdbUp, AdbUp ? via : null));
+    }
+
+    /// <summary>With the engine on, every 3 s while connected: does adb see the phone (by cable or wireless debugging)?</summary>
+    private async Task AdbWatchLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return; // the engine was switched off
+            }
+            var via = State == LinkState.Connected ? await connection.AdbViaAsync(ct) : null;
+            if (via != _adbVia)
+            {
+                _adbVia = via;
+                StateChanged?.Invoke(); // the chip (here and, via link.state, on the phone) follows
+            }
+        }
+    }
 
     /// <summary>A token for the attempt starting now (under the gate); None with the engine off, exactly as before.</summary>
     private CancellationToken NewAttemptToken()
@@ -321,6 +367,7 @@ public sealed class ConnectionSupervisor(
         lincLink.PhoneSpotted += OnPhoneSpotted;
         tlsTransport.PhonePaired += OnPhonePaired;
         registry.LincLinkChanged += OnEngineChanged;
+        StateChanged += PublishLinkState;
         StartClockWatch();
         StartEngine();
         discovery.Start();
@@ -1428,6 +1475,7 @@ public sealed class ConnectionSupervisor(
         usbWatcher.EnablePush(Engine);
         if (!Engine)
         {
+            _adbVia = null;
             _searchCts?.Cancel();
             _searchCts = null;
             lincLink.Stop();
@@ -1439,6 +1487,7 @@ public sealed class ConnectionSupervisor(
             _searchCts = new CancellationTokenSource();
             var token = _searchCts.Token;
             _ = Task.Run(() => SearchLoopAsync(token)); // off the UI thread (see DialPhoneAsync)
+            _ = Task.Run(() => AdbWatchLoopAsync(token));
         }
     }
 

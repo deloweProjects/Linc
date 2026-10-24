@@ -1584,7 +1584,8 @@ RefreshGradient();
     /// </summary>
     private string LinkCaption => _supervisor.Presence switch
     {
-        LinkPresence.Connected => _supervisor.Device?.Transport == LinkTransport.AdbUsb ? "Connected over USB" : "Connected over Wi-Fi",
+        // The same words the phone shows: it gets them from this PC (link.state, LinkBrain.Route).
+        LinkPresence.Connected => LinkBrain.RouteCaption(_supervisor.Route ?? "wifi"),
         LinkPresence.ConnectedStartingApp => "Connected — starting Linc on your phone…",
         LinkPresence.Paused => "Disconnected — the link is paused",
         LinkPresence.NoPhone => "Pair a phone to get started",

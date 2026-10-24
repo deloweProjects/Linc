@@ -738,6 +738,24 @@ public sealed class CompanionClient : IDisposable
     }
 
     /// <summary>
+    /// v32: tell the phone how the two are connected, as this PC sees it (<c>link.state</c>), so
+    /// both screens say the same. Below v32 nothing is sent: an older phone keeps its own view.
+    /// </summary>
+    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia, CancellationToken ct)
+    {
+        if (!HasLinkSession)
+        {
+            return;
+        }
+        var payload = new JsonObject { ["route"] = route, ["adb"] = adb };
+        if (adbVia is not null)
+        {
+            payload["adbVia"] = adbVia;
+        }
+        await WriteAsync(Envelope.Create(MessageType.LinkState, payload), ct);
+    }
+
+    /// <summary>
     /// A request this side gave up on (timed out, cancelled): if its frame is still kept for a
     /// replay, swap it for a numbered no-op, so a resume can never run what was reported as failed
     /// (an SMS the user then sends again would go out twice). If the phone already acknowledged it,

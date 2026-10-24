@@ -51,6 +51,7 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val state by CompanionStateHolder.state.collectAsState()
     val link by CompanionStateHolder.link.collectAsState()
+    val pcLink by CompanionStateHolder.pcLink.collectAsState()
     val rtt by MirrorSession.rttMs.collectAsState()
     val connected = state as? ServiceState.Connected
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -71,10 +72,17 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
             SettingsGroup(rows = listOfNotNull(
                 { s -> SettingsRow("PC", s, LincSymbols.Computer, value = connected?.host ?: if (connected != null) "Your PC" else "Not connected") },
                 { s -> SettingsRow("Connection", s, LincSymbols.Wifi, value = when (state) {
-                    is ServiceState.Connected -> transportLabel(context, link) ?: "Connected"
+                    is ServiceState.Connected -> transportLabel(context, link, pcLink) ?: "Connected"
                     is ServiceState.Listening -> "Looking for your PC"
                     is ServiceState.Stopped -> "Linc isn't running"
                 }) },
+                // What the PC says about ADB (v32 link.state); absent from an older PC.
+                pcLink?.takeIf { connected != null }?.let { p -> { s -> SettingsRow("ADB", s, LincSymbols.Usb, value = when {
+                    !p.adb -> "Not up"
+                    p.adbVia == "cable" -> "Up, over the cable"
+                    p.adbVia == "wireless" -> "Up, over wireless debugging"
+                    else -> "Up"
+                }) } },
                 link?.address?.let { address -> { s -> SettingsRow("Address", s, LincSymbols.Link, value = address) } },
                 connected?.let { c -> { s -> SettingsRow("Linc on the PC", s, LincSymbols.Info, value = "Version ${c.desktopVersion}", supporting = "Protocol v${c.protocolVersion}") } },
                 if (connected != null && rtt >= 0) { s -> SettingsRow("Round trip", s, LincSymbols.Schedule, value = "$rtt ms") } else null,

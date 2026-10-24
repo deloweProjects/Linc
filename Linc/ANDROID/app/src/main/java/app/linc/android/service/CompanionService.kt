@@ -42,6 +42,7 @@ class CompanionService : Service() {
     override fun onCreate() {
         super.onCreate()
         LogStore.init(this)
+        watchNotificationText()
         // Running, however it was started: from now on Linc may start by itself again (LinkStore).
         app.linc.android.service.link.LinkStore.noteRunning(this)
         // The first line of every run says what this is and who made it (Provenance.kt).
@@ -279,7 +280,25 @@ class CompanionService : Service() {
         }.isSuccess
     }
 
-    private fun buildNotification(): Notification {
+    /**
+     * The ongoing notification says what Home says: "Connected over USB · ADB up" from what the
+     * PC sent (v32 link.state), or the old line otherwise. Watched once per service run.
+     */
+    private fun watchNotificationText() {
+        scope.launch {
+            kotlinx.coroutines.flow.combine(CompanionStateHolder.state, CompanionStateHolder.pcLink) { state, pc ->
+                if (state is CompanionStateHolder.ServiceState.Connected && pc != null) {
+                    "Connected over ${if (pc.route == "usb") "USB" else "Wi-Fi"} · ADB ${if (pc.adb) "up" else "not up"}"
+                } else null
+            }.distinctUntilChanged().collect { text ->
+                runCatching {
+                    getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+                }
+            }
+        }
+    }
+
+    private fun buildNotification(text: String? = null): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -289,7 +308,7 @@ class CompanionService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_linc)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
+            .setContentText(text ?: getString(R.string.notification_text))
             .setContentIntent(openApp)
             .setOngoing(true)
             .build()

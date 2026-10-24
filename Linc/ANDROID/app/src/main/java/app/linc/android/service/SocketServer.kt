@@ -514,6 +514,7 @@ class SocketServer(
             if (serverSocket != null && remaining == 0) {
                 CompanionStateHolder.update(ServiceState.Listening)
                 CompanionStateHolder.setLink(null)
+                CompanionStateHolder.setPcLink(null)
                 LogStore.log(LogLevel.WARN, "Desktop disconnected")
                 // The PC may still be right there on another route (the cable just came out):
                 // dial it directly now rather than after the presence loop's wait.
@@ -611,6 +612,7 @@ class SocketServer(
                     if (liveControls.get() == 0 && serverSocket != null) {
                         CompanionStateHolder.update(ServiceState.Listening)
                         CompanionStateHolder.setLink(null)
+                        CompanionStateHolder.setPcLink(null)
                         LogStore.log(LogLevel.WARN, "Desktop disconnected")
                     }
                 }
@@ -801,6 +803,7 @@ class SocketServer(
             SessionRegistry.clear(sessionToken)
             gate.release(ticket)
             if (close != null) runCatching { close() } // no lock held: this also frees a write stuck on it
+            CompanionStateHolder.setPcLink(null) // what the PC said belonged to this session
             LogStore.log(LogLevel.INFO, "Session with $desktopApp ended ($why)")
         }
 
@@ -891,6 +894,15 @@ class SocketServer(
                 }
                 if (!link.accept(message)) continue
                 if (message.type == MessageType.LINK_NOOP) continue // only takes up its number
+                if (message.type == MessageType.LINK_STATE) {
+                    // The PC owns how the two are connected; this phone shows exactly that.
+                    CompanionStateHolder.setPcLink(CompanionStateHolder.PcLink.from(
+                        (message.payload["route"] as? JsonPrimitive)?.contentOrNull,
+                        (message.payload["adb"] as? JsonPrimitive)?.booleanOrNull,
+                        (message.payload["adbVia"] as? JsonPrimitive)?.contentOrNull,
+                    ))
+                    continue
+                }
                 if (message.type == MessageType.LINK_SECRET) {
                     link.onSecret(message, secretsAllowed)
                     continue

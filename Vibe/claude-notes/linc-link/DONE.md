@@ -74,6 +74,17 @@ What didn't, and what changed (each rule checked in `linclinksim`, "the field te
 5. **A forgotten address retried all night** (every 66 s, wireless debugging off on that network). It now waits
    30 min, or until the PC's network changes.
 
+## Test build B (2026-10-24): "Works", and the one fix
+
+"The phone and the PC don't agree: sometimes ADB is connected but it says no ADB." The phone judged its
+route and ADB from its own side; now the PC owns it. Over v32 the PC sends `link.state` (route: USB / Wi-Fi
+/ direct; ADB up or not, and over the cable or wireless debugging) on connect and on every change; the
+phone's Home card, Connection sheet (new "ADB" row) and notification show exactly that. The PC's own ADB
+chip follows adb itself, checked every 3 s: wireless debugging coming online under the direct link turns it
+green, and grey again when adb drops it. Checked in `linclinksim` ("one source of truth"): every order of
+changes ends on what the PC sent last, nothing shows before the first, a change sent while the route was
+down arrives on the resume, an older phone gets nothing; the phone's rule in `PcLinkTest`.
+
 ## What is NOT verified (needs your hardware)
 
 Nothing below has run on a real phone or PC. Each is written against the documented APIs and compiled,
@@ -133,6 +144,8 @@ Logs and phone Settings › Logs › Copy log, and send both.
    phone; USB doesn't come and go.
 9. **No false install.** With Linc installed on the phone, the PC never asks to install it, even while the
    cable is plugged and unplugged.
+10. **Both screens agree.** Plug the cable in, unplug it, turn wireless debugging on and off. Each time, the
+    phone's Home says the same as the PC's ("Connected over USB" / "over Wi-Fi") and both ADB chips match.
 
 ## Paste back to the other session
 

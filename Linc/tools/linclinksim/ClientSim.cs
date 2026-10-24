@@ -124,6 +124,39 @@ static class ClientSim
             $"a silent half-open link is called dead in {clock.Elapsed.TotalSeconds:0.0} s (keepalive), inside the {LinkBrain.LingerGrace.TotalSeconds:0} s linger");
         phone.Mute = false;
 
+        // One source of truth (test build B): the phone shows exactly the last link.state the PC
+        // sent, in any order of changes, across a cut and resume, and nothing before the first.
+        var (pcEndL, phoneEndL) = Duplex.Pair();
+        _ = phone.ServeAsync(phoneEndL);
+        var shellL = new CompanionClient { PcId = "pc1" };
+        await shellL.ConnectAsync(pcEndL, "test", Timeout(5), resume: client);
+        check(phone.Shown is null, "the phone shows no PC link state before the PC sends one");
+        var states = new (string Route, bool Adb, string? Via)[]
+        {
+            ("usb", true, "cable"), ("direct", false, null), ("direct", true, "wireless"), ("wifi", true, "wireless"),
+        };
+        var orders = 0;
+        var allMatch = true;
+        foreach (var order in Permutations(states))
+        {
+            orders++;
+            foreach (var st in order)
+            {
+                await client.SendLinkStateAsync(st.Route, st.Adb, st.Via, Timeout(5));
+            }
+            await WaitFor(() => phone.Shown == order[^1], 2000);
+            allMatch &= phone.Shown == order[^1];
+        }
+        check(allMatch, $"in all {orders} orders of route/ADB changes the phone ends on what the PC sent last");
+        var (pcEndL2, phoneEndL2) = Duplex.Pair();
+        phoneEndL.Cut();
+        await client.SendLinkStateAsync("usb", false, null, Timeout(5)); // sent while no transport: kept, replayed
+        _ = phone.ServeAsync(phoneEndL2);
+        var shellL2 = new CompanionClient { PcId = "pc1" };
+        await shellL2.ConnectAsync(pcEndL2, "test", Timeout(5), resume: client);
+        await WaitFor(() => phone.Shown == ("usb", false, null), 3000);
+        check(phone.Shown == ("usb", false, null), "a change sent while the route was down reaches the phone on the resume");
+
         // The phone rebooted: it no longer holds the session, so the resume is refused cleanly.
         phone.Reboot();
         var (pcEnd4, phoneEnd4) = Duplex.Pair();
@@ -171,6 +204,8 @@ static class ClientSim
         var failedFast = await Task.WhenAny(pending, Task.Delay(3000)) == pending && pending.IsFaulted;
         check(failedFast && oldLost == 0, "...and a cut fails its requests at once, as before (no linger)");
         check(old.SawSeq == false, "...and it never sees seq/ack fields");
+        await oldClient.SendLinkStateAsync("usb", true, "cable", Timeout(5));
+        check(old.LinkStates == 0, "...and no link.state: an older phone keeps its own view");
 
         // The engine switched off: the PC offers 31 even to a v32 phone.
         var (pcEnd6, phoneEnd6) = Duplex.Pair();
@@ -179,6 +214,23 @@ static class ClientSim
         var hello6 = await off.ConnectAsync(pcEnd6, "test", Timeout(5));
         check(hello6.V == 31 && !off.HasLinkSession, "with the new engine off, a v32 phone is spoken to as v31");
         off.Dispose();
+    }
+
+    private static IEnumerable<T[]> Permutations<T>(T[] items)
+    {
+        if (items.Length <= 1)
+        {
+            yield return items;
+            yield break;
+        }
+        for (var i = 0; i < items.Length; i++)
+        {
+            var rest = items.Where((_, j) => j != i).ToArray();
+            foreach (var tail in Permutations(rest))
+            {
+                yield return [items[i], .. tail];
+            }
+        }
     }
 
     private static CancellationToken Timeout(int seconds) => new CancellationTokenSource(TimeSpan.FromSeconds(seconds)).Token;
@@ -196,6 +248,10 @@ sealed class FakeLinkPhone
     public int Version { get; init; } = 32;
     public volatile bool Mute;
     public volatile string PhoneId = "phone1";
+
+    /// <summary>What the phone's screens show from the PC's link.state, or null before the PC said anything.</summary>
+    public (string Route, bool Adb, string? Via)? Shown;
+    public int LinkStates;
     public bool SawSeq;
 
     private sealed class Session(string id)
@@ -314,6 +370,17 @@ sealed class FakeLinkPhone
                 if (message.Seq is { } seq && session.Link.Accept(seq, 0) == FrameArrival.Duplicate) continue;
             }
             if (message.Type == MessageType.LinkNoop) continue; // only takes up its number
+            if (message.Type == MessageType.LinkState)
+            {
+                // As the phone does (CompanionStateHolder.PcLink.from): shown exactly, or not at all.
+                var route = (string?)message.Payload["route"];
+                var adb = (bool?)message.Payload["adb"];
+                Shown = route is "usb" or "wifi" or "direct" && adb is { } a
+                    ? (route, a, a ? (string?)message.Payload["adbVia"] : null)
+                    : null;
+                LinkStates++;
+                continue;
+            }
             lock (_handled) _handled.Add((message.Type, (string?)message.Payload["body"] ?? ""));
             Send(session, Envelope.Create(MessageType.Ok, replyTo: message.Id));
         }
