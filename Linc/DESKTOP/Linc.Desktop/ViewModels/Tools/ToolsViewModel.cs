@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Linc.Desktop.Services;
 using Linc.Desktop.Services.Tools;
 using Microsoft.UI.Dispatching;
 
@@ -22,8 +23,11 @@ public partial class ToolsViewModel : ObservableObject
     private CancellationTokenSource? _watch;
     private CancellationTokenSource? _noticeClear;
     private bool _active;
+    private readonly IConnectionSupervisor _link;
+    private readonly IHotspotLinkService _hotspot;
+    private readonly SemaphoreSlim _wake = new(0);
 
-    public ToolsViewModel(ToolsContext ctx, TypeToolViewModel type, RescueToolViewModel rescue, AppsToolViewModel apps,
+    public ToolsViewModel(IConnectionSupervisor link, IHotspotLinkService hotspot, ToolsContext ctx, TypeToolViewModel type, RescueToolViewModel rescue, AppsToolViewModel apps,
         CaptureToolViewModel capture, HealthToolViewModel health, SystemToolViewModel system, CommandsToolViewModel commands,
         ConsoleToolViewModel console)
     {
@@ -37,6 +41,18 @@ public partial class ToolsViewModel : ObservableObject
         };
         ctx.CommandShown += command => _dispatcher.TryEnqueue(() => LastCommand = "⌘ " + command);
         ctx.Notice += text => _dispatcher.TryEnqueue(() => ShowNotice(text));
+        _link = link;
+        _hotspot = hotspot;
+        // Tools follows Linc's own connection too, so its card says what Home says: a phone that is
+        // connected without ADB is "connected, Tools needs ADB", never "connect your phone". A change
+        // also looks for adb devices at once (wireless debugging coming up under the link).
+        link.StateChanged += () => _dispatcher.TryEnqueue(() =>
+        {
+            OnPropertyChanged(nameof(EmptyTitle));
+            OnPropertyChanged(nameof(EmptyText));
+            OnPropertyChanged(nameof(CanTurnOnWireless));
+            if (_active) _wake.Release();
+        });
     }
 
     public TypeToolViewModel TypeTool { get; }
@@ -112,13 +128,57 @@ public partial class ToolsViewModel : ObservableObject
 
     public string DeviceLabel => SelectedDevice?.Label ?? "No phone";
 
+    /// <summary>Linc itself is connected to a phone (any route), whether or not adb can see it.</summary>
+    private bool LincConnected => _link.State == LinkState.Connected && _link.Device is not null;
+
     public string EmptyTitle => SelectedDevice is { Authorized: false }
         ? "Allow USB debugging on the phone"
-        : "Connect your phone";
+        : LincConnected
+            ? $"{_link.Device!.Model} is connected, but Tools needs ADB"
+            : "Connect your phone";
 
     public string EmptyText => SelectedDevice is { Authorized: false }
         ? "The phone is asking whether to trust this PC. Tap Allow on the phone (tick \"Always allow\"), and Tools opens here."
-        : "Plug it in with a USB cable, or pair it over Wi-Fi on the Device page. Tools needs USB debugging on; the Linc app doesn't have to be running.";
+        : LincConnected
+            ? "Tools works through USB debugging or wireless debugging. Plug in the cable, or let Linc turn on wireless debugging on the phone."
+            : "Plug it in with a USB cable, or pair it over Wi-Fi on the Device page. Tools needs USB debugging on; the Linc app doesn't have to be running.";
+
+    /// <summary>Linc is connected without ADB: the phone can switch wireless debugging on itself.</summary>
+    public bool CanTurnOnWireless => LincConnected && !HasPhone && !_arming;
+
+    private bool _arming;
+
+    /// <summary>Asks the phone (over Linc's own link) to turn wireless debugging on; the PC then
+    /// connects to it as it does after a restart, and Tools sees it within a few seconds.</summary>
+    [RelayCommand]
+    private async Task TurnOnWirelessAsync()
+    {
+        _arming = true;
+        OnPropertyChanged(nameof(CanTurnOnWireless));
+        ShowNotice("Asked the phone to turn on wireless debugging…");
+        try
+        {
+            await _hotspot.RequestArmAsync(HotspotArmFallback.Prefer, CancellationToken.None);
+            for (var i = 0; i < 15 && !HasPhone; i++)
+            {
+                _wake.Release();
+                await Task.Delay(1000);
+            }
+            if (!HasPhone)
+            {
+                ShowNotice("The phone didn't turn it on by itself. On the phone: Settings › Developer options › Wireless debugging.");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ShowNotice("Couldn't ask the phone: " + ex.Message);
+        }
+        finally
+        {
+            _arming = false;
+            OnPropertyChanged(nameof(CanTurnOnWireless));
+        }
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasLastCommand))]
@@ -197,7 +257,8 @@ public partial class ToolsViewModel : ObservableObject
             if (ct.IsCancellationRequested) return;
             UpdateDevices(found);
             Searched = true;
-            try { await Task.Delay(TimeSpan.FromSeconds(3), ct); }
+            OnPropertyChanged(nameof(CanTurnOnWireless));
+            try { await _wake.WaitAsync(TimeSpan.FromSeconds(3), ct); }
             catch (OperationCanceledException) { return; }
         }
     }

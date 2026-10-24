@@ -43,9 +43,14 @@ public sealed class AdbShell(IAdbServerHost server, ILogService log) : IAdbShell
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Said once per distinct reason, so a broken adb server is in the log, not silent.
+            if (ex.Message != _lastListError) log.Log(LogLevel.Warn, $"Tools: couldn't list phones from adb: {ex.Message}");
+            _lastListError = ex.Message;
             return [];
         }
     }
+
+    private string? _lastListError;
 
     public async Task<ShellResult> RunAsync(string serial, string command, TimeSpan? timeout = null, bool secret = false, CancellationToken ct = default)
     {
