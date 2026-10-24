@@ -14,6 +14,14 @@ Read next in this folder:
 
 ---
 
+## Owner's future ideas (not started)
+
+- **ADB on the phone's side (2026-10-24):** the phone app itself uses ADB in a limited way
+  (wireless debugging to itself, Shizuku-style) for a few extra powers.
+- **Pairing without the phone app:** Linc on the PC usable with ADB only (limited), the app
+  recommended but not required. Ties into LincLink's ADB-only mode and the Tools page, which already
+  works without the app.
+
 ## Connection rebuild (LincLink)
 
 A dedicated session builds it from `linc-link/BRIEF.md` on branch `claude/linc-link`; when it
