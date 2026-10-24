@@ -102,6 +102,9 @@
                     <FontIcon Glyph="&#xE8EA;" FontSize="36" HorizontalAlignment="Left" Foreground="{ThemeResource PrimaryBrush}" />
                     <TextBlock Text="{x:Bind ViewModel.EmptyTitle, Mode=OneWay}" Style="{StaticResource TitleText}" />
                     <TextBlock Text="{x:Bind ViewModel.EmptyText, Mode=OneWay}" Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                    <Button Style="{StaticResource FilledButton}" Content="Turn on wireless debugging" HorizontalAlignment="Left"
+                            Visibility="{x:Bind ViewModel.CanTurnOnWireless, Mode=OneWay}"
+                            Command="{x:Bind ViewModel.TurnOnWirelessCommand}" />
                 </StackPanel>
             </Border>
 
