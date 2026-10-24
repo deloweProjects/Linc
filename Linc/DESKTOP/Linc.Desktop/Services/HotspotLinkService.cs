@@ -153,6 +153,16 @@ public sealed class HotspotLinkService(
 
         // The admission gate, in one call, before anything is dialled. Generation first, then
         // `verified`, then structure - all of it in HotspotAnnounce so it is provable.
+        // The phone counts its announcements from 1 again each time its Linc process starts, so a
+        // PC that saw gen 64 earlier ignored every announcement after a phone restart ("stale gen
+        // 11 (highest seen 64)") and ADB over Wi-Fi never came back (owner's log, 2026-10-24).
+        // While no wireless-debugging link is up there is nothing a stale message could tear down,
+        // so a lower number then means a restarted phone: count again from it.
+        if (announcement is not null && announcement.Gen < HighestSeenGeneration && LinkedEndpoint is null)
+        {
+            log.Log(LogLevel.Info, $"The phone's ADB announcements started counting again (gen {announcement.Gen} after {HighestSeenGeneration}); Linc on the phone restarted, so this one counts.");
+            HighestSeenGeneration = HotspotGeneration.NothingSeen;
+        }
         var reject = HotspotAnnounce.RejectReason(announcement, HighestSeenGeneration);
         if (reject is not null || announcement is null)
         {

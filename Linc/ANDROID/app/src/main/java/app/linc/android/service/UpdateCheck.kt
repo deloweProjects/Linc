@@ -32,7 +32,8 @@ object UpdateCheck {
 
     private const val PREFS = "linc"
     private const val KEY_LAST = "update_last_check"
-    private const val INTERVAL_MS = 6 * 60 * 60 * 1000L
+    // A test build (Linc Test) looks every 30 minutes; a release every 6 hours.
+    private val INTERVAL_MS = if (BuildConfig.TEST_BUILD > 0) 30 * 60 * 1000L else 6 * 60 * 60 * 1000L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
 

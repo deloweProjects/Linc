@@ -136,7 +136,20 @@ public partial class AppShellViewModel : ObservableObject
             UpdateNotes = _updates.Latest?.Notes;
             if (action == UpdateAction.None) _ = CheckTestFeedAsync(); // a test build: its own feed too
         });
-        if (BuildFlavor.IsTest) _ = Task.Run(() => TestInstall.Prune(registry.RootPath));
+        if (BuildFlavor.IsTest)
+        {
+            _ = Task.Run(() => TestInstall.Prune(registry.RootPath));
+            // A test build looks for a newer one every 30 minutes too, not only at start: Linc
+            // stays open for days in the tray (the owner was still on build 11 hours after 12).
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(30)).ConfigureAwait(false);
+                    if (_testOffer is null) await CheckTestFeedAsync().ConfigureAwait(false);
+                }
+            });
+        }
     }
 
     // ---- M17b B4: what the user sees ----

@@ -1,4 +1,5 @@
 # What's new in the current test release (shown in the Telegram post; plain lines, no headings below)
+• ADB over Wi-Fi comes back after Linc restarts on the phone (the PC was ignoring the phone's announcements after a restart); Linc Test now looks for updates every 30 minutes
 • Mirror "Fill this monitor": if the link drops, the phone now puts its own screen size and rotation back by itself after a few seconds; a "Reset screen" card on the phone and a button in PC Tools › System do it at once
 • The phone and the PC now always agree on how they are connected (USB or Wi-Fi) and whether ADB is up
 • ADB turns itself back on: after a restart or a Wi-Fi change Linc switches wireless debugging on again (needs the cable once, if it says so)
