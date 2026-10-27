@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -273,7 +274,7 @@ private fun HomeContent(
  * The connection, as Home's hero: the PC's name large, a chip for how it's linked (USB cable or
  * Wi-Fi) and one for its state, on the theme's primary container. Tap for the Connection sheet.
  */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ConnectionHero(connection: ServiceState, transport: String?, adb: Boolean?, adbArming: Boolean, onClick: () -> Unit, onMirror: () -> Unit) {
     val connected = connection as? ServiceState.Connected
@@ -316,7 +317,10 @@ private fun ConnectionHero(connection: ServiceState, transport: String?, adb: Bo
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Wraps to a second line when the chips don't fit beside the shape (a large font
+                // size, a long state): a plain Row squeezed the last chip until "ADB" stood as
+                // A / D / B, one letter a line (owner's screenshot, 2026-10-27).
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     StatusChip(label, quality)
                     if (connected != null && transport != null) StatusChip(if (usb) "USB" else transport.removePrefix("Wi-Fi ").let { if (it.startsWith("(")) "Wi-Fi" else it }, Quality.Good)
                     // The same ADB chip as the PC's, from what the PC says (link.state).
