@@ -114,6 +114,14 @@
         </intent>
         <package android:name="com.google.android.gms" />
         <package android:name="com.samsung.android.app.sharelive" />
+        <!-- Every app with a launcher icon, for the PC's Apps list (AppInventory). Without it
+             Android 11+ only showed Linc the apps that happened to be visible to it (Share
+             targets, apps whose notifications it had seen): 36 of a Pixel 7's 83 after a fresh
+             install, 2026-10-27. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application
