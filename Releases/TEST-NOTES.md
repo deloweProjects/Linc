@@ -1,4 +1,7 @@
 # What's new in the current test release (shown in the Telegram post; plain lines, no headings below)
+• Phone Settings › Undo changes from your PC: shows if the PC left the screen size, rotation, stay-awake, show touches, the demo-mode status bar or animation speed changed, and puts each back with one tap (Fix all for everything)
+• "Fill this monitor": if the phone disconnects, its screen goes back to its own size about 5 seconds after the mirror ends (was 16)
+• Phone Settings in a clearer order (what Linc can do first, then the connection), with each choice inside its own card; the Home card's chips no longer squeeze "ADB" into a column
 • The PC's Apps list now shows every app on the phone (Android had been hiding many of them from Linc)
 • Fewer crashes, safer saves: a failed button or drop no longer closes Linc, settings survive Linc or Windows dying mid-save, the mirror and phone-sound windows close with Linc, Quick Share no longer says "disconnected" after a send that finished, and a long Terminal session stays smooth
 • ADB over Wi-Fi comes back after Linc restarts on the phone (the PC was ignoring the phone's announcements after a restart); Linc Test now looks for updates every 30 minutes
