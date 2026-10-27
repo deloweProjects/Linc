@@ -65,6 +65,10 @@ class TerminalEmulator(cols: Int, rows: Int, private val scrollbackLimit: Int = 
     /** Every line: scrollback, then the screen. */
     fun lines(): List<Line> = scrollback.toList() + screen
     val scrollbackSize: Int get() = scrollback.size
+    /** How many lines [lines] holds, without building it. */
+    val lineCount: Int get() = scrollback.size + screen.size
+    /** Line [index] of [lines], without copying the rest: the console draws one screenful a frame. */
+    fun line(index: Int): Line = if (index < scrollback.size) scrollback[index] else screen[index - scrollback.size]
 
     /**
      * A new size. A new width re-wraps the main screen and scrollback (an alternate screen, a

@@ -41,20 +41,23 @@ public sealed class PcAudioEverywhere(
     private EverywhereSettings? _settings;
     private List<PcOutputDevice> _pcDevices = [];
     private List<PhoneOutput> _phoneOutputs = [];
-    private bool _phoneClockReady;
+    // Locks (TIDY-UP B11): _lock guards _sinks, _sinkRetryAtUs, _pcDevices, _phoneOutputs and
+    // Settings (MarginMs included); _groupLock guards _group; _delayUs goes through Interlocked.
+    // The flags marked volatile are set from control messages and read on the monitor thread.
+    private volatile bool _phoneClockReady;
     private long _delayUs = GroupDelay.MinUs;
     private string? _error;
     private string? _note;
     private string? _cableId;
     private (float Level, bool Muted)? _cableRestore;
-    private int _sourceRate = 48_000;
+    private volatile int _sourceRate = 48_000;
     private CancellationTokenSource? _monitorStop;
 
     private Dictionary<string, List<TestSound>> _soundsById = new();
     private string? _testMode;
     private int _testSeq;
     private long _testUntilUs;
-    private bool _saidStateFailed;
+    private volatile bool _saidStateFailed;
 
     private sealed record PhoneOutput(string Id, string Name, bool Bluetooth, long NeedUs, string Status, double OffByUs);
 
@@ -180,7 +183,7 @@ public sealed class PcAudioEverywhere(
     // ---- the phone as the source (v27, D-097) ------------------------------------------------
 
     public const int PhoneAudioChannel = 8;
-    private bool _phoneSource;
+    private volatile bool _phoneSource;
     private Stream? _phoneChannel;
 
     /// <summary>
@@ -217,7 +220,7 @@ public sealed class PcAudioEverywhere(
 
     // ---- the phone as the source, the way Mirror screen takes it (v31) -------------------------
 
-    private bool _mirrorSource;
+    private volatile bool _mirrorSource;
     private PhoneMirrorSource? _mirror;
 
     private PhoneMirrorSource Mirror
@@ -623,6 +626,7 @@ public sealed class PcAudioEverywhere(
     {
         if (_phoneSource) return false; // the phone's own output sets the moment
         var needs = new List<(string, long)>();
+        long marginUs;
         lock (_lock)
         {
             foreach (var sink in _sinks.Values.Where(s => s.Status == "playing"))
@@ -630,12 +634,13 @@ public sealed class PcAudioEverywhere(
             foreach (var o in _phoneOutputs)
                 if (Settings.Devices.TryGetValue(o.Id, out var s) && s.Enabled && o.NeedUs > 0)
                     needs.Add((o.Name, o.NeedUs));
+            marginUs = Settings.MarginMs * 1000L; // written under _lock, so read under it too (B11)
         }
         long current, old;
         string? reason;
         lock (_groupLock)
         {
-            if (!_group.Update(needs, Settings.MarginMs * 1000L, now)) return false;
+            if (!_group.Update(needs, marginUs, now)) return false;
             current = _group.CurrentUs;
             reason = _group.Reason;
             old = Interlocked.Exchange(ref _delayUs, current);

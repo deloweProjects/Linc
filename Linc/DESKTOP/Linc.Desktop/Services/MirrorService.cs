@@ -55,6 +55,9 @@ public sealed class MirrorService(ILogService log) : IMirrorService
     public event Action<string>? ErrorRaised;
 
     private readonly object _lock = new();
+    // StateChanged / ErrorRaised decided under _lock are queued here and raised once it is let go
+    // (RaisePending), so a subscriber that calls back in or waits on another thread can't deadlock.
+    private readonly List<Action> _pending = [];
     private Process? _process;
     private bool _stopRequested;
     private int _autoRestarts;
@@ -108,6 +111,7 @@ public sealed class MirrorService(ILogService log) : IMirrorService
             {
                 _starting = false;
             }
+            RaisePending();
         }
     }
 
@@ -146,9 +150,9 @@ public sealed class MirrorService(ILogService log) : IMirrorService
                     process.WaitForExit(2000);
                 }
             }
-            catch (InvalidOperationException)
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
-                // Already exited.
+                // Already exited, or Windows refused because it is exiting right now.
             }
         });
     }
@@ -213,13 +217,14 @@ public sealed class MirrorService(ILogService log) : IMirrorService
         try
         {
             process.Start();
+            ChildProcessJob.Add(process, log);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
         }
         catch (Exception)
         {
             SetState(MirrorState.Stopped);
-            ErrorRaised?.Invoke("Linc couldn't start screen mirroring. Reinstall scrcpy and try again.");
+            _pending.Add(() => ErrorRaised?.Invoke("Linc couldn't start screen mirroring. Reinstall scrcpy and try again."));
             return;
         }
         try
@@ -320,45 +325,68 @@ public sealed class MirrorService(ILogService log) : IMirrorService
     {
         lock (_lock)
         {
-            if (!ReferenceEquals(process, _process))
-            {
-                return; // stale handler from a previous session
-            }
-            _process = null;
-            var uptime = DateTime.UtcNow - _startedUtc;
-            TotalSessionDuration += uptime;
-            var cleanExit = _stopRequested || process.ExitCode == 0;
-            process.Dispose();
+            OnProcessExitedLocked(process);
+        }
+        RaisePending();
+    }
 
-            var serial = _session?.Serial;
-            if (cleanExit)
+    private void OnProcessExitedLocked(Process process)
+    {
+        if (!ReferenceEquals(process, _process))
+        {
+            try { process.Dispose(); } catch { } // stale handler from a previous session
+            return;
+        }
+        _process = null;
+        var uptime = DateTime.UtcNow - _startedUtc;
+        TotalSessionDuration += uptime;
+        var cleanExit = _stopRequested || process.ExitCode == 0;
+        process.Dispose();
+
+        var serial = _session?.Serial;
+        if (cleanExit)
+        {
+            SetState(MirrorState.Stopped);
+            log.Log(LogLevel.Info, "Screen mirroring stopped");
+            _ = Task.Run(() => RestoreDisplay(serial));
+            return;
+        }
+
+        // Crash recovery: sessions that ran healthily get restarted quietly;
+        // immediate crashes point at a real problem the user must see.
+        if (uptime > TimeSpan.FromSeconds(10) && _autoRestarts < 2 && _session is not null)
+        {
+            _autoRestarts++;
+            var scrcpyPath = ToolLocator.FindScrcpy();
+            if (scrcpyPath is not null)
             {
-                SetState(MirrorState.Stopped);
-                log.Log(LogLevel.Info, "Screen mirroring stopped");
-                _ = Task.Run(() => RestoreDisplay(serial));
+                log.Log(LogLevel.Warn, "Screen mirroring crashed after a healthy run; restarting");
+                LaunchLocked(scrcpyPath);
                 return;
             }
+        }
 
-            // Crash recovery: sessions that ran healthily get restarted quietly;
-            // immediate crashes point at a real problem the user must see.
-            if (uptime > TimeSpan.FromSeconds(10) && _autoRestarts < 2 && _session is not null)
-            {
-                _autoRestarts++;
-                var scrcpyPath = ToolLocator.FindScrcpy();
-                if (scrcpyPath is not null)
-                {
-                    log.Log(LogLevel.Warn, "Screen mirroring crashed after a healthy run; restarting");
-                    LaunchLocked(scrcpyPath);
-                    return;
-                }
-            }
+        SetState(MirrorState.Stopped);
+        log.Log(LogLevel.Error, "Screen mirroring stopped unexpectedly");
+        _ = Task.Run(() => RestoreDisplay(serial));
+        _pending.Add(() => ErrorRaised?.Invoke(
+            "Screen mirroring stopped unexpectedly. Check that the phone is still " +
+            "connected and unlocked, then start mirroring again."));
+    }
 
-            SetState(MirrorState.Stopped);
-            log.Log(LogLevel.Error, "Screen mirroring stopped unexpectedly");
-            _ = Task.Run(() => RestoreDisplay(serial));
-            ErrorRaised?.Invoke(
-                "Screen mirroring stopped unexpectedly. Check that the phone is still " +
-                "connected and unlocked, then start mirroring again.");
+    private void RaisePending()
+    {
+        Action[] events;
+        lock (_lock)
+        {
+            if (_pending.Count == 0) return;
+            events = [.. _pending];
+            _pending.Clear();
+        }
+        foreach (var raise in events)
+        {
+            try { raise(); }
+            catch (Exception ex) { log.Log(LogLevel.Warn, $"Mirror: a state listener failed ({ex.Message})"); }
         }
     }
 
@@ -598,12 +626,13 @@ public sealed class MirrorService(ILogService log) : IMirrorService
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
 
+    /// <summary>Always called under <c>_lock</c>; the event goes out from <see cref="RaisePending"/>.</summary>
     private void SetState(MirrorState newState)
     {
         if (State != newState)
         {
             State = newState;
-            StateChanged?.Invoke();
+            _pending.Add(() => StateChanged?.Invoke());
         }
     }
 }

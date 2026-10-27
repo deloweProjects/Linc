@@ -70,6 +70,7 @@ public sealed class AppLaunchService(
     {
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.Start();
+        ChildProcessJob.Add(process); // ends with Linc, a crash included (TIDY-UP B2)
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         return process;

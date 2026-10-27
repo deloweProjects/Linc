@@ -93,6 +93,7 @@ public sealed class PhoneSoundOnPc(IConnectionManager connection, PcBluetoothAud
             try
             {
                 process.Start();
+                ChildProcessJob.Add(process, log);
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
             }
@@ -113,22 +114,26 @@ public sealed class PhoneSoundOnPc(IConnectionManager connection, PcBluetoothAud
 
     private void OnExited(Process process, Func<string> lastLine)
     {
-        bool expected;
+        bool current;
         lock (_lock)
         {
-            if (!ReferenceEquals(process, _process)) return;
-            _process = null;
-            expected = _stopping;
-            if (!expected)
+            current = ReferenceEquals(process, _process);
+            if (current)
             {
-                // Android 12 and older can't duplicate the sound; scrcpy says so and exits.
-                var line = lastLine();
-                _error = line.Contains("Android 13", StringComparison.OrdinalIgnoreCase) ? "needs-android-13" : "stopped";
-                log.Log(LogLevel.Info, $"Phone sound: the mirror's sound stopped ({(line.Length > 0 ? line : $"exit {SafeExitCode(process)}")})");
+                _process = null;
+                if (!_stopping)
+                {
+                    // Android 12 and older can't duplicate the sound; scrcpy says so and exits.
+                    var line = lastLine();
+                    _error = line.Contains("Android 13", StringComparison.OrdinalIgnoreCase) ? "needs-android-13" : "stopped";
+                    log.Log(LogLevel.Info, $"Phone sound: the mirror's sound stopped ({(line.Length > 0 ? line : $"exit {SafeExitCode(process)}")})");
+                }
             }
-            process.Dispose();
         }
-        Changed?.Invoke();
+        // Stop() lets go of the process before killing it, so this is the one place that frees it,
+        // however it ended (it used to return early here and leak the handle on every Stop).
+        try { process.Dispose(); } catch { }
+        if (current) Changed?.Invoke();
     }
 
     private void Stop(string why)
@@ -145,7 +150,11 @@ public sealed class PhoneSoundOnPc(IConnectionManager connection, PcBluetoothAud
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
         }
-        catch (InvalidOperationException) { }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // Already gone, or Windows refused (it is exiting): OnExited still frees it.
+            log.Log(LogLevel.Info, $"Phone sound: scrcpy was already ending ({ex.GetType().Name})");
+        }
         log.Log(LogLevel.Info, $"Phone sound: stopped playing on this PC ({why})");
     }
 

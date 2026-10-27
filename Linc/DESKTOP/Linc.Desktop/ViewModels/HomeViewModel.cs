@@ -1920,7 +1920,15 @@ RefreshGradient();
         _seekDragging = false;
         _basePositionMs = (long)positionMs;
         _basePositionAtTick = Environment.TickCount64;
-        await _media.ControlAsync("seek", (long)positionMs);
+        try
+        {
+            await _media.ControlAsync("seek", (long)positionMs);
+        }
+        catch (Exception ex)
+        {
+            // async void: a throw here (the link dropping mid-seek) would close Linc (TIDY-UP B10).
+            _log.Log(LogLevel.Warn, $"Now playing: seeking failed ({ex.Message})");
+        }
     }
 
     /// <summary>Called by the page when the user grabs the seek thumb.</summary>

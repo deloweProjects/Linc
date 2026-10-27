@@ -60,17 +60,24 @@ public sealed partial class SyncPage : Page
 
     private async void OnRemovePair(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is not FolderPairVm pair) return;
-        var dialog = new ContentDialog
+        try
         {
-            Title = $"Stop syncing {pair.Name}?",
-            Content = "Both folders and their files stay where they are; Linc just stops keeping them the same.",
-            PrimaryButtonText = "Stop syncing",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = Content.XamlRoot,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) ViewModel.RemovePair(pair);
+            if ((sender as FrameworkElement)?.DataContext is not FolderPairVm pair) return;
+            var dialog = new ContentDialog
+            {
+                Title = $"Stop syncing {pair.Name}?",
+                Content = "Both folders and their files stay where they are; Linc just stops keeping them the same.",
+                PrimaryButtonText = "Stop syncing",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary) ViewModel.RemovePair(pair);
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "SyncPage.OnRemovePair");
+        }
     }
 
     private static readonly (string Direction, string Label)[] Directions =

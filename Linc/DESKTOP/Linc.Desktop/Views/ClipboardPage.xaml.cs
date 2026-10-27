@@ -18,18 +18,25 @@ public sealed partial class ClipboardPage : Page
 
     private async void OnClearClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new ContentDialog
+        try
         {
-            Title = "Clear the clipboard history?",
-            Content = "Everything except pinned items is deleted from this PC. Your phone keeps its own history.",
-            PrimaryButtonText = "Clear",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = XamlRoot,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            var dialog = new ContentDialog
+            {
+                Title = "Clear the clipboard history?",
+                Content = "Everything except pinned items is deleted from this PC. Your phone keeps its own history.",
+                PrimaryButtonText = "Clear",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                ViewModel.ClearHistory();
+            }
+        }
+        catch (Exception ex)
         {
-            ViewModel.ClearHistory();
+            AsyncVoidGuard.Report(ex, "ClipboardPage.OnClearClick");
         }
     }
 }

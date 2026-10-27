@@ -81,6 +81,7 @@ public sealed class PhoneMirrorSource(ILogService log)
             try
             {
                 process.Start();
+                ChildProcessJob.Add(process, log);
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
             }

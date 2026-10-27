@@ -49,7 +49,14 @@ public sealed partial class HealthSection : UserControl
 
     private async void OnStopApp(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string package }) await ViewModel.StopAppAsync(package);
+        try
+        {
+            if (sender is FrameworkElement { Tag: string package }) await ViewModel.StopAppAsync(package);
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "HealthSection.OnStopApp");
+        }
     }
 
     private void OnCopyDetails(object sender, RoutedEventArgs e)

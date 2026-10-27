@@ -346,6 +346,7 @@ public sealed class QsConnection : IAsyncDisposable
         var drain = DrainWhileSendingAsync(streaming);
         long sent = 0;
         var buffer = new byte[ChunkSize];
+        var allSent = false;
         try
         {
             if (textBytes is not null)
@@ -372,6 +373,7 @@ public sealed class QsConnection : IAsyncDisposable
                 await SendPayloadChunkAsync(id, PayloadTransferFrame.Types.PayloadHeader.Types.PayloadType.File,
                     size, offset, ReadOnlyMemory<byte>.Empty, last: true, Path.GetFileName(path), streaming.Token);
             }
+            allSent = true;
         }
         finally
         {
@@ -380,11 +382,21 @@ public sealed class QsConnection : IAsyncDisposable
         }
         if (drain.IsCompletedSuccessfully && drain.Result is { } problem)
         {
-            throw new IOException(problem);
+            // Every byte was already out: a receiver that has it all may hang up before this side
+            // stops draining (a fast one does; Linc's own over loopback did, which failed
+            // quicksharesim now and then). That is the transfer finishing, like the socket closing
+            // under the drain. A cancel from the other side is still a failure.
+            if (!(allSent && problem == DisconnectedMidTransfer))
+            {
+                throw new IOException(problem);
+            }
+            return true; // they already closed: no Disconnection of ours to send
         }
         await SendDisconnectionAsync(ct);
         return true;
     }
+
+    private const string DisconnectedMidTransfer = "The device disconnected during the transfer.";
 
     private async Task<string?> DrainWhileSendingAsync(CancellationTokenSource streaming)
     {
@@ -396,7 +408,7 @@ public sealed class QsConnection : IAsyncDisposable
                 if (frame.V1?.Type == NcV1.Types.FrameType.Disconnection)
                 {
                     streaming.Cancel();
-                    return "The device disconnected during the transfer.";
+                    return DisconnectedMidTransfer;
                 }
                 if (frame.V1?.Type == NcV1.Types.FrameType.PayloadTransfer &&
                     AccumulateBytes(frame.V1.PayloadTransfer) is { } bytes &&

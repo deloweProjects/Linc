@@ -27,14 +27,21 @@ public sealed partial class HomePage : Page
     /// <summary>Shared tab: pick PC files and push them to the phone (the picker needs a HWND).</summary>
     private async void OnSendToPhone(object sender, RoutedEventArgs e)
     {
-        var picker = new Windows.Storage.Pickers.FileOpenPicker();
-        picker.FileTypeFilter.Add("*");
-        WinRT.Interop.InitializeWithWindow.Initialize(
-            picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
-        var files = await picker.PickMultipleFilesAsync();
-        if (files.Count > 0)
+        try
         {
-            await ViewModel.SendFilesToPhoneAsync(files.Select(f => f.Path).ToList());
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(
+                picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
+            var files = await picker.PickMultipleFilesAsync();
+            if (files.Count > 0)
+            {
+                await ViewModel.SendFilesToPhoneAsync(files.Select(f => f.Path).ToList());
+            }
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "HomePage.OnSendToPhone");
         }
     }
 

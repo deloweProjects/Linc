@@ -190,6 +190,7 @@ public sealed class DesktopLaunchService(ILogService log) : IDesktopLaunchServic
         try
         {
             process.Start();
+            ChildProcessJob.Add(process, log);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
         }

@@ -480,7 +480,10 @@ object PcTools {
                     if (next === CLOSE) break
                     output.write(next); output.flush()
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                // Usually the link closing under it; one line says so instead of keys just stopping.
+                LogStore.log(LogLevel.INFO, "Terminal: stopped sending keys to the PC (${e.javaClass.simpleName}: ${e.message})")
+            }
             runCatching { input.close() }
         }, "linc-term-writer").apply { isDaemon = true; start() }
         try {

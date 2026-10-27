@@ -22,6 +22,7 @@
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneFingerprint.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopModeService.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DesktopLaunchService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ChildProcessJob.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AdbServerHost.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ToolLocator.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LogService.cs" />

@@ -140,7 +140,7 @@ object SyncedAudio {
             runCatching { codec.release() }
             synchronized(outputs) { outputs.values.toList().also { outputs.clear() } }.forEach { it.close() }
             LogStore.log(LogLevel.INFO, "Play everywhere: the PC's sound stopped")
-            AudioEverywhere.context()?.let { context -> runCatching { PcPlaybackSession.stop(context) } }
+            AudioEverywhere.context()?.let { context -> runLogged("Play everywhere: closing the media controls") { PcPlaybackSession.stop(context) } }
             AudioEverywhere.onStreamChanged()
         }
     }

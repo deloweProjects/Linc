@@ -22,7 +22,11 @@ public sealed class PcBluetoothAudio(ILogService log)
     /// <summary>Raised when the connection opens, closes or fails, from any thread.</summary>
     public event Action? Changed;
 
+    // A guard the platform analyzer understands (CA1416): AudioPlaybackConnection is Windows 10
+    // 2004 (19041) and up, while Linc runs from 1809 (17763).
+    [System.Runtime.Versioning.SupportedOSPlatformGuard("windows10.0.19041.0")]
     public static bool Supported =>
+        OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) &&
         Windows.Foundation.Metadata.ApiInformation.IsTypePresent("Windows.Media.Audio.AudioPlaybackConnection");
 
     public bool IsOn => _open is not null;
@@ -50,7 +54,7 @@ public sealed class PcBluetoothAudio(ILogService log)
         {
             if (!on)
             {
-                CloseLocked("stopped");
+                if (Supported) CloseLocked("stopped"); // nothing can be open where it isn't
                 _error = null;
                 return;
             }
@@ -125,6 +129,7 @@ public sealed class PcBluetoothAudio(ILogService log)
     }
 
     /// <summary>The phone turned Bluetooth off, walked away, or picked another speaker.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows10.0.19041.0")]
     private void OnStateChanged(AudioPlaybackConnection sender, object args)
     {
         if (sender.State != AudioPlaybackConnectionState.Closed || !ReferenceEquals(sender, _open)) return;
@@ -137,6 +142,7 @@ public sealed class PcBluetoothAudio(ILogService log)
         Changed?.Invoke();
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows10.0.19041.0")]
     private void CloseLocked(string why)
     {
         if (_open is not { } open) return;

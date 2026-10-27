@@ -41,9 +41,16 @@ public sealed partial class FilesPage : Page
 
     private async void OnEntryDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is RemoteEntryVm entry)
+        try
         {
-            await ViewModel.OpenEntryAsync(entry);
+            if ((e.OriginalSource as FrameworkElement)?.DataContext is RemoteEntryVm entry)
+            {
+                await ViewModel.OpenEntryAsync(entry);
+            }
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "FilesPage.OnEntryDoubleTapped");
         }
     }
 
@@ -58,28 +65,42 @@ public sealed partial class FilesPage : Page
 
     private async void OnFilesDrop(object sender, DragEventArgs e)
     {
-        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+        try
         {
-            return;
+            if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+            {
+                return;
+            }
+            var items = await e.DataView.GetStorageItemsAsync();
+            var paths = items.OfType<StorageFile>().Select(file => file.Path).ToList();
+            if (paths.Count > 0)
+            {
+                await ViewModel.UploadFilesAsync(paths);
+            }
         }
-        var items = await e.DataView.GetStorageItemsAsync();
-        var paths = items.OfType<StorageFile>().Select(file => file.Path).ToList();
-        if (paths.Count > 0)
+        catch (Exception ex)
         {
-            await ViewModel.UploadFilesAsync(paths);
+            AsyncVoidGuard.Report(ex, "FilesPage.OnFilesDrop");
         }
     }
 
     private async void OnUploadClick(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        picker.FileTypeFilter.Add("*");
-        WinRT.Interop.InitializeWithWindow.Initialize(
-            picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
-        var files = await picker.PickMultipleFilesAsync();
-        if (files.Count > 0)
+        try
         {
-            await ViewModel.UploadFilesAsync(files.Select(file => file.Path).ToList());
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(
+                picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
+            var files = await picker.PickMultipleFilesAsync();
+            if (files.Count > 0)
+            {
+                await ViewModel.UploadFilesAsync(files.Select(file => file.Path).ToList());
+            }
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "FilesPage.OnUploadClick");
         }
     }
 
@@ -109,48 +130,69 @@ public sealed partial class FilesPage : Page
 
     private async void OnNewFolderClick(object sender, RoutedEventArgs e)
     {
-        var name = await PromptAsync("New folder", "Folder name");
-        if (name is { Length: > 0 })
+        try
         {
-            await ViewModel.CreateFolderAsync(name);
+            var name = await PromptAsync("New folder", "Folder name");
+            if (name is { Length: > 0 })
+            {
+                await ViewModel.CreateFolderAsync(name);
+            }
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "FilesPage.OnNewFolderClick");
         }
     }
 
     private async void OnRenameClick(object sender, RoutedEventArgs e)
     {
-        var current = ViewModel.SelectedEntry;
-        if (current is null)
+        try
         {
-            return;
+            var current = ViewModel.SelectedEntry;
+            if (current is null)
+            {
+                return;
+            }
+            var name = await PromptAsync("Rename", "New name", current.Name);
+            if (name is { Length: > 0 })
+            {
+                await ViewModel.RenameSelectedAsync(name);
+            }
         }
-        var name = await PromptAsync("Rename", "New name", current.Name);
-        if (name is { Length: > 0 })
+        catch (Exception ex)
         {
-            await ViewModel.RenameSelectedAsync(name);
+            AsyncVoidGuard.Report(ex, "FilesPage.OnRenameClick");
         }
     }
 
     private async void OnDeleteClick(object sender, RoutedEventArgs e)
     {
-        var current = ViewModel.SelectedEntry;
-        if (current is null)
+        try
         {
-            return;
+            var current = ViewModel.SelectedEntry;
+            if (current is null)
+            {
+                return;
+            }
+            var dialog = new ContentDialog
+            {
+                Title = $"Delete {current.Name}?",
+                Content = current.IsDirectory
+                    ? "The folder and everything inside it will be deleted from the phone. This can't be undone."
+                    : "The file will be deleted from the phone. This can't be undone.",
+                PrimaryButtonText = "Delete",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                await ViewModel.DeleteSelectedAsync();
+            }
         }
-        var dialog = new ContentDialog
+        catch (Exception ex)
         {
-            Title = $"Delete {current.Name}?",
-            Content = current.IsDirectory
-                ? "The folder and everything inside it will be deleted from the phone. This can't be undone."
-                : "The file will be deleted from the phone. This can't be undone.",
-            PrimaryButtonText = "Delete",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = Content.XamlRoot,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-        {
-            await ViewModel.DeleteSelectedAsync();
+            AsyncVoidGuard.Report(ex, "FilesPage.OnDeleteClick");
         }
     }
 

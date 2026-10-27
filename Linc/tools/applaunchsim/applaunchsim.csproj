@@ -17,6 +17,7 @@
       Nothing in this harness spawns a process or touches %LOCALAPPDATA% at all (D-057).
     -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AppLaunchService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ChildProcessJob.cs" />
     <!--
       M9f (A2.2/A3.2): Desktop Mode's own launch path, compiled in ONLY so the harness can call the
       REAL DesktopLaunchService.BuildScrcpyArgs and assert it does NOT carry the per-app-window

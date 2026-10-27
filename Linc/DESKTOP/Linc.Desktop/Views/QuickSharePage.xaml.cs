@@ -41,14 +41,21 @@ public sealed partial class QuickSharePage : Page
 
     private async void OnSendToPhoneClick(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        picker.FileTypeFilter.Add("*");
-        WinRT.Interop.InitializeWithWindow.Initialize(
-            picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
-        var files = await picker.PickMultipleFilesAsync();
-        if (files is { Count: > 0 })
+        try
         {
-            Linc.SendFiles(files.Select(f => f.Path).ToList());
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(
+                picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
+            var files = await picker.PickMultipleFilesAsync();
+            if (files is { Count: > 0 })
+            {
+                Linc.SendFiles(files.Select(f => f.Path).ToList());
+            }
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "QuickSharePage.OnSendToPhoneClick");
         }
     }
 
@@ -63,24 +70,38 @@ public sealed partial class QuickSharePage : Page
 
     private async void OnPhoneDrop(object sender, DragEventArgs e)
     {
-        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+        try
         {
-            return;
+            if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+            {
+                return;
+            }
+            var items = await e.DataView.GetStorageItemsAsync();
+            Linc.SendFiles(items.OfType<StorageFile>().Select(f => f.Path).ToList());
         }
-        var items = await e.DataView.GetStorageItemsAsync();
-        Linc.SendFiles(items.OfType<StorageFile>().Select(f => f.Path).ToList());
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "QuickSharePage.OnPhoneDrop");
+        }
     }
 
     private async void OnSendClick(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        picker.FileTypeFilter.Add("*");
-        WinRT.Interop.InitializeWithWindow.Initialize(
-            picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
-        var files = await picker.PickMultipleFilesAsync();
-        if (files is { Count: > 0 })
+        try
         {
-            await ViewModel.SendAsync(files.Select(f => f.Path).ToList());
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(
+                picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance));
+            var files = await picker.PickMultipleFilesAsync();
+            if (files is { Count: > 0 })
+            {
+                await ViewModel.SendAsync(files.Select(f => f.Path).ToList());
+            }
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "QuickSharePage.OnSendClick");
         }
     }
 
@@ -95,12 +116,19 @@ public sealed partial class QuickSharePage : Page
 
     private async void OnDeviceDrop(object sender, DragEventArgs e)
     {
-        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+        try
         {
-            return;
+            if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+            {
+                return;
+            }
+            var items = await e.DataView.GetStorageItemsAsync();
+            var paths = items.OfType<StorageFile>().Select(f => f.Path).ToList();
+            await ViewModel.SendAsync(paths);
         }
-        var items = await e.DataView.GetStorageItemsAsync();
-        var paths = items.OfType<StorageFile>().Select(f => f.Path).ToList();
-        await ViewModel.SendAsync(paths);
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "QuickSharePage.OnDeviceDrop");
+        }
     }
 }

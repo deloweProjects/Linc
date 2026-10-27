@@ -28,6 +28,17 @@ class TerminalEmulatorTest {
     }
 
     @Test
+    fun `line by index is the same line lines() holds, scrollback first`() {
+        val t = TerminalEmulator(5, 2)
+        t.feed("one\r\ntwo\r\nthree\r\nfour")
+        val all = t.lines()
+        assertEquals(all.size, t.lineCount)
+        assertEquals(2, t.scrollbackSize)
+        for (k in all.indices) assertTrue("line $k", all[k] === t.line(k))
+        assertEquals(listOf("one", "two", "three", "four"), (0 until t.lineCount).map { t.line(it).text() })
+    }
+
+    @Test
     fun `cursor positioning, erase in line and in display`() {
         val t = TerminalEmulator(10, 3)
         t.feed("1111111111\r\n2222222222\r\n3333333333")

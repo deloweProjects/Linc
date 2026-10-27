@@ -12,6 +12,7 @@
     <!-- Compiled verbatim from Linc.Desktop Services -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorSettings.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\MirrorService.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\ChildProcessJob.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\PhoneShapeGuard.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceRegistry.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\FolderPair.cs" />

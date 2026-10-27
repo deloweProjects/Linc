@@ -392,15 +392,24 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
                     val drawn = version // read here, so the console redraws when it changes
                     if (drawn < 0) return@Canvas
                     val screen = PcTools.screen
+                    // Only the rows on view are copied (TIDY-UP A1). Copying the whole scrollback
+                    // every frame, under the emulator's lock on the UI thread, cost more the
+                    // longer the session ran and held up the PC's output meanwhile.
+                    var total = 0
+                    var first = 0
                     val (lines, cRow, cCol, cVisible) = synchronized(screen) {
-                        Quad(screen.lines().map { Snapshot(String(it.chars), it.attrs.copyOf()) }, screen.cursorRow, screen.cursorCol, screen.cursorVisible)
+                        total = screen.lineCount
+                        first = (total - rows - scrollBack).coerceAtLeast(0)
+                        val shown = (first until minOf(first + rows, total)).map { k ->
+                            screen.line(k).let { Snapshot(String(it.chars), it.attrs.copyOf()) }
+                        }
+                        Quad(shown, screen.cursorRow, screen.cursorCol, screen.cursorVisible)
                     }
-                    val first = (lines.size - rows - scrollBack).coerceAtLeast(0)
                     val canvas = drawContext.canvas.nativeCanvas
                     canvas.save()
                     canvas.translate(-px, 0f) // the columns panned off to the left
                     for (r in 0 until rows) {
-                        val line = lines.getOrNull(first + r) ?: break
+                        val line = lines.getOrNull(r) ?: break
                         val y = pad + r * cellH
                         val baseline = y - metrics.ascent
                         var i = 0
@@ -418,7 +427,7 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
                                 paint.color = b.toArgb()
                                 canvas.drawRect(x, y, x + (j - i) * cellW, y + cellH, paint)
                             }
-                            if (line.text.substring(i, j).isNotBlank()) {
+                            if (hasInk(line.text, i, j)) {
                                 paint.color = f.toArgb()
                                 paint.isFakeBoldText = attr and TerminalEmulator.BOLD != 0L
                                 paint.isUnderlineText = attr and TerminalEmulator.UNDERLINE != 0L
@@ -428,7 +437,7 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
                         }
                     }
                     // The cursor: a block in the theme's primary colour, on the live screen only.
-                    val cursorLine = lines.size - screen.rows + cRow
+                    val cursorLine = total - screen.rows + cRow
                     if (cVisible && open && scrollBack == 0 && cursorLine >= first && cursorLine < first + rows) {
                         val x = pad + cCol * cellW
                         val y = pad + (cursorLine - first) * cellH
@@ -482,6 +491,12 @@ fun TerminalSession(shell: String?, onClose: () -> Unit) {
 }
 
 private data class Snapshot(val text: String, val attrs: LongArray)
+
+/** Whether cells [from] until [to] hold anything but blanks, checked in place (no substring per run). */
+private fun hasInk(text: String, from: Int, to: Int): Boolean {
+    for (k in from until to) if (!text[k].isWhitespace()) return true
+    return false
+}
 
 /**
  * Cells [from] until [to] of one line, each at its own column. Plain ASCII is drawn in runs (the

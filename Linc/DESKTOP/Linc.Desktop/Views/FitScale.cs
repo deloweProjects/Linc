@@ -37,7 +37,7 @@ public sealed class FitScale : Panel
     public double MinWidthScale { get; set; } = 0.8;
 
     /// <summary>The scale applied in the last layout pass (1 = untouched).</summary>
-    public double Scale { get; private set; } = 1;
+    public double ContentScale { get; private set; } = 1;
 
     private ScrollViewer? _host;
 
@@ -75,7 +75,7 @@ public sealed class FitScale : Panel
             : _host is { ActualHeight: > 0 } host ? host.ActualHeight
             : DesignHeight;
         double scale = ScaleFor(width, height);
-        Scale = scale;
+        ContentScale = scale;
         // Shrunk all the way: the content keeps the height it needs and the host scrolls it.
         double outerHeight = Math.Max(height, DesignHeight * MinScale);
         var logical = new Size(width / scale, outerHeight / scale);
@@ -88,7 +88,7 @@ public sealed class FitScale : Panel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        double scale = Scale;
+        double scale = ContentScale;
         var logical = new Size(finalSize.Width / scale, finalSize.Height / scale);
         foreach (var child in Children)
         {

@@ -214,8 +214,8 @@ object AudioEverywhere {
         // Tracks carry their usage from birth: reopen them (off the caller's thread: closing one
         // waits for its writer), and give up (or take) the media role.
         thread(name = "linc-everywhere-source", isDaemon = true) {
-            if (value) runCatching { PcPlaybackSession.stop(context) }
-            else runCatching { PcPlaybackSession.start(context) }
+            if (value) runLogged("Play everywhere: closing the media controls") { PcPlaybackSession.stop(context) }
+            else runLogged("Play everywhere: showing the media controls") { PcPlaybackSession.start(context) }
             SyncedAudio.setOutputs(context, emptyList())
             applyOutputs()
         }
@@ -408,7 +408,7 @@ object AudioEverywhere {
         val manager = context.getSystemService(AudioManager::class.java)
         val source = if (manager?.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true")
             MediaRecorder.AudioSource.UNPROCESSED else MediaRecorder.AudioSource.VOICE_RECOGNITION
-        val record = runCatching {
+        val record = runLogged("Play everywhere: opening the microphone") {
             AudioRecord(source, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                 maxOf(AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), rate))
         }.getOrNull()

@@ -110,7 +110,7 @@ object PhoneSource {
             return
         }
         val manager = context.getSystemService(MediaProjectionManager::class.java)
-        val p = runCatching { manager.getMediaProjection(resultCode, data) }.getOrNull()
+        val p = runLogged("Phone sound: getting Android's permission to record") { manager.getMediaProjection(resultCode, data) }.getOrNull()
         if (p == null) {
             _state.value = _state.value.copy(note = "Android didn't allow recording what apps play.")
             return
@@ -123,7 +123,7 @@ object PhoneSource {
             .addMatchingUsage(AudioAttributes.USAGE_GAME)
             .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
             .build()
-        val r = runCatching {
+        val r = runLogged("Phone sound: starting to record what apps play") {
             AudioRecord.Builder()
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(RATE)
                     .setChannelMask(AudioFormat.CHANNEL_IN_STEREO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
@@ -160,7 +160,7 @@ object PhoneSource {
         }
         AudioEverywhere.setPhoneSource(false)
         synchronized(outputs) { outputs.values.toList().also { outputs.clear() } }.forEach { it.close() }
-        runCatching { context.startService(Intent(context, CompanionService::class.java).setAction(ACTION_STOP)) }
+        runLogged("Phone sound: telling the service to stop recording") { context.startService(Intent(context, CompanionService::class.java).setAction(ACTION_STOP)) }
         _state.value = PhoneSourceState(note = null)
         LogStore.log(LogLevel.INFO, "Play everywhere: the phone stopped being the source ($why)")
     }

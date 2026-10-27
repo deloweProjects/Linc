@@ -961,19 +961,61 @@ public sealed class DeviceRegistry : IDeviceRegistry
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
             // The five legacy per-device fields are written as null — they now live per device.
-            // The two M9b history fields at the end round-trip through the positional record.
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(
-                null, PairedSerial, PairedModel, ClipboardSyncEnabled, NotificationSyncEnabled,
-                AllowUsbConnections, null, BackgroundConnectionEnabled, null,
-                null, null, _knownDevices,
-                NotificationHistoryEnabled, NotificationHistoryRetentionDays, StartWithWindows,
-                null, SkippedUpdateVersion, UsePhoneColours, UpdatesEnabled,
-                ClipboardHistoryEnabled, ClipboardHistorySize, ShowExplanations, ForceSoftwareEncoding,
-                FloatingNav, HomeClock, WallpaperBackdrop, ClockStyle, AppFont, LincLinkEnabled)));
+            // Named, not positional (TIDY-UP B6): with 29 slots, many of them bool?, two neighbours
+            // passed in the wrong order would compile and silently swap settings.
+            WriteFileSafely(SettingsPath, JsonSerializer.Serialize(new Settings(
+                LastHostPort: null,
+                PairedSerial: PairedSerial,
+                PairedModel: PairedModel,
+                ClipboardSyncEnabled: ClipboardSyncEnabled,
+                NotificationSyncEnabled: NotificationSyncEnabled,
+                AllowUsbConnections: AllowUsbConnections,
+                PhoneCertBase64: null,
+                BackgroundConnectionEnabled: BackgroundConnectionEnabled,
+                SyncLanes: null,
+                FolderSyncPcPath: null,
+                FolderSyncPhonePath: null,
+                KnownDevices: _knownDevices,
+                NotificationHistoryEnabled: NotificationHistoryEnabled,
+                NotificationHistoryRetentionDays: NotificationHistoryRetentionDays,
+                StartWithWindows: StartWithWindows,
+                UpdateManifestUrl: null,
+                SkippedUpdateVersion: SkippedUpdateVersion,
+                UsePhoneColours: UsePhoneColours,
+                UpdatesEnabled: UpdatesEnabled,
+                ClipboardHistoryEnabled: ClipboardHistoryEnabled,
+                ClipboardHistorySize: ClipboardHistorySize,
+                ShowExplanations: ShowExplanations,
+                ForceSoftwareEncoding: ForceSoftwareEncoding,
+                FloatingNav: FloatingNav,
+                HomeClock: HomeClock,
+                WallpaperBackdrop: WallpaperBackdrop,
+                ClockStyle: ClockStyle,
+                AppFont: AppFont,
+                LincLinkEnabled: LincLinkEnabled)));
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Non-fatal: worst case the user pairs or types the address again next launch.
+            // (UnauthorizedAccessException, a read-only file or a security tool holding it, isn't
+            // an IOException; it used to escape into whichever setting was being changed.)
         }
+    }
+
+    /// <summary>
+    /// Writes a whole file so a crash or power cut mid-write leaves the old copy, never half of the
+    /// new one (TIDY-UP B6): a torn <c>settings.json</c> read back as a fresh start, pairing and
+    /// all. The text goes to a temp file beside it, is flushed to disk, then replaces the old file
+    /// in one rename. UTF-8 without a BOM, as <see cref="File.WriteAllText(string, string?)"/> wrote.
+    /// </summary>
+    public static void WriteFileSafely(string path, string contents)
+    {
+        var temp = path + ".tmp";
+        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            stream.Write(new System.Text.UTF8Encoding(false).GetBytes(contents));
+            stream.Flush(flushToDisk: true);
+        }
+        File.Move(temp, path, overwrite: true);
     }
 }

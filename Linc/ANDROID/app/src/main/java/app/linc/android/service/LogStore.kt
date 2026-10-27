@@ -10,6 +10,15 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class LogLevel { INFO, WARN, ERROR }
 
+/**
+ * [runCatching] that leaves a WARN line in the log when [block] fails (TIDY-UP A2). An empty catch
+ * is how the MediaSession Looper bug that cut Play everywhere off went unseen. Use it where a
+ * failure changes what the user gets; plain runCatching stays for stop()/release() clean-up,
+ * where failing only means "already gone".
+ */
+inline fun <T> runLogged(what: String, block: () -> T): Result<T> =
+    runCatching(block).onFailure { LogStore.log(LogLevel.WARN, "$what failed (${it.javaClass.simpleName}: ${it.message})") }
+
 data class LogEntry(val timestamp: Long, val level: LogLevel, val message: String)
 
 /**

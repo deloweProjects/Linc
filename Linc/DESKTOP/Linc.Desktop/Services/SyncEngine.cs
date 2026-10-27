@@ -356,7 +356,7 @@ public sealed class SyncEngine : ISyncEngine, IDisposable
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
-            File.WriteAllText(_statePath, JsonSerializer.Serialize(_state));
+            WriteFileSafely(_statePath, JsonSerializer.Serialize(_state));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -365,6 +365,19 @@ public sealed class SyncEngine : ISyncEngine, IDisposable
             // an IOException, so the old narrower catch would have let it escape the pass.)
             _log.Log(LogLevel.Warn, $"Couldn't save the sync bookkeeping file: {ex.Message}");
         }
+    }
+
+    // As DeviceRegistry.WriteFileSafely (syncsim builds this file without DeviceRegistry): a crash
+    // mid-write leaves the old file, not half a new one that reads back empty and re-syncs all.
+    private static void WriteFileSafely(string path, string contents)
+    {
+        var temp = path + ".tmp";
+        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            stream.Write(new System.Text.UTF8Encoding(false).GetBytes(contents));
+            stream.Flush(flushToDisk: true);
+        }
+        File.Move(temp, path, overwrite: true);
     }
 
     public void Dispose()

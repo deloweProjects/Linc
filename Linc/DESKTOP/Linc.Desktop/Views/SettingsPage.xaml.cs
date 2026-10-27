@@ -54,31 +54,45 @@ public sealed partial class SettingsPage : Page
 
     private async void OnCableInstallClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        var dialog = new ContentDialog
+        try
         {
-            Title = "Set up the phone as a microphone?",
-            Content = $"Linc will download {VirtualCablePackage.DisplayName} {VirtualCablePackage.Version} from vb-audio.com, check it, and open VB-Audio's own installer: approve Windows' prompt, then click \"Install Driver\". VB-CABLE is donationware — see vb-audio.com for its terms.",
-            PrimaryButtonText = "Set up",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = Content.XamlRoot,
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-        CableInstallButton.IsEnabled = false;
-        CableStatus.Text = "Downloading VB-CABLE…";
-        var progress = new Progress<int>(p => CableStatus.Text = p < 100
-            ? $"Downloading VB-CABLE… {p} %"
-            : "Approve Windows' prompt, then click Install Driver in VB-Audio's setup.");
-        var result = await Task.Run(() => _cable.InstallAsync(progress));
-        await RefreshCableAsync(result.Ok ? null : result.Message);
+            var dialog = new ContentDialog
+            {
+                Title = "Set up the phone as a microphone?",
+                Content = $"Linc will download {VirtualCablePackage.DisplayName} {VirtualCablePackage.Version} from vb-audio.com, check it, and open VB-Audio's own installer: approve Windows' prompt, then click \"Install Driver\". VB-CABLE is donationware — see vb-audio.com for its terms.",
+                PrimaryButtonText = "Set up",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            CableInstallButton.IsEnabled = false;
+            CableStatus.Text = "Downloading VB-CABLE…";
+            var progress = new Progress<int>(p => CableStatus.Text = p < 100
+                ? $"Downloading VB-CABLE… {p} %"
+                : "Approve Windows' prompt, then click Install Driver in VB-Audio's setup.");
+            var result = await Task.Run(() => _cable.InstallAsync(progress));
+            await RefreshCableAsync(result.Ok ? null : result.Message);
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "SettingsPage.OnCableInstallClick");
+        }
     }
 
     private async void OnCableRemoveClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        CableRemoveButton.IsEnabled = false;
-        CableStatus.Text = "Approve Windows' prompt, then click Remove Driver in VB-Audio's setup.";
-        var result = await Task.Run(() => _cable.UninstallAsync());
-        await RefreshCableAsync(result.Message);
+        try
+        {
+            CableRemoveButton.IsEnabled = false;
+            CableStatus.Text = "Approve Windows' prompt, then click Remove Driver in VB-Audio's setup.";
+            var result = await Task.Run(() => _cable.UninstallAsync());
+            await RefreshCableAsync(result.Message);
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "SettingsPage.OnCableRemoveClick");
+        }
     }
 
     /// <summary>
@@ -88,18 +102,25 @@ public sealed partial class SettingsPage : Page
     /// </summary>
     private async void OnClearHistoryClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        var dialog = new ContentDialog
+        try
         {
-            Title = "Clear notification history?",
-            Content = "Every stored notification, for all devices, will be deleted from this PC. This can't be undone.",
-            PrimaryButtonText = "Clear",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = Content.XamlRoot,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            var dialog = new ContentDialog
+            {
+                Title = "Clear notification history?",
+                Content = "Every stored notification, for all devices, will be deleted from this PC. This can't be undone.",
+                PrimaryButtonText = "Clear",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                await ViewModel.ClearHistoryCommand.ExecuteAsync(null);
+            }
+        }
+        catch (Exception ex)
         {
-            await ViewModel.ClearHistoryCommand.ExecuteAsync(null);
+            AsyncVoidGuard.Report(ex, "SettingsPage.OnClearHistoryClick");
         }
     }
 }
