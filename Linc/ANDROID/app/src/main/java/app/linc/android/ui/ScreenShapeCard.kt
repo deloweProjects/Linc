@@ -28,16 +28,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import app.linc.android.service.PcChanges
 import app.linc.android.ui.kit.Kit
 
 /**
  * "Fill this monitor" changes this phone's screen size and rotation for the PC mirror. The PC
  * puts them back when mirroring stops, and if the link drops, a small script the PC left on the
- * phone does it by itself a few seconds later (PC `Services/PhoneShapeGuard.cs`). While the screen
- * is changed, the PC's script keeps the global setting [ACTIVE] at "1"; this card shows then, and
- * its Reset button asks the script (setting [RESET]) to put the screen back now.
+ * phone does it by itself about 5 s after the mirror ends (PC `Services/PhoneShapeGuard.cs`).
+ * While the screen is changed, the PC's script keeps the global setting [ACTIVE] at "1"; this card
+ * shows then, and its Reset button asks the script (setting [RESET]) to put the screen back now,
+ * or resets the size itself when the script is gone ([PcChanges]).
  */
 object ScreenShape {
     const val ACTIVE = "linc_shape_active"
@@ -84,16 +87,16 @@ fun ScreenShapeCard(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(onClick = {
-                if (!ScreenShape.requestReset(context)) {
+                if (!PcChanges.canFix(context)) {
                     note = "Linc can't do this on its own yet. Plug the phone into the PC once, or connect Linc on the PC: it puts the screen back."
                     return@Button
                 }
                 note = "Putting the screen back…"
                 scope.launch {
-                    delay(6_000)
-                    if (ScreenShape.active(context)) {
-                        note = "The phone restarted since, so it can't do this by itself. Connect Linc on the PC (or plug in the cable): it puts the screen back."
-                    }
+                    // The mirror's watcher if it's still there (it knows the exact earlier size),
+                    // else the phone's own reset: the same fix as Settings › Undo changes from your PC.
+                    val ok = withContext(Dispatchers.IO) { PcChanges.fix(context, PcChanges.Item.SCREEN) }
+                    if (!ok) note = "Couldn't put it back here. Connect Linc on the PC (or plug in the cable): it puts the screen back."
                 }
             }) { Text("Reset screen") }
         }

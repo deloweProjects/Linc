@@ -44,11 +44,9 @@ public static class PhoneSetupCommands
         }
         // All-files access (D-021) backs wallpaper, the files channel and photos.
         plan.Add($"appops set {package} MANAGE_EXTERNAL_STORAGE allow");
+        // Ends with the self-arm grant (M13c §2.1), last deliberately: it is the least essential,
+        // and a phone whose OEM blocks it still gets everything before it.
         plan.AddRange(UpkeepPlan(package));
-        // M13c §2.1 — last, deliberately: it is the newest and least essential of these, and
-        // ordering it after the rest means a phone whose OEM blocks it still gets everything
-        // that came before.
-        plan.Add($"pm grant {package} {SelfArmPermission}");
         return plan;
     }
 
@@ -64,11 +62,17 @@ public static class PhoneSetupCommands
     /// something is copied, and the overlay grant lets it put up an invisible window for the
     /// instant it takes to read the clip. Both can only be granted over ADB.
     /// </para>
+    /// <para>
+    /// The self-arm grant is here too, last (2026-10-27): it used to be made only by first-time
+    /// setup, so a reinstalled phone lost it for good, and with it turning wireless debugging back
+    /// on by itself and undoing what the PC changed (phone Settings).
+    /// </para>
     /// </summary>
     public static IReadOnlyList<string> UpkeepPlan(string package) =>
     [
         $"pm grant {package} {ClipboardLogPermission}",
         $"appops set {package} SYSTEM_ALERT_WINDOW allow",
+        $"pm grant {package} {SelfArmPermission}",
     ];
 
     /// <summary>True when a command in a plan is the self-arm grant.</summary>

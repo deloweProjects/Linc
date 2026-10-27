@@ -322,6 +322,7 @@ fun SettingsRow(
     iconTint: Color = MaterialTheme.colorScheme.onSecondaryContainer,
     iconContainer: Color = MaterialTheme.colorScheme.secondaryContainer,
     trailing: @Composable (() -> Unit)? = null,
+    below: (@Composable () -> Unit)? = null,
 ) {
     Surface(
         shape = segmentShape(segment),
@@ -329,29 +330,35 @@ fun SettingsRow(
         border = frostedCardBorder(),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier
-                .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
-                .heightIn(min = 64.dp)
-                .padding(horizontal = Kit.gutter, vertical = 12.dp)
-                .alpha(if (enabled) 1f else 0.38f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            if (icon != null) {
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(iconContainer),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp)) }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                if (value != null) {
-                    Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column {
+            Row(
+                modifier = Modifier
+                    .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
+                    .heightIn(min = 64.dp)
+                    .padding(horizontal = Kit.gutter, vertical = 12.dp)
+                    .alpha(if (enabled) 1f else 0.38f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (icon != null) {
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).background(iconContainer),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp)) }
                 }
-                if (supporting != null) HelperText(supporting, kind = supportingKind, maxLines = 3)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                    if (value != null) {
+                        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (supporting != null) HelperText(supporting, kind = supportingKind, maxLines = 3)
+                }
+                if (trailing != null) trailing()
             }
-            if (trailing != null) trailing()
+            // A row's own choices (quality, pointer, history size) sit inside its card, under it.
+            if (below != null) {
+                Box(Modifier.fillMaxWidth().padding(start = Kit.gutter, end = Kit.gutter, bottom = 16.dp)) { below() }
+            }
         }
     }
 }

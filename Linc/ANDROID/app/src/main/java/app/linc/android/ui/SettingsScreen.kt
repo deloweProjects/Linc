@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +56,7 @@ import app.linc.android.service.LincNotificationListener
 import app.linc.android.service.ProjectLinks
 import app.linc.android.service.MirrorSettings
 import app.linc.android.service.NfcTap
+import app.linc.android.service.PcChanges
 import app.linc.android.service.SmsProvider
 import app.linc.android.service.TransportStore
 import app.linc.android.service.UpdateCheck
@@ -74,11 +76,17 @@ import app.linc.android.ui.theme.AppFontSetting
 import app.linc.android.ui.theme.FloatingNav
 import app.linc.android.ui.theme.LincTheme
 import app.linc.android.ui.theme.headingFamily
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * Settings (1.0.0.11, D-082): one grouped list, in the order of the spec — Connection, Features
- * shared with the PC, Clipboard, Mirror PC, Appearance, Updates, Help & diagnostics, About.
- * Every permission row is always present and says whether it is granted ("disable, never hide").
+ * Settings (1.0.0.11, D-082): one grouped list. Order (2026-10-27, owner: "do better ui for
+ * settings page like the order"): what makes Linc work first — Features shared with your PC,
+ * Connection — then Mirror PC and, right after it, Undo changes from your PC (what a mirror or the
+ * PC's Tools can leave changed), then Clipboard, Appearance, Updates, Help & diagnostics, About.
+ * A row's own choices sit inside its card. Every permission row is always present and says
+ * whether it is granted ("disable, never hide").
  */
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () -> Unit) {
@@ -110,6 +118,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
     val wallpaperBackground by app.linc.android.ui.theme.WallpaperBackground.flow(context).collectAsState()
     val floatingNav by FloatingNav.flow(context).collectAsState()
     val appFont by AppFontSetting.flow(context).collectAsState()
+    val canFix = remember(tick) { PcChanges.canFix(context) }
+    val pcChanges = remember(tick) { PcChanges.detect(PcChanges.snapshot(context)) }
+    var fixing by remember { mutableStateOf<PcChanges.Item?>(null) }
+    val scope = rememberCoroutineScope()
     var choosingFont by remember { mutableStateOf(false) }
     if (choosingFont) {
         FontDialog(
@@ -121,7 +133,39 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
 
     LincScaffold(title = "Settings", onBack = onBack) { inner ->
         val notify = rememberNotify()
+        fun fixPcChanges(items: List<PcChanges.Item>) {
+            if (fixing != null || items.isEmpty()) return
+            fixing = items.first()
+            scope.launch {
+                val failed = withContext(Dispatchers.IO) { items.filterNot { PcChanges.fix(context, it) } }
+                fixing = null
+                tick++
+                notify(when {
+                    failed.isNotEmpty() -> "Couldn't put everything back. Settings › Logs says why."
+                    items.size == 1 -> "Put back"
+                    else -> "All put back"
+                })
+            }
+        }
         LazyColumn(contentPadding = pagePadding(inner, bottomExtra = 32.dp)) {
+            item { SectionHeader("Features shared with your PC") }
+            item {
+                SettingsGroup(rows = listOf(
+                    { s -> GrantRow(s, "Notifications", LincSymbols.Notifications, notifications,
+                        "Your PC shows this phone's notifications.") { openSafely(context, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } },
+                    { s -> GrantRow(s, "Messages", LincSymbols.Sms, sms, "Read and send texts from your PC.") {
+                        smsPermission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)) } },
+                    { s -> GrantRow(s, "Calls", LincSymbols.Call, calls, "See calls and dial from your PC.") {
+                        callPermission.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.CALL_PHONE,
+                            Manifest.permission.READ_PHONE_STATE, Manifest.permission.ANSWER_PHONE_CALLS)) } },
+                    { s -> SettingsRow("Clipboard sync", s, LincSymbols.Clipboard,
+                        supporting = "Copy on one device, paste on the other.",
+                        trailing = { Switch(clipSync, { clipSync = it; ClipboardSettings.setSyncEnabled(context, it) }) }) },
+                    { s -> GrantRow(s, "All files access", LincSymbols.Folder, allFiles,
+                        "Send files to your PC, browse this phone's files from it, and show its wallpaper.") { openAllFilesSettings(context) } },
+                ))
+            }
+
             item { SectionHeader("Connection") }
             item {
                 SettingsGroup(rows = listOf(
@@ -155,22 +199,47 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                 ))
             }
 
-            item { SectionHeader("Features shared with your PC") }
+            item { SectionHeader("Mirror PC") }
             item {
                 SettingsGroup(rows = listOf(
-                    { s -> GrantRow(s, "Notifications", LincSymbols.Notifications, notifications,
-                        "Your PC shows this phone's notifications.") { openSafely(context, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } },
-                    { s -> GrantRow(s, "Messages", LincSymbols.Sms, sms, "Read and send texts from your PC.") {
-                        smsPermission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)) } },
-                    { s -> GrantRow(s, "Calls", LincSymbols.Call, calls, "See calls and dial from your PC.") {
-                        callPermission.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.CALL_PHONE,
-                            Manifest.permission.READ_PHONE_STATE, Manifest.permission.ANSWER_PHONE_CALLS)) } },
-                    { s -> SettingsRow("Clipboard sync", s, LincSymbols.Clipboard,
-                        supporting = "Copy on one device, paste on the other.",
-                        trailing = { Switch(clipSync, { clipSync = it; ClipboardSettings.setSyncEnabled(context, it) }) }) },
-                    { s -> GrantRow(s, "All files access", LincSymbols.Folder, allFiles,
-                        "Send files to your PC, browse this phone's files from it, and show its wallpaper.") { openAllFilesSettings(context) } },
+                    { s -> SettingsRow("Picture quality", s, LincSymbols.Tune, value = quality.label, supporting = quality.blurb,
+                        below = { ConnectedChoice(MirrorSettings.Quality.entries.map { it to it.label }, quality, { quality = it; MirrorSettings.set(context, it) }) }) },
+                    { s -> SettingsRow("Pointer", s, LincSymbols.Mouse,
+                        value = if (pointer == MirrorSettings.PointerMode.TOUCH) "Touch — the pointer goes where you touch" else "Mouse — drag like a trackpad",
+                        below = {
+                            ConnectedChoice(listOf(MirrorSettings.PointerMode.TOUCH to "Touch", MirrorSettings.PointerMode.MOUSE to "Mouse"),
+                                pointer, { pointer = it; MirrorSettings.setPointerMode(context, it) })
+                        }) },
+                    { s -> SettingsRow("Keyboard on text fields", s, LincSymbols.Keyboard,
+                        supporting = "Show the keyboard when a text box on the PC is selected.",
+                        trailing = { Switch(autoKeyboard, { autoKeyboard = it; MirrorSettings.setAutoKeyboard(context, it) }) }) },
+                    { s -> SettingsRow("Microphone the PC hears", s, LincSymbols.Mic,
+                        value = if (phoneMic) "This phone" else "The PC's own",
+                        below = { ConnectedChoice(listOf(true to "This phone", false to "The PC's own"), phoneMic,
+                            { phoneMic = it; MirrorSettings.setVoicePhoneMic(context, it) }) }) },
                 ))
+            }
+
+            // What a mirror or the PC's Tools page can leave changed on this phone, and a way back
+            // (owner, 2026-10-27: "fixes such stuff that may arise coz of pc").
+            item {
+                SectionHeader("Undo changes from your PC") {
+                    if (canFix && pcChanges.size > 1 && fixing == null) {
+                        TextButton(onClick = { fixPcChanges(pcChanges.map { it.item }) }) { Text("Fix all") }
+                    }
+                }
+            }
+            item {
+                SettingsGroup(rows = buildList {
+                    if (!canFix) add { s ->
+                        SettingsRow("Needs your PC once", s, LincSymbols.Usb, value = "Not allowed yet",
+                            supporting = "Plug this phone into your PC with Linc open: Linc on the PC gives this app the permission to put these back.",
+                            supportingKind = Explanations.Kind.Warning)
+                    }
+                    PcChanges.Item.entries.forEach { item ->
+                        add { s -> PcChangeRow(s, item, pcChanges.firstOrNull { it.item == item }, canFix, fixing) { fixPcChanges(listOf(item)) } }
+                    }
+                })
             }
 
             item { SectionHeader("Clipboard") }
@@ -179,42 +248,19 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                     { s -> SettingsRow("Keep history", s, LincSymbols.History,
                         supporting = if (keepHistory) "Saved on this phone only." else "Clips sync but aren't kept.",
                         trailing = { Switch(keepHistory, { keepHistory = it; ClipboardSettings.setKeepHistory(context, it) }) }) },
-                    { s -> SettingsRow("History size", s, LincSymbols.ClearAll, value = "%,d items".format(historySize), enabled = keepHistory) },
+                    { s -> SettingsRow("History size", s, LincSymbols.ClearAll, value = "%,d items".format(historySize), enabled = keepHistory,
+                        below = {
+                            ConnectedChoice(
+                                options = ClipHistory.SIZES.map { it to "%,d".format(it) },
+                                selected = historySize,
+                                onSelect = { historySize = it; ClipboardSettings.setHistorySize(context, it) },
+                                enabled = keepHistory,
+                            )
+                        }) },
                     { s -> SettingsRow("Don't save sensitive copies", s, LincSymbols.VisibilityOff,
                         supporting = "Passwords and codes apps mark as sensitive are never saved or sent.",
                         trailing = { Switch(skipSensitive, { skipSensitive = it; ClipboardSettings.setSkipSensitive(context, it) }) }) },
                 ))
-            }
-            item {
-                ConnectedChoice(
-                    options = ClipHistory.SIZES.map { it to "%,d".format(it) },
-                    selected = historySize,
-                    onSelect = { historySize = it; ClipboardSettings.setHistorySize(context, it) },
-                    enabled = keepHistory,
-                    modifier = Modifier.padding(horizontal = Kit.gutter, vertical = 8.dp),
-                )
-            }
-
-            item { SectionHeader("Mirror PC") }
-            item {
-                SettingsGroup(rows = listOf(
-                    { s -> SettingsRow("Picture quality", s, LincSymbols.Tune, value = quality.label, supporting = quality.blurb) },
-                    { s -> SettingsRow("Pointer", s, LincSymbols.Mouse,
-                        value = if (pointer == MirrorSettings.PointerMode.TOUCH) "Touch — the pointer goes where you touch" else "Mouse — drag like a trackpad") },
-                    { s -> SettingsRow("Keyboard on text fields", s, LincSymbols.Keyboard,
-                        supporting = "Show the keyboard when a text box on the PC is selected.",
-                        trailing = { Switch(autoKeyboard, { autoKeyboard = it; MirrorSettings.setAutoKeyboard(context, it) }) }) },
-                ))
-            }
-            item {
-                Column(Modifier.padding(horizontal = Kit.gutter, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ConnectedChoice(MirrorSettings.Quality.entries.map { it to it.label }, quality, { quality = it; MirrorSettings.set(context, it) })
-                    ConnectedChoice(listOf(MirrorSettings.PointerMode.TOUCH to "Touch", MirrorSettings.PointerMode.MOUSE to "Mouse"),
-                        pointer, { pointer = it; MirrorSettings.setPointerMode(context, it) })
-                    Text("Which microphone the PC hears", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
-                    ConnectedChoice(listOf(true to "This phone", false to "The PC's own"), phoneMic,
-                        { phoneMic = it; MirrorSettings.setVoicePhoneMic(context, it) })
-                }
             }
 
             item { SectionHeader("Appearance") }
@@ -300,6 +346,42 @@ private fun GrantRow(
         supporting = what,
         onClick = if (granted) null else fix,
         trailing = if (granted) null else ({ FilledTonalButton(onClick = fix) { Text("Allow") } }),
+    )
+}
+
+/**
+ * One thing the PC can leave changed: how it is now ("As normal" when it is), who changes it, and
+ * Fix while it differs. A changed row's icon takes the tertiary colour so it stands out.
+ */
+@Composable
+private fun PcChangeRow(
+    segment: app.linc.android.ui.kit.Segment,
+    item: PcChanges.Item,
+    change: PcChanges.Change?,
+    canFix: Boolean,
+    fixing: PcChanges.Item?,
+    onFix: () -> Unit,
+) {
+    val (title, icon, what) = when (item) {
+        PcChanges.Item.SCREEN -> Triple("Screen size", LincSymbols.FitScreen, "Mirror's \"Fill this monitor\" reshapes it while mirroring.")
+        PcChanges.Item.ROTATION -> Triple("Rotation", LincSymbols.ScreenLockPortrait, "Mirror turns the phone sideways for a landscape monitor.")
+        PcChanges.Item.STAY_AWAKE -> Triple("Stay awake while charging", LincSymbols.Timer, "Mirror and the PC's Tools can keep the screen on while it's plugged in.")
+        PcChanges.Item.SHOW_TOUCHES -> Triple("Show touches", LincSymbols.TouchApp, "Dots where you touch, from Mirror or the PC's Tools.")
+        PcChanges.Item.DEMO_MODE -> Triple("Status bar demo mode", LincSymbols.Schedule, "The PC's clean screenshots freeze the clock at 12:00.")
+        PcChanges.Item.ANIMATIONS -> Triple("Animation speed", LincSymbols.Speed, "The PC's Tools can speed animations up or turn them off.")
+    }
+    val changed = change != null
+    SettingsRow(
+        title = title,
+        segment = segment,
+        icon = icon,
+        value = change?.now ?: "As normal",
+        supporting = what,
+        iconTint = if (changed) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+        iconContainer = if (changed) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+        trailing = if (!changed) null else ({
+            FilledTonalButton(onClick = onFix, enabled = canFix && fixing == null) { Text(if (fixing == item) "Fixing…" else "Fix") }
+        }),
     )
 }
 

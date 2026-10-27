@@ -77,6 +77,25 @@ internal static class ShapeGuardTests
             check(p.WaitForExit(5000) && !(File.Exists(log) && File.ReadAllText(log).Contains("wm size")),
                 "the PC restored it itself: the watcher ends without touching the screen");
 
+            // The mirror's server can take seconds to start: before it has been seen, the short
+            // grace doesn't apply (it would undo the shape before the mirror came up).
+            Reset();
+            File.Delete(Path.Combine(root, "scrcpy"));
+            p = Start();
+            Thread.Sleep(600); // 12 polls of the fake sleep: past the 5-poll grace, inside the 60-poll start allowance
+            check(!p.HasExited && File.Exists(marker), "a mirror still starting up keeps its shape: the short grace waits until the server is seen");
+            File.WriteAllText(Path.Combine(root, "scrcpy"), "");
+            Thread.Sleep(200);
+            File.Delete(Path.Combine(root, "scrcpy"));
+            check(p.WaitForExit(5000) && File.ReadAllText(log).Contains("wm size 1080x2400"),
+                "once seen and gone, the screen comes back after the short grace");
+
+            Reset();
+            File.Delete(Path.Combine(root, "scrcpy"));
+            p = Start();
+            check(p.WaitForExit(8000) && File.ReadAllText(log).Contains("wm size 1080x2400"),
+                "a mirror that never came up still gets its screen back, after the start allowance");
+
             Reset();
             p = Start();
             Thread.Sleep(300);
