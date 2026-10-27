@@ -392,7 +392,7 @@ public sealed class ConnectionManager(
                 Companion: hello,
                 Transport: LinkTransport.DirectTls), rawDevice: null, peer?.Address.ToString(), phoneId, pcDialled);
             log.Log(LogLevel.Info, hello.Resumed
-                ? $"The session moved to a direct Wi-Fi link ({(pcDialled ? "this PC dialled the phone" : "the phone dialled in")}); nothing was lost."
+                ? $"The session moved to {(peer is not null && System.Net.IPAddress.IsLoopback(peer.Address) ? "a direct link through the USB cable" : "a direct Wi-Fi link")} ({(pcDialled ? "this PC dialled the phone" : "the phone dialled in")}); nothing was lost."
                 : pcDialled ? "Connected to the phone directly — this PC dialled it, no ADB involved"
                 : "Connected to the phone directly — no ADB involved");
             return current;

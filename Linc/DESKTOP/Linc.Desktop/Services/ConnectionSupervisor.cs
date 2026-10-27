@@ -389,10 +389,13 @@ public sealed class ConnectionSupervisor(
     }
 
     /// <summary>Plain language for a transport — user-facing, so never the enum name.</summary>
-    private static string Describe(LinkTransport transport) => transport switch
+    private static string Describe(LinkTransport transport, string? directPeer = null) => transport switch
     {
         LinkTransport.AdbUsb => "the USB cable",
         LinkTransport.AdbWireless => "wireless debugging",
+        // From 127.0.0.1 the phone came in through adb's reverse tunnel, i.e. the cable, as
+        // LinkBrain.Route already tells Home and the phone; the log used to call it Wi-Fi.
+        LinkTransport.DirectTls when directPeer is "127.0.0.1" or "::1" => "a direct link through the USB cable",
         LinkTransport.DirectTls => "a direct Wi-Fi link",
         _ => "this connection",
     };
@@ -1119,7 +1122,7 @@ public sealed class ConnectionSupervisor(
         StartHealthLoop();
         if (handedOff)
         {
-            log.Log(LogLevel.Info, $"Moved the link to {Describe(device.Transport)} without dropping it" +
+            log.Log(LogLevel.Info, $"Moved the link to {Describe(device.Transport, connection.PeerAddress)} without dropping it" +
                 (wasHandingOff ? " (after the cable came out)." : "."));
             StateChanged?.Invoke(); // still Connected; the transport (and its icon) changed
         }
