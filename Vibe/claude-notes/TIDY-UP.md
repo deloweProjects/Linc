@@ -38,6 +38,12 @@ sims/unit tests green before and after, and **never mixed with feature work**.
   receiver hanging up right after the last chunk counted as "disconnected during the transfer");
   CS0108 (`FitScale.Scale` → `ContentScale`) and CA1416 (`PcBluetoothAudio`) warnings gone.
 
+Found on the owner's Pixel 7 the same day (`2b9d5b0`, `4420364`): the manifest's `<queries>` lacked
+MAIN/LAUNCHER, so the PC's Apps list held only the apps visible to Linc by chance (36 of 83 after a
+reinstall; 82 now); and the PC log called a direct link from 127.0.0.1 (adb's reverse tunnel, the
+cable) "a direct Wi-Fi link". The phone's installed Linc had also been signed with a stray debug key
+(`5230da12…`), which blocks every official update; it was reinstalled with the released key (`8182d316…`).
+
 Still open: B4, B5, B7, B8, B9, B12-B15, A3-A13, and the process items at the end.
 
 ## Phone app (Linc/ANDROID/app/src/main/java/app/linc/android/)
