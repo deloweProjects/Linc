@@ -12,6 +12,34 @@ retune the values freely.
 **Order:** the cheap, safe items first. The big refactors only with the UI test plus the
 sims/unit tests green before and after, and **never mixed with feature work**.
 
+## Done on 2026-10-27 (commit `937366e`, a local session; the tables below are the 10-20 review)
+
+- **B1** fixed: `PhoneSoundOnPc.OnExited` frees the process however it ended; a refused `Kill` is
+  logged (also in `MirrorService.StopAsync`).
+- **B2** fixed: `Services/ChildProcessJob.cs`, a kill-on-close job object with *silent breakaway*,
+  used by MirrorService, PhoneMirrorSource, PhoneSoundOnPc, AppLaunchService and
+  DesktopLaunchService. Only scrcpy itself is held: adb and the shared adb server break away, so
+  Linc ending never takes adb down.
+- **B3** fixed in MirrorService: events decided under `_lock` are queued and raised after it.
+- **B6** fixed: `DeviceRegistry.WriteFileSafely` (temp file, flush, rename) for `settings.json`,
+  the same in `SyncEngine` for `sync-state.json`; `Persist` passes the record by name; an
+  `UnauthorizedAccessException` no longer escapes. The JSON is unchanged, so old files load.
+- **B10** (the crash half): the 18 `async void` handlers that had no catch end in
+  `Views/AsyncVoidGuard.Report` (a WARN line in Settings › Logs). The ~119 `_ = XAsync()` are left:
+  App's `UnobservedTaskException` already keeps them from crashing.
+- **B11** (the safe half): the flags shared with the monitor thread are `volatile`, `MarginMs` is
+  read under `_lock`, and the lock map is written above the fields. No timing value changed.
+- **A1** fixed: the Terminal copies only the rows on view (`TerminalEmulator.line(i)` /
+  `lineCount`, unit-tested) and checks blank runs in place.
+- **A2** (started): `runLogged(what) { }` in `LogStore.kt`, used where a silent failure changed what
+  the user got (media controls, microphone, screen-recording permission, the recording service).
+  The remaining `runCatching` are mostly `stop()`/`release()` clean-up and can stay.
+- Also: the intermittent `quicksharesim` CI failure was a real race in the Quick Share sender (a
+  receiver hanging up right after the last chunk counted as "disconnected during the transfer");
+  CS0108 (`FitScale.Scale` → `ContentScale`) and CA1416 (`PcBluetoothAudio`) warnings gone.
+
+Still open: B4, B5, B7, B8, B9, B12-B15, A3-A13, and the process items at the end.
+
 ## Phone app (Linc/ANDROID/app/src/main/java/app/linc/android/)
 
 | # | What | Where | Fix | Risk |

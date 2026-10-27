@@ -34,13 +34,14 @@ screenshots.
 
 - **Sound quality on the phone** (owner-reported). See `SOUND-QUALITY.md`. Top suspect: sample
   drop/repeat drift correction at up to 0.5 %, driven by a jittery clock.
-- **Child processes:**
-  - scrcpy and adb can survive a Linc crash (no Job Object, TIDY-UP B2);
-  - PhoneSoundOnPc leaks a process handle on Stop (TIDY-UP B1).
+- ~~**Child processes:** scrcpy surviving a Linc crash (B2), PhoneSoundOnPc's handle leak (B1).~~
+  Fixed 2026-10-27 (`937366e`, TIDY-UP "Done"); adb's own server deliberately still outlives Linc.
 - **Swallowed errors** on both apps (189 `runCatching` on the phone, ~119 fire-and-forget tasks on
   the PC). A future "it just stopped" bug may leave **no log line**. Add logging before guessing.
-- **The settings file** is written non-atomically, with 28 positional fields (TIDY-UP B6). A crash
-  mid-write could reset settings.
+  2026-10-27: the async-void crashes are guarded and the phone has `runLogged`; most of the rest
+  is still silent.
+- ~~**The settings file** written non-atomically with positional fields (B6).~~ Fixed 2026-10-27:
+  written via a temp file and a rename, passed by name.
 - **The UI test barely asserts** (TIDY-UP B15). Green does not mean every page rendered; open the
   PNGs.
 

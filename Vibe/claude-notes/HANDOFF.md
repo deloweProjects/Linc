@@ -1,8 +1,19 @@
-# Handoff: where Linc stands (written 2026-10-20, after 1.0.0.17)
+# Handoff: where Linc stands (written 2026-10-20, after 1.0.0.17; §1 refreshed 2026-10-27)
 
 Read this first if you are a new session. It is the notebook of the Claude Code session that built
 1.0.0.10 to 1.0.0.17 with the owner. Everything here was true when it was written; check git and
-GitHub before trusting a version number.
+GitHub before trusting a version number. §1 "State right now" and the delivery rule below were
+brought up to date on 2026-10-27 by a local session; the rest is still the 2026-10-20 picture.
+
+## Where builds go: local vs cloud (the owner's rule, 2026-10-26)
+
+- **Local session** (Claude Code on the owner's Windows PC, real toolchains): builds go to
+  `D:\deloweProjects\yellow\Linc prod` **only**, newest only. No `test-build/*` push and no
+  published release from a local session: both post to Telegram by themselves. A local test build
+  is "Linc Test" with the CI flags (`-PlincTestBuild` / `-p:LincTestBuild`, numbered as the last CI
+  test build so the next CI one is still offered) and named `local-<commit>`.
+- **Cloud session** (claude.ai/code, no local compiler): builds go to Telegram, through a
+  `test-build/<name>` branch (§3), still only when the owner says "send".
 
 Read next in this folder:
 - `CONCERNS.md`: what isn't proven, what could break, what I'd look at first.
@@ -24,8 +35,9 @@ Read next in this folder:
 
 ## Connection rebuild (LincLink)
 
-A dedicated session builds it from `linc-link/BRIEF.md` on branch `claude/linc-link`; when it
-finishes it writes `linc-link/DONE.md`.
+Built from `linc-link/BRIEF.md` on `claude/linc-link` and merged into the session branch; the
+result, the field tests of builds A, B and C, and what still needs the owner's hardware are in
+`linc-link/DONE.md`. Protocol v32; either side's "New connection engine" switch off means v31.
 
 ## 0. Linc Tools: built 2026-10-21 (Phase 1 + sections), not yet released
 
@@ -51,23 +63,29 @@ phone"). It is fully designed:
 Start with PLAN.md §4 Phase 1. Ship the ADB-only change (Phase 2) on a `test-build/adb-only` branch
 for the owner to try before anything else depends on it.
 
-## 1. State right now
+## 1. State right now (2026-10-27)
 
-- **Released:** `v1.0.0.17` ("1.0.0-beta.17"), 2026-10-20, protocol **v31**.
-  <https://github.com/deloweProjects/Linc/releases/tag/v1.0.0.17>.
-  - Assets: APK `Linc-Companion-1.0.0.17-2026-10-20.apk` (30 MB), `Linc-Setup-1.0.0.17.exe`
-    (113 MB, self-contained .NET), portable zip (172 MB), `CHECKSUMS.txt`, and
-    `Linc-1.0.0.17-phone-and-PC.7z` (120 MB; it holds both the APK and the setup).
-  - Posted to Telegram (t.me/LincApp): APK, setup, 7z, checksums.
-- **main** = PR #8 merged ("Linc 1.0.0.17 (#8)"), so `Releases/update.json` is live and both apps
-  offer 1.0.0.17.
-- **Branches:** the session branch `claude/linc-feature-ui-polish-lgf8au` and **main hold the
-  same code**. These notes reached main in a docs-only PR straight after the release. A new session
-  gets its own branch: start it from **main**.
-- **Owner's verdict on 1.0.0.17:** "everything works".
-  - The one known complaint: Play everywhere on the phone sounds a little weird / low quality.
-  - The owner said **no more fixing for now**; they are going to use the apps daily and report bugs.
-  - **Don't start changing code unless they ask.**
+- **Released:** `v1.0.0.18` ("1.0.0-beta.18"), 2026-10-21, protocol v31: mirror fills the
+  monitor, mirroring plays sound on one device, Mute PC.
+  <https://github.com/deloweProjects/Linc/releases/tag/v1.0.0.18>. **main** = "Linc 1.0.0.18 (#12)",
+  so `Releases/update.json` offers 1.0.0.18. The next release is `1.0.0.19` / `1.0.0-beta.19`.
+- **Not released, on `claude/linc-feature-ui-polish-lgf8au`** (main + ~37 commits; main is kept
+  at 1.0.0.18 until the owner has tried this on hardware):
+  - the Tools page (§0), LincLink (v32, `linc-link/DONE.md`), "Linc Test" self-updating test builds
+    with the `linc-test-feed` pre-release, the "Fill this monitor" screen guard (the phone restores
+    its own size and rotation when the link drops);
+  - `19aa7dd`: ADB over Wi-Fi comes back after Linc restarts on the phone (the PC had been ignoring
+    its announcements as "stale gen"), and Linc Test checks for a newer test build every 30 min;
+  - `937366e` (2026-10-27): the bug clean-up of `TIDY-UP.md` (see its "Done" section).
+- **Test builds sent to Telegram:** #10 linclink-a, #11 linclink-b, #12 linclink-c, #13
+  screen-guard (`5500fea`, the newest on the test feed). Nothing after `5500fea` was sent.
+- **Linc prod** (the owner's PC) holds a local Linc Test build of the branch tip; `BUILD-INFO.md`
+  there says which commit. On 2026-10-26 the owner was still running Linc Test build B.
+- **Waiting on the owner:** a hardware test of the newest build (the checklist in
+  `linc-link/DONE.md`, plus ADB over Wi-Fi after restarting Linc on the phone), then a decision to
+  merge and release 1.0.0.19.
+- **Owner's verdict on 1.0.0.17** (still the last "everything works"): the one known complaint is
+  Play everywhere on the phone sounding a little weird (`SOUND-QUALITY.md`).
 
 ## 2. What this run of sessions built (1.0.0.16 → 1.0.0.17)
 
@@ -179,4 +197,4 @@ the wire protocol is `PROTOCOL.md` next to it. In short:
 - **"Send to telegram":** a text message goes through `telegram-message.yml`; a build goes through a
   `test-build/<name>` branch. Then confirm the run is green and read its upload log before saying it
   was sent.
-- **A release:** see section 3. The next version is `1.0.0.18` / `1.0.0-beta.18` (check tags).
+- **A release:** see section 3. The next version is `1.0.0.19` / `1.0.0-beta.19` (check tags).
