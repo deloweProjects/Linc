@@ -239,6 +239,23 @@ public partial class SettingsViewModel : ObservableObject
         set { _registry.SaveLincLinkEnabled(value); OnPropertyChanged(); }
     }
 
+    /// <summary>Settings › Connection › Start the PC hotspot when the phone is near (off by default).</summary>
+    public bool AutoHotspot
+    {
+        get => _registry.AutoHotspot;
+        set
+        {
+            _registry.SaveAutoHotspot(value);
+            OnPropertyChanged();
+            if (value)
+            {
+                // A connected phone gets the network now, not at the next connect.
+                _ = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+                    .GetRequiredService<PcHotspot>(App.Services).GiveToPhoneNowAsync();
+            }
+        }
+    }
+
     /// <summary>Settings › Connection › Encrypt Wi-Fi links (off by default).</summary>
     public bool EncryptWifiLinks
     {

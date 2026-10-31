@@ -35,6 +35,8 @@
     <!-- Normal permission, no runtime prompt; used only to read Wi-Fi signal
          strength/link speed for the Details page (never the SSID). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- The PC's hotspot as a suggested network the phone joins by itself (PcHotspotJoin). -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <!-- LincLink (v32): start Linc after a restart (BootReceiver), and receive the PC's LAN beacon
          while the screen is off (a multicast lock, held only while no PC is connected). Both are
          normal permissions with no prompt. -->

@@ -158,3 +158,8 @@ Logs and phone Settings › Logs › Copy log, and send both.
 ## Paste back to the other session
 
 > LincLink done on `claude/linc-link` @ 806e6d5 (code; this note is the commit after it). Build green. Read Vibe/claude-notes/linc-link/DONE.md.
+
+## Not built in build A: brief steps 5 and 6 (status 2026-11-01)
+
+- **Step 6, PC-made network: built by hand only** (`Services/PcHotspot.cs`, PC Settings › Connection). Mobile Hotspot via the API (works with no internet by sharing a local-only network: on the owner's PC Radmin VPN and the Hyper-V Default Switch report tethering Enabled); Wi-Fi Direct legacy as a timed-out last resort, because `WiFiDirectAdvertisementPublisher.Start()` never returned on the owner's Realtek 8852BE from an unpackaged app (probed 2026-11-01, STA and MTA). The SSID/password are Windows' hotspot's own, shown as a QR code; the PC dials each joined client.
+- **Step 5, Bluetooth "phone is near": built 2026-11-01, differently from the brief.** No GATT channel: the hotspot name and password go to the phone over the live, encrypted Linc session while connected (`link.hotspot`, never over plain ADB Wi-Fi, again only when changed), and the phone adds them as a `WifiNetworkSuggestion`, so Android joins by itself with one approval and no app in front (a `WifiNetworkSpecifier` would ask every time). The existing BLE presence beacon is the "phone is near" signal: heard with no link for 20 s, the PC starts the hotspot (`PcHotspot.OnPhoneNearAsync`), dials each joined device, and turns its own hotspot off after 3 min without the phone. Off by default. Not proven on hardware. Not done: light features over BLE when no IP route exists at all.

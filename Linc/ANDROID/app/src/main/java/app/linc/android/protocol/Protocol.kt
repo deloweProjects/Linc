@@ -181,6 +181,7 @@ object MessageType {
     const val LINK_WHERE = "link.where"          // either way: {addrs, port}
     const val LINK_STATE = "link.state"          // desktop → phone: {route, adb, adbVia?}; the PC owns how they're connected
     const val LINK_NOOP = "link.noop"            // either way: a numbered frame that does nothing (stands in for a request given up on)
+    const val LINK_HOTSPOT = "link.hotspot"      // desktop → phone: {ssid, password}; the PC hotspot to join by itself (2026-11-01)
 }
 
 object Topic {

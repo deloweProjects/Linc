@@ -179,6 +179,41 @@
                             OnContent="On" OffContent="Off"
                             IsOn="{x:Bind ViewModel.EncryptWifiLinks, Mode=TwoWay}" />
                     </Grid>
+                    <!-- PC hotspot: the PC's own Wi-Fi for the phone, even with no internet (LincLink step 6, by hand). -->
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock
+                                Text="PC hotspot — no shared Wi-Fi and no cable? This PC makes its own Wi-Fi for the phone, even with no internet (Windows' own Mobile Hotspot refuses then). The phone joins it once; Linc finds the PC on it by itself"
+                                Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="HotspotStatus" Text="Off" Style="{StaticResource BodyText}" Opacity="0.8" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button x:Name="HotspotButton" Grid.Column="1" Content="Start PC hotspot" Click="OnHotspotClick" VerticalAlignment="Top" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="Start the PC hotspot when the phone is near — when this PC hears the phone over Bluetooth but can't reach it for 20 s, it starts the hotspot and the phone joins it by itself (the phone learns the network while connected, and asks you once). Off again after 3 minutes if the phone doesn't come. Needs the new connection engine"
+                            Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.AutoHotspot, Mode=TwoWay}" />
+                    </Grid>
+                    <StackPanel x:Name="HotspotDetails" Orientation="Horizontal" Spacing="16" Visibility="Collapsed">
+                        <Image x:Name="HotspotQr" Width="140" Height="140" />
+                        <StackPanel Spacing="4" VerticalAlignment="Center">
+                            <TextBlock Text="On the phone: scan this with the camera, or join" Style="{StaticResource BodyText}" />
+                            <TextBlock x:Name="HotspotSsid" FontWeight="SemiBold" IsTextSelectionEnabled="True" />
+                            <TextBlock x:Name="HotspotPassword" IsTextSelectionEnabled="True" />
+                        </StackPanel>
+                    </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button
                             Content="Resume auto-reconnect"

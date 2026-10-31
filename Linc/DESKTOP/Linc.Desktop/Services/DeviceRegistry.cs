@@ -220,6 +220,15 @@ public interface IDeviceRegistry
     void SaveEncryptWifiLinks(bool enabled);
 
     /// <summary>
+    /// Settings › Connection › Start the PC hotspot when the phone is near (off by default): the
+    /// phone's Bluetooth beacon heard with no link starts the PC hotspot, which the phone joins by
+    /// itself (it was given the network while connected). LincLink brief step 5.
+    /// </summary>
+    bool AutoHotspot { get; }
+
+    void SaveAutoHotspot(bool enabled);
+
+    /// <summary>
     /// A phone paired by QR code, with no ADB (v32): its record is keyed <c>linc:&lt;phone id&gt;</c>
     /// until an ADB connect tells this PC its hardware serial, and made the active one.
     /// </summary>
@@ -399,7 +408,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // Linc Island: appended at the end like every field above it; missing reads back as off.
         bool? LiveIsland = null,
         // Encrypt Wi-Fi links: appended at the end like every field above it; missing reads back as off.
-        bool? EncryptWifiLinks = null);
+        bool? EncryptWifiLinks = null,
+        // PC hotspot when the phone is near: appended at the end; missing reads back as off.
+        bool? AutoHotspot = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -457,6 +468,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public bool LincLinkEnabled { get; private set; } = true;
     public event Action? LincLinkChanged;
     public bool EncryptWifiLinks { get; private set; }
+    public bool AutoHotspot { get; private set; }
     public event Action? ShowExplanationsChanged;
 
     /// <summary>Raised when <see cref="UsePhoneColours"/> changes, so the theme can re-derive.</summary>
@@ -573,6 +585,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 ForceSoftwareEncoding = settings?.ForceSoftwareEncoding ?? false;
                 LincLinkEnabled = settings?.LincLinkEnabled ?? true;
                 EncryptWifiLinks = settings?.EncryptWifiLinks ?? false;
+                AutoHotspot = settings?.AutoHotspot ?? false;
                 FloatingNav = settings?.FloatingNav ?? true;
                 HomeClock = settings?.HomeClock ?? true;
                 WallpaperBackdrop = settings?.WallpaperBackdrop ?? true;
@@ -885,6 +898,16 @@ public sealed class DeviceRegistry : IDeviceRegistry
         Persist();
     }
 
+    public void SaveAutoHotspot(bool enabled)
+    {
+        if (AutoHotspot == enabled)
+        {
+            return;
+        }
+        AutoHotspot = enabled;
+        Persist();
+    }
+
     public void SaveQrPairedPhone(string phoneId, string model, string certBase64)
     {
         // A phone already known by its certificate (paired over ADB before) keeps its record.
@@ -1031,7 +1054,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 AppFont: AppFont,
                 LincLinkEnabled: LincLinkEnabled,
                 LiveIsland: LiveIsland,
-                EncryptWifiLinks: EncryptWifiLinks)));
+                EncryptWifiLinks: EncryptWifiLinks,
+                AutoHotspot: AutoHotspot)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -905,6 +905,14 @@ class SocketServer(
                     ))
                     continue
                 }
+                if (message.type == MessageType.LINK_HOTSPOT) {
+                    // The PC's hotspot, to join by itself when the PC turns it on (PcHotspotJoin).
+                    val ssid = (message.payload["ssid"] as? JsonPrimitive)?.contentOrNull
+                    val password = (message.payload["password"] as? JsonPrimitive)?.contentOrNull
+                    val app = AudioEverywhere.context()
+                    if (ssid != null && password != null && app != null) PcHotspotJoin.onDetails(app, ssid, password)
+                    continue
+                }
                 if (message.type == MessageType.LINK_SECRET) {
                     link.onSecret(message, secretsAllowed)
                     continue

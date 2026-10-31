@@ -139,6 +139,12 @@ public interface IConnectionSupervisor : IDisposable
     /// holds, instead of waiting out the idle delay. A no-op when connected or paused.
     /// </summary>
     void NudgeReconnect(string reason);
+
+    /// <summary>
+    /// Devices that just joined this PC's own hotspot (PcHotspot): the phone may be one of them, so
+    /// the new engine dials its LincLink listener at each address. No-op without the new engine.
+    /// </summary>
+    void HintPhoneAddresses(IReadOnlyList<string> addresses) { }
 }
 
 /// <summary>
@@ -1626,6 +1632,30 @@ public sealed class ConnectionSupervisor(
 
     /// <summary>The live session's transport died (v32): linger invisibly and race for another.</summary>
     private void OnTransportLost() => OnLinkDropped(LinkSignal.TransportLost); // logged there, once it is known to be a loss
+
+    public void HintPhoneAddresses(IReadOnlyList<string> addresses)
+    {
+        if (!Engine || addresses.Count == 0 || LinkSecretStore.PhoneIdOf(registry.PhoneCertBase64) is not { } phoneId)
+        {
+            return;
+        }
+        var endpoints = addresses
+            .Select(a => System.Net.IPAddress.TryParse(a, out var ip) ? new System.Net.IPEndPoint(ip, LinkProtocol.PhonePort).ToString() : null)
+            .OfType<string>().ToList();
+        lock (_told)
+        {
+            var known = _told.TryGetValue(phoneId, out var told) ? told : [];
+            _told[phoneId] = known.Union(endpoints).ToList();
+        }
+        if (State != LinkState.Connected)
+        {
+            lock (_backoff)
+            {
+                _backoff.CutWaits(); // a device just joined the PC's hotspot: try it now
+            }
+            _ = Task.Run(DialPhoneAsync);
+        }
+    }
 
     private void OnPhoneWhere(IReadOnlyList<string> addresses, int port)
     {

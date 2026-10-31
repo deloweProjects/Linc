@@ -192,6 +192,7 @@ public static class MessageType
     public const string LinkWhere = "link.where";   // either way: {addrs, port}
     public const string LinkState = "link.state";   // desktop → phone: {route, adb, adbVia?}; the PC owns how they're connected
     public const string LinkNoop = "link.noop";     // either way: a numbered frame that does nothing (stands in for a request given up on)
+    public const string LinkHotspot = "link.hotspot"; // desktop → phone: {ssid, password}; the PC hotspot to join by itself (2026-11-01)
 }
 
 public static class Topic

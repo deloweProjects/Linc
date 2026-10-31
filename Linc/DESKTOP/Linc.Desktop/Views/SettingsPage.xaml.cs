@@ -16,6 +16,69 @@ public sealed partial class SettingsPage : Page
         ViewModel.RemoveRequested += vm => _ = ConfirmRemoveAsync(vm);
         _cable = new VirtualCableSetup(App.Services.GetRequiredService<ILogService>(), PcVoiceAccess.CablePresent);
         Loaded += async (_, _) => await RefreshCableAsync();
+        _hotspot = App.Services.GetRequiredService<PcHotspot>();
+        Action onHotspot = () => DispatcherQueue.TryEnqueue(() => ShowHotspot());
+        Loaded += (_, _) => { _hotspot.Changed += onHotspot; ShowHotspot(); };
+        Unloaded += (_, _) => _hotspot.Changed -= onHotspot;
+    }
+
+    // ---- PC hotspot (LincLink step 6, by hand) ---------------------------------------
+
+    private readonly PcHotspot _hotspot;
+    private bool _hotspotBusy;
+
+    private void ShowHotspot(string? message = null)
+    {
+        var on = _hotspot.Current != PcHotspot.Mode.Off;
+        HotspotButton.Content = on ? "Stop PC hotspot" : "Start PC hotspot";
+        HotspotButton.IsEnabled = !_hotspotBusy;
+        HotspotStatus.Text = message ?? (_hotspot.Current switch
+        {
+            PcHotspot.Mode.WifiDirect => "On (Wi-Fi Direct).",
+            PcHotspot.Mode.MobileHotspot when _hotspot.WasAlreadyOn => "On: Windows' Mobile Hotspot was already on, so Linc uses it (Stop leaves it on).",
+            PcHotspot.Mode.MobileHotspot => "On (Windows' Mobile Hotspot, started by Linc).",
+            _ => _hotspot.LastError ?? "Off",
+        });
+        HotspotDetails.Visibility = on && _hotspot.Network is not null ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+        if (on && _hotspot.Network is { } network)
+        {
+            var (ssid, password) = network;
+            HotspotSsid.Text = $"Wi-Fi: {ssid}";
+            HotspotPassword.Text = $"Password: {password}";
+            using var generator = new QRCoder.QRCodeGenerator();
+            using var data = generator.CreateQrCode(PcHotspot.JoinQr(ssid, password), QRCoder.QRCodeGenerator.ECCLevel.Q);
+            var png = new QRCoder.PngByteQRCode(data).GetGraphic(8);
+            var image = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+            using var stream = new System.IO.MemoryStream(png);
+            image.SetSource(stream.AsRandomAccessStream());
+            HotspotQr.Source = image;
+        }
+    }
+
+    private async void OnHotspotClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        try
+        {
+            _hotspotBusy = true;
+            ShowHotspot(_hotspot.Current == PcHotspot.Mode.Off ? "Starting…" : "Stopping…");
+            string? result = null;
+            if (_hotspot.Current == PcHotspot.Mode.Off)
+            {
+                result = await Task.Run(_hotspot.StartAsync);
+            }
+            else
+            {
+                await Task.Run(_hotspot.StopAsync);
+            }
+            _hotspotBusy = false;
+            ShowHotspot(result);
+        }
+        catch (Exception ex)
+        {
+            _hotspotBusy = false;
+            ShowHotspot($"Couldn't: {ex.Message}");
+            AsyncVoidGuard.Report(ex, "SettingsPage.OnHotspotClick");
+        }
     }
 
     /// <summary>The same question as the tab's X "Remove completely" (D-079).</summary>
