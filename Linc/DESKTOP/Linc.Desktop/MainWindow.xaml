@@ -322,6 +322,16 @@
             </ScrollViewer>
         </Border>
 
+        <!-- The Linc Island on every page but Home (which shows its own on the phone picture): the
+             title bar's centre, opening down over the page. MainWindow keeps the title bar clickable
+             under it (UpdateIslandPassthrough) and hides it when the window is too narrow. -->
+        <views:DynamicIsland
+            x:Name="TitleIsland"
+            Grid.RowSpan="3"
+            Margin="0,8,0,0"
+            InTitleBar="True"
+            Suppressed="True" />
+
         <!-- M17b B4: a FORCED update. This blocks the app's FUNCTION, not the process — the title
              bar, the close button and the tray menu are all still live, so the user is never
              trapped in a window they cannot exit. There is deliberately no dismiss button. -->

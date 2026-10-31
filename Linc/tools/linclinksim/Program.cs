@@ -307,6 +307,8 @@ Console.WriteLine("--- backoff, presence, old peers");
     True(LinkBrain.Presence(true, false, false, adbReachesPhone: true) == LinkPresence.ConnectedStartingApp,
         "USB up, app not answering yet: shown as connected while the app is started (not \"can't reach\")");
     True(LinkBrain.Presence(true, false, true, false) == LinkPresence.Connected, "the app answered: connected");
+    True(LinkBrain.Presence(true, false, false, adbReachesPhone: true, appMissing: true) == LinkPresence.ConnectedAdbOnly, "ADB up, no Linc app installed: connected with ADB only");
+    True(LinkBrain.Presence(true, false, true, true, appMissing: true) == LinkPresence.Connected, "the app answered after all: fully connected wins");
     True(LinkBrain.Presence(true, false, false, false) == LinkPresence.Searching, "nothing reaches the phone: searching");
     True(LinkBrain.Presence(true, true, true, true) == LinkPresence.Paused && LinkBrain.Presence(false, false, false, false) == LinkPresence.NoPhone, "paused and unpaired win");
     True(LinkBrain.AdbChipLit(linkHasAdb: false, adbReachesPhone: true) && !LinkBrain.AdbChipLit(false, false), "the ADB chip is green whenever ADB reaches the phone");

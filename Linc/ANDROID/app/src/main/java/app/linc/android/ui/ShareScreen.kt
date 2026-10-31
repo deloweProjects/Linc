@@ -146,7 +146,7 @@ private fun ShareContent(
     fun sendUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
         if (overLinc) {
-            uris.forEach { ShareStore.send(context, it) }
+            ShareStore.sendAll(context, uris)
         } else if (!QuickShareLauncher.send(context, uris)) {
             notify("Quick Share isn't available on this phone, and Linc isn't connected")
         }
@@ -465,7 +465,11 @@ private fun TextShareSheet(overLinc: Boolean, onDismiss: () -> Unit) {
                 placeholder = { Text("Paste a link or type a note") })
             Button(
                 onClick = {
-                    val sent = if (overLinc) ShareSender.sendText(text) else QuickShareLauncher.sendText(context, text)
+                    val sent = (if (overLinc) ShareSender.sendText(text) else QuickShareLauncher.sendText(context, text)) ||
+                        // Neither works right now: it waits and goes to the PC when it reconnects.
+                        app.linc.android.service.PendingSends.add(context,
+                            if (Regex("^https?://\\S+$").matches(text.trim())) app.linc.android.service.PendingSends.URL
+                            else app.linc.android.service.PendingSends.TEXT, text.trim())
                     if (sent) onDismiss()
                 },
                 enabled = text.isNotBlank(),

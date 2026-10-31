@@ -22,6 +22,9 @@ public interface IPhoneSetupService
     /// </summary>
     Task<bool> EnsureReadyAsync(DeviceData device, CancellationToken ct);
 
+    /// <summary>Is the Linc app installed on the phone? Null when adb didn't answer cleanly.</summary>
+    Task<bool?> IsCompanionInstalledAsync(DeviceData device, CancellationToken ct);
+
     /// <summary>
     /// Raised (off the UI thread) when a non-wizard connect found the companion missing and is
     /// asking before installing it (M12c-amend C2.1). The subscriber owns showing the
@@ -124,6 +127,9 @@ public sealed class PhoneSetupService(ILogService log, IOnboardingState onboardi
         var output = await ShellAsync(device, $"pm list packages {ProtocolConstants.CompanionPackage}; echo \"pm-exit:$?\"", ct);
         return LinkBrain.CompanionInstalled(output);
     }
+
+    public Task<bool?> IsCompanionInstalledAsync(DeviceData device, CancellationToken ct) =>
+        InstalledStateAsync(device, ct);
 
     public async Task<bool> EnsureReadyAsync(DeviceData device, CancellationToken ct)
     {

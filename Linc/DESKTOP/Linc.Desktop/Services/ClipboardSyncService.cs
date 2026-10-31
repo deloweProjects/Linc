@@ -58,7 +58,8 @@ public sealed class ClipboardSyncService(
     IConnectionSupervisor supervisor,
     IDeviceRegistry registry,
     LincStore store,
-    ILogService log) : IClipboardSyncService
+    ILogService log,
+    OutboxService outbox) : IClipboardSyncService
 {
     private const int GetVersion = 24;
 
@@ -208,8 +209,19 @@ public sealed class ClipboardSyncService(
 
     private async Task OnDesktopClipboardChangedAsync(bool force)
     {
-        if (!Enabled || supervisor.State != LinkState.Connected)
+        if (!Enabled)
         {
+            return;
+        }
+        if (supervisor.State != LinkState.Connected)
+        {
+            // Offline delivery: the newest copy waits for the phone (only the newest is kept), and
+            // reaches its clipboard on reconnect. Same exclusions as a live sync.
+            if (registry.PairedSerial is not null && await ReadShareableTextAsync() is { } pending && pending != _lastReceived)
+            {
+                _lastSent = pending;
+                await outbox.EnqueueTextAsync(OutboxService.ClipKind, pending);
+            }
             return;
         }
         // The phone must speak v1 for clipboard messages to mean anything.
@@ -245,6 +257,25 @@ public sealed class ClipboardSyncService(
         catch (LincException)
         {
             // Link is dying; the supervisor's health loop will notice and reconnect.
+        }
+    }
+
+    /// <summary>The clipboard's text, unless it's empty, not text, or excluded (password managers).</summary>
+    private static async Task<string?> ReadShareableTextAsync()
+    {
+        try
+        {
+            var content = Clipboard.GetContent();
+            if (!content.Contains(StandardDataFormats.Text) || await IsExcludedAsync(content))
+            {
+                return null;
+            }
+            var text = await content.GetTextAsync();
+            return string.IsNullOrEmpty(text) ? null : text;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

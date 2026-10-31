@@ -156,6 +156,20 @@
                         <TextBlock Text="{x:Bind ViewModel.LinkAddress, Mode=OneWay}" FontSize="11"
                                    Foreground="{ThemeResource OnSurfaceVariantBrush}" Opacity="0.7"
                                    Visibility="{x:Bind ViewModel.HasLinkAddress, Mode=OneWay}" />
+                        <!-- ADB only, no Linc app on the phone: one button installs it (the PC carries the APK). -->
+                        <Button Margin="0,8,0,0" Content="Install Linc on the phone"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Command="{x:Bind ViewModel.InstallLincCommand}"
+                                Visibility="{x:Bind ViewModel.ShowInstallLinc, Mode=OneWay}" />
+                        <!-- Whether anyone on the Wi-Fi could read the link (plain ADB on 5555 is the only case). -->
+                        <StackPanel Margin="0,4,0,0" Orientation="Horizontal" Spacing="6"
+                                    Visibility="{x:Bind ViewModel.HasSecurityText, Mode=OneWay}"
+                                    ToolTipService.ToolTip="{x:Bind ViewModel.SecurityTip, Mode=OneWay}">
+                            <FontIcon Glyph="{x:Bind ViewModel.SecurityGlyph, Mode=OneWay}" FontSize="11"
+                                      Foreground="{ThemeResource OnSurfaceVariantBrush}" />
+                            <TextBlock Text="{x:Bind ViewModel.SecurityText, Mode=OneWay}" FontSize="11"
+                                       Foreground="{ThemeResource OnSurfaceVariantBrush}" TextWrapping="Wrap" MaxWidth="290" />
+                        </StackPanel>
                         <!-- Lost connection / "showing what was last synced": part of the phone's own card. -->
                         <Border Margin="0,8,0,0" Padding="10,6" CornerRadius="12" HorizontalAlignment="Left"
                                 Background="{ThemeResource SecondaryContainerBrush}"
@@ -187,6 +201,10 @@
                         </Button>
                     </StackPanel>
                 </Border>
+
+                <!-- The Linc Island (Settings › Appearance › Linc Island): where a real phone's camera
+                     island is. Last, so its expanded card draws over the clock. -->
+                <views:DynamicIsland Grid.RowSpan="3" Margin="0,14,0,0" />
             </Grid>
 
             <Grid x:Name="WidgetsArea" Grid.Column="1" Grid.RowSpan="2">

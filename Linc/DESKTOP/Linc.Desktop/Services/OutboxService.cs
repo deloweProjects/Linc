@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json.Nodes;
 
 namespace Linc.Desktop.Services;
@@ -134,6 +135,37 @@ public sealed class OutboxService
     /// round-trip it without modelling it; the same shape is parsed back by
     /// <see cref="ParseSmsPayload"/> on flush.
     /// </summary>
+    /// <summary>Offline delivery (2026-10-31): a link to open on the phone, sent while it was away.</summary>
+    public const string UrlKind = "continue.url";
+
+    /// <summary>Offline delivery: the newest PC clipboard text while the phone was away (only the newest is kept).</summary>
+    public const string ClipKind = "clipboard.set";
+
+    /// <summary>How long a queued link or clip is still worth delivering.</summary>
+    public static readonly TimeSpan TextExpiry = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Queue a link ([UrlKind]) or the clipboard ([ClipKind]) for the phone while it is away; the
+    /// reconnect flush delivers them in order, once each. A new clip replaces an older queued one:
+    /// only the newest clipboard means anything. Never logs the text.
+    /// </summary>
+    public async Task<long> EnqueueTextAsync(string kind, string text)
+    {
+        if (_registry.PairedSerial is not { } serial || string.IsNullOrWhiteSpace(text))
+        {
+            return -1;
+        }
+        if (kind == ClipKind)
+        {
+            foreach (var old in _store.ListPendingOutbox(serial).Where(r => r.Kind == ClipKind))
+            {
+                await _store.DeleteOutboxRowAsync(old.Id);
+            }
+        }
+        var payload = new JsonObject { ["text"] = text };
+        return await _store.EnqueueOutboxAsync(serial, kind, payload.ToJsonString());
+    }
+
     public async Task<long> EnqueueSmsAsync(string address, string body)
     {
         if (_registry.PairedSerial is not { } serial)
@@ -217,6 +249,7 @@ public sealed class OutboxService
             var ok = row.Kind switch
             {
                 SmsSendKind => await SendSmsRowAsync(row),
+                UrlKind or ClipKind => await SendTextRowAsync(row),
                 _ => await UnknownKindAsync(row),
             };
             if (!ok)
@@ -264,6 +297,40 @@ public sealed class OutboxService
             // returning false. Never log the body (§2.11) — only the kind and the failure type.
             var attempts = await _store.IncrementOutboxAttemptsAsync(row.Id);
             _log.Log(LogLevel.Warn, $"OutboxService: row id={row.Id} send failed ({ex.GetType().Name}); attempts now {attempts}.");
+            return false;
+        }
+    }
+
+    /// <summary>A queued link or clip. Stale ones (over <see cref="TextExpiry"/>) are dropped, not sent.</summary>
+    private async Task<bool> SendTextRowAsync(StoredOutboxRow row)
+    {
+        var text = (string?)(JsonNode.Parse(row.PayloadJson) as JsonObject)?["text"];
+        if (string.IsNullOrEmpty(text) || DateTimeOffset.UtcNow - row.QueuedUtc > TextExpiry)
+        {
+            await _store.DeleteOutboxRowAsync(row.Id);
+            _log.Log(LogLevel.Info, $"OutboxService: dropped row id={row.Id} (kind={row.Kind}): {(string.IsNullOrEmpty(text) ? "empty" : "older than a day")}.");
+            return true; // nothing to send; carry on with the rest
+        }
+        try
+        {
+            if (row.Kind == UrlKind)
+            {
+                await _connection.ContinueUrlAsync(text, CancellationToken.None);
+            }
+            else
+            {
+                await _connection.SendClipboardAsync(text, CancellationToken.None);
+            }
+            await _store.DeleteOutboxRowAsync(row.Id);
+            _log.Log(LogLevel.Info, row.Kind == UrlKind
+                ? $"Opened a link on the phone that was sent while it was away (row id={row.Id})."
+                : $"Put the PC's clipboard on the phone, copied while it was away (row id={row.Id}).");
+            return true;
+        }
+        catch (Exception ex) when (ex is LincException or OperationCanceledException or IOException)
+        {
+            var attempts = await _store.IncrementOutboxAttemptsAsync(row.Id);
+            _log.Log(LogLevel.Warn, $"OutboxService: row id={row.Id} (kind={row.Kind}) failed ({ex.GetType().Name}: {ex.Message}); attempts now {attempts}.");
             return false;
         }
     }

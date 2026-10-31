@@ -2,9 +2,11 @@
 
 package app.linc.android.ui.kit
 
+import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -47,7 +49,9 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,7 +75,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.linc.android.service.Explanations
 import app.linc.android.ui.LincSymbols
+import app.linc.android.ui.theme.FrostedTopBar
+import app.linc.android.ui.theme.LocalFrost
 import app.linc.android.ui.theme.frostedCardBorder
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.launch
 
 // The component kit (1.0.0.11, D-082; Vibe/agent/design/android-m3e.md §3). Every screen is built
@@ -145,6 +156,10 @@ fun rememberNotify(): (String) -> Unit {
  * Settings gear (top-level screens) or a back arrow (pushed screens), an optional FAB, and the
  * snackbar host. [contentInsets] is the system-bar inset the content must still avoid: a screen
  * inside the tab host passes none at the bottom (the navigation bar handles it).
+ *
+ * Settings › Appearance › Frosted top bar (off by default): the content scrolling under the bar
+ * shows through it, blurred (Haze; Android 12+ blurs, older phones get a see-through tint). The
+ * bar only frosts while something is under it, so at the top of a page it looks as it always has.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -163,6 +178,12 @@ fun LincScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val context = LocalContext.current
+    val frosted = FrostedTopBar.flow(context).collectAsState().value == true && !compactBar
+    val haze = remember { HazeState() }
+    val underBar by remember { derivedStateOf { scroll.state.overlappedFraction > 0.01f } }
+    val frostAlpha by animateFloatAsState(if (frosted && underBar) 1f else 0f, label = "frost")
+    val frostStyle = frostedBarStyle()
     // Inside Control, the "Pages" button that opens its side panel: last at the top right, on
     // the side the panel slides in from.
     val toolsMenu = app.linc.android.ui.LocalToolsMenu.current
@@ -227,15 +248,41 @@ fun LincScaffold(
                 scrollBehavior = scroll,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    // Frosted: the glass below does the work, so the bar itself goes clear.
+                    scrolledContainerColor = if (frosted) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
                 ),
+                modifier = if (frosted) Modifier.hazeChild(haze, frostStyle) {
+                    alpha = frostAlpha
+                    blurEnabled = Build.VERSION.SDK_INT >= 31
+                } else Modifier,
             )
         },
     ) { inner ->
         androidx.compose.runtime.CompositionLocalProvider(LocalSnackbar provides snackbar) {
-            content(inner)
+            // The content is the glass's source; every page already pads its list by the bar's
+            // height (pagePadding), so it scrolls up behind the bar on its own.
+            if (frosted) Box(Modifier.fillMaxSize().haze(haze)) { content(inner) } else content(inner)
         }
     }
+}
+
+/**
+ * The frosted bar's glass: a wash of the theme's surface over the blurred page. Over the
+ * wallpaper background nothing solid goes behind it (the wallpaper shows through); without it the
+ * plain surface does. Phones that can't blur (Android 11) get a denser tint instead.
+ */
+@Composable
+private fun frostedBarStyle(): HazeStyle {
+    val frost = LocalFrost.current
+    val solid = frost?.solid ?: MaterialTheme.colorScheme
+    val dark = frost?.dark ?: false
+    return HazeStyle(
+        backgroundColor = if (frost?.on == true) Color.Transparent else solid.surface,
+        tint = HazeTint(solid.surfaceContainer.copy(alpha = if (dark) 0.62f else 0.55f)),
+        blurRadius = 24.dp,
+        noiseFactor = 0.08f,
+        fallbackTint = HazeTint(solid.surfaceContainer.copy(alpha = 0.9f)),
+    )
 }
 
 // ---- Section header ----------------------------------------------------------------------------

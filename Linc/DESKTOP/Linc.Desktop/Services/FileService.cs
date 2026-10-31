@@ -37,7 +37,8 @@ public sealed class FileService(IConnectionManager connection, ILogService log) 
 {
     private readonly AdbClient _adb = new();
 
-    private DeviceData Device => connection.RawDevice
+    // ADB-only (no Linc app answering): the phone ADB reaches still browses and transfers.
+    private DeviceData Device => connection.RawDevice ?? connection.AdbOnlyDevice
         ?? throw new LincException(connection.Current is null
             ? "Not connected to a phone right now."
             : "Files need a USB or wireless-debugging connection — the current direct link can't carry them yet.");

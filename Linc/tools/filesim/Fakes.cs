@@ -43,6 +43,8 @@ public interface IConnectionManager
 {
     bool HasAdb { get; }
     Task<Stream> OpenFileChannelAsync(CancellationToken ct);
+    // ADB-only mode (FileServiceRouter): never set here, so routing is exactly as before.
+    object? AdbOnlyDevice => null;
 }
 
 /// <summary>

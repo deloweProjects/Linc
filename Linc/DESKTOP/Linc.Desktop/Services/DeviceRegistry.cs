@@ -178,6 +178,14 @@ public interface IDeviceRegistry
     void SaveClockStyle(string style);
     void SaveAppFont(string font);
 
+    /// <summary>
+    /// Settings → Appearance → Linc Island: live activities (a share, a call, music…) in a pill on
+    /// Home and in the title bar. Default off, the look the app shipped with. Default bodies keep
+    /// the harnesses' fakes compiling.
+    /// </summary>
+    bool LiveIsland => false;
+    void SaveLiveIsland(bool show) { }
+
     /// <summary>Raised after any of <see cref="SaveFloatingNav"/>, <see cref="SaveHomeClock"/>, <see cref="SaveWallpaperBackdrop"/>, <see cref="SaveClockStyle"/>, <see cref="SaveAppFont"/>.</summary>
     event Action? AppearanceChanged;
 
@@ -200,6 +208,16 @@ public interface IDeviceRegistry
     void SaveLincLinkEnabled(bool enabled);
 
     event Action? LincLinkChanged;
+
+    /// <summary>
+    /// Settings › Connection › Encrypt Wi-Fi links. On: a link riding plain ADB over Wi-Fi
+    /// (`adb tcpip`, port 5555, which is not encrypted) hands itself to the encrypted direct link
+    /// when the phone can be reached that way. Off (the default): Linc connects as it always did
+    /// and only says whether the link is encrypted.
+    /// </summary>
+    bool EncryptWifiLinks { get; }
+
+    void SaveEncryptWifiLinks(bool enabled);
 
     /// <summary>
     /// A phone paired by QR code, with no ADB (v32): its record is keyed <c>linc:&lt;phone id&gt;</c>
@@ -377,7 +395,11 @@ public sealed class DeviceRegistry : IDeviceRegistry
         string? AppFont = null,
         // LincLink (v32): appended at the end like every field above it; missing reads back as
         // ON on the test builds that carry the new engine.
-        bool? LincLinkEnabled = null);
+        bool? LincLinkEnabled = null,
+        // Linc Island: appended at the end like every field above it; missing reads back as off.
+        bool? LiveIsland = null,
+        // Encrypt Wi-Fi links: appended at the end like every field above it; missing reads back as off.
+        bool? EncryptWifiLinks = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -434,6 +456,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public bool ForceSoftwareEncoding { get; private set; }
     public bool LincLinkEnabled { get; private set; } = true;
     public event Action? LincLinkChanged;
+    public bool EncryptWifiLinks { get; private set; }
     public event Action? ShowExplanationsChanged;
 
     /// <summary>Raised when <see cref="UsePhoneColours"/> changes, so the theme can re-derive.</summary>
@@ -549,11 +572,13 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 ShowExplanations = settings?.ShowExplanations ?? true;
                 ForceSoftwareEncoding = settings?.ForceSoftwareEncoding ?? false;
                 LincLinkEnabled = settings?.LincLinkEnabled ?? true;
+                EncryptWifiLinks = settings?.EncryptWifiLinks ?? false;
                 FloatingNav = settings?.FloatingNav ?? true;
                 HomeClock = settings?.HomeClock ?? true;
                 WallpaperBackdrop = settings?.WallpaperBackdrop ?? true;
                 ClockStyle = Blank(settings?.ClockStyle) ?? "classic";
                 AppFont = Blank(settings?.AppFont) ?? "default";
+                LiveIsland = settings?.LiveIsland ?? false;
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -785,11 +810,13 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public bool WallpaperBackdrop { get; private set; } = true;
     public string ClockStyle { get; private set; } = "classic";
     public string AppFont { get; private set; } = "default";
+    public bool LiveIsland { get; private set; }
     public event Action? AppearanceChanged;
 
     public void SaveFloatingNav(bool floating) => SaveAppearance(FloatingNav, floating, v => FloatingNav = v);
     public void SaveHomeClock(bool show) => SaveAppearance(HomeClock, show, v => HomeClock = v);
     public void SaveWallpaperBackdrop(bool show) => SaveAppearance(WallpaperBackdrop, show, v => WallpaperBackdrop = v);
+    public void SaveLiveIsland(bool show) => SaveAppearance(LiveIsland, show, v => LiveIsland = v);
 
     public void SaveClockStyle(string style)
     {
@@ -846,6 +873,16 @@ public sealed class DeviceRegistry : IDeviceRegistry
         LincLinkEnabled = enabled;
         Persist();
         LincLinkChanged?.Invoke();
+    }
+
+    public void SaveEncryptWifiLinks(bool enabled)
+    {
+        if (EncryptWifiLinks == enabled)
+        {
+            return;
+        }
+        EncryptWifiLinks = enabled;
+        Persist();
     }
 
     public void SaveQrPairedPhone(string phoneId, string model, string certBase64)
@@ -992,7 +1029,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 WallpaperBackdrop: WallpaperBackdrop,
                 ClockStyle: ClockStyle,
                 AppFont: AppFont,
-                LincLinkEnabled: LincLinkEnabled)));
+                LincLinkEnabled: LincLinkEnabled,
+                LiveIsland: LiveIsland,
+                EncryptWifiLinks: EncryptWifiLinks)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class ReceivedFile(val name: String, val path: String, val at: Long)
@@ -139,6 +140,34 @@ object ShareStore {
             }
         }
         return id
+    }
+
+    /**
+     * Send several files in order with one progress notification following them (D-092): the
+     * share sheet and the Share tab both come here, so a send from inside Linc is as visible as
+     * one from another app. The notification ends with the first failure's reason, if any.
+     */
+    fun sendAll(context: Context, uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val app = context.applicationContext
+        val progress = ShareProgress(app, uris.size)
+        progress.sending(0, ShareSender.nameFor(app, uris[0]))
+        val ids = uris.map { send(app, it) }
+        scope.launch {
+            val list = transfers.first { list ->
+                val mine = list.filter { it.id in ids }
+                val done = mine.count { it.state != TransferState.Copying }
+                mine.firstOrNull { it.state == TransferState.Copying }
+                    ?.let { progress.sending(done, it.name, it.progress.takeIf { p -> p > 0f }) }
+                mine.size == ids.size && done == ids.size
+            }.filter { it.id in ids }
+            val failed = list.filter { it.state == TransferState.Failed }
+            progress.done(
+                failed = failed.size,
+                reason = failed.firstOrNull()?.let { "${it.name}: ${it.message ?: "couldn't be sent"}" },
+                waiting = list.count { it.state == TransferState.Waiting },
+            )
+        }
     }
 
     fun retry(context: Context, id: Long) {

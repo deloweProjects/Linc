@@ -41,7 +41,8 @@ public partial class AppShellViewModel : ObservableObject
         IDeviceRegistry registry,
         UpdateCheckService updates,
         PcToolsService pcTools,
-        SyncRemote syncRemote)
+        SyncRemote syncRemote,
+        LiveActivityFeeder islandFeeder)
     {
         // Reverse mirror (M05): start answering the phone's pc.mirror.* / pc.displays.get
         // requests now, so the phone can view the PC without the Device page being open
@@ -101,6 +102,9 @@ public partial class AppShellViewModel : ObservableObject
         pcMedia.Start();
         share.Start();
         _ = home;
+        // The Linc Island's feed listens from launch for the same reason: a share or a call can
+        // start on any page. It only reads the events; the island shows it if the setting is on.
+        islandFeeder.Start();
 
         _supervisor.StateChanged += () => _dispatcher.TryEnqueue(OnLinkStateChanged);
         _supervisor.ErrorRaised += message => _dispatcher.TryEnqueue(() => OnLinkMessage(message));

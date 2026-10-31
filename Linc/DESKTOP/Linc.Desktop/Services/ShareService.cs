@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Linc.Desktop.Protocol;
 
@@ -43,11 +44,76 @@ public interface IShareService
 /// PC → phone pushes into the phone's inbox folder and announces it with `share.incoming`.
 /// </summary>
 public sealed class ShareService(
-    IConnectionManager connection, IConnectionSupervisor supervisor, IFileService files, ILogService log)
+    IConnectionManager connection, IConnectionSupervisor supervisor, IFileService files, ILogService log,
+    IDeviceRegistry registry)
     : IShareService
 {
     private const string PhoneInbox = "/sdcard/Download/Linc";
     private const string PhoneOutbox = "/sdcard/Download/Linc/outbox";
+
+    /// <summary>Pulls of one staged file before the PC stops trying and says why.</summary>
+    internal const int MaxPullAttempts = 3;
+
+    // What the outbox sweep has already done with each staged file, saved across restarts. Over
+    // Direct TLS the PC can't delete a file it pulled (D-024), so without this every reconnect
+    // pulled the same file again under a new name, and a file that failed to pull was retried on
+    // every connect for ever, silently. Keyed by name, size and modified time, so the same file
+    // shared again from the phone (a fresh copy, a new time) is a new delivery.
+    private readonly object _ledgerLock = new();
+    private Dictionary<string, LedgerEntry>? _ledger;
+
+    private sealed class LedgerEntry
+    {
+        public bool Delivered { get; set; }
+        public int Attempts { get; set; }
+        public string? LastError { get; set; }
+        public DateTimeOffset Seen { get; set; }
+    }
+
+    internal static string LedgerKey(RemoteEntry entry) =>
+        $"{entry.Name}|{entry.Size}|{entry.Modified.ToUnixTimeSeconds()}";
+
+    private string LedgerPath => Path.Combine(registry.RootPath, "share-ledger.json");
+
+    private Dictionary<string, LedgerEntry> Ledger()
+    {
+        if (_ledger is not null)
+        {
+            return _ledger;
+        }
+        try
+        {
+            _ledger = File.Exists(LedgerPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, LedgerEntry>>(File.ReadAllText(LedgerPath)) ?? []
+                : [];
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Share: couldn't read the list of received files, starting afresh ({ex.Message})");
+            _ledger = [];
+        }
+        return _ledger;
+    }
+
+    private void SaveLedger()
+    {
+        try
+        {
+            var ledger = Ledger();
+            // Keep it small: entries for files no longer on the phone stop mattering after a month.
+            var cutoff = DateTimeOffset.Now.AddDays(-30);
+            foreach (var key in ledger.Where(kv => kv.Value.Seen < cutoff).Select(kv => kv.Key).ToList())
+            {
+                ledger.Remove(key);
+            }
+            Directory.CreateDirectory(registry.RootPath);
+            File.WriteAllText(LedgerPath, JsonSerializer.Serialize(ledger));
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Share: couldn't save the list of received files ({ex.Message})");
+        }
+    }
 
     private readonly List<ReceivedShare> _received = [];
     private readonly List<PhoneTransfer> _transfers = [];
@@ -163,36 +229,79 @@ public sealed class ShareService(
             }
 
             Directory.CreateDirectory(ReceivedFolder);
-            foreach (var entry in staged.Where(e => !e.IsDirectory))
+            var waiting = staged.Where(e => !e.IsDirectory).ToList();
+            int skippedDone = 0, skippedGivenUp = 0;
+            foreach (var entry in waiting)
             {
                 var remotePath = $"{PhoneOutbox}/{entry.Name}";
+                LedgerEntry record;
+                lock (_ledgerLock)
+                {
+                    var ledger = Ledger();
+                    var key = LedgerKey(entry);
+                    if (!ledger.TryGetValue(key, out var known))
+                    {
+                        ledger[key] = known = new LedgerEntry();
+                    }
+                    record = known;
+                    record.Seen = DateTimeOffset.Now;
+                }
+                if (record.Delivered)
+                {
+                    // Already saved on this PC; only the (TLS-impossible) delete is left to try.
+                    skippedDone++;
+                    await TryDeleteStagedAsync(remotePath);
+                    continue;
+                }
+                if (record.Attempts >= MaxPullAttempts)
+                {
+                    skippedGivenUp++;
+                    continue;
+                }
+                var notifier = ShareNotifier.Start(entry.Name, toPhone: false);
                 try
                 {
                     var local = await files.PullAsync(
-                        remotePath, ReceivedFolder, new Progress<double>(), CancellationToken.None);
+                        remotePath, ReceivedFolder, new Progress<double>(notifier.Progress), CancellationToken.None);
                     var share = new ReceivedShare(Path.GetFileName(local), local, DateTimeOffset.Now);
+                    lock (_ledgerLock)
+                    {
+                        record.Delivered = true;
+                        record.LastError = null;
+                        SaveLedger();
+                    }
                     lock (_received) { _received.Insert(0, share); }
                     log.Log(LogLevel.Info, $"Received {share.Name} from the phone");
                     ShareReceived?.Invoke(share);
-                    Toast("File received from your phone", share.Name);
-
-                    try
-                    {
-                        await files.DeleteAsync(remotePath, CancellationToken.None);
-                    }
-                    catch (LincException)
-                    {
-                        // Direct TLS has no delete (D-024). Harmless: the file is already saved,
-                        // and the next sweep pulls it again under a conflict-safe name.
-                    }
+                    notifier.Finish("Received from your phone", $"Saved in {ReceivedFolder}");
+                    await TryDeleteStagedAsync(remotePath);
                 }
                 catch (Exception ex)
                 {
-                    // Previously this whole method caught only LincException, so anything else
-                    // vanished into an unobserved task and the user saw "sent" with no file
-                    // and nothing in the log. Never be silent about a share again.
-                    log.Log(LogLevel.Warn, $"Couldn't fetch {entry.Name} from the phone: {ex.Message}");
+                    // Never be silent about a share, and never retry it for ever: a file that
+                    // fails MaxPullAttempts times is left alone until it is shared again.
+                    int attempts;
+                    lock (_ledgerLock)
+                    {
+                        attempts = ++record.Attempts;
+                        record.LastError = ex.Message;
+                        SaveLedger();
+                    }
+                    if (attempts >= MaxPullAttempts)
+                    {
+                        log.Log(LogLevel.Warn, $"Gave up receiving {entry.Name} from the phone after {attempts} tries: {ex.Message}. Share it again from the phone to retry.");
+                        notifier.Finish("Couldn't receive from your phone", $"{ex.Message} Linc stopped retrying; share it again from your phone.");
+                    }
+                    else
+                    {
+                        log.Log(LogLevel.Warn, $"Couldn't fetch {entry.Name} from the phone (try {attempts} of {MaxPullAttempts}): {ex.Message}");
+                        notifier.Finish("Couldn't receive from your phone", $"{ex.Message} Linc tries again on the next connect ({attempts} of {MaxPullAttempts}).");
+                    }
                 }
+            }
+            if (skippedDone > 0 || skippedGivenUp > 0)
+            {
+                log.Log(LogLevel.Info, $"Share sweep: {waiting.Count} file(s) in the phone's outbox; {skippedDone} already received, {skippedGivenUp} given up on (not fetched again).");
             }
         }
         finally
@@ -201,10 +310,24 @@ public sealed class ShareService(
         }
     }
 
+    /// <summary>Removes a pulled file from the phone's outbox. Direct TLS has no delete (D-024);
+    /// there the ledger is what keeps the file from being delivered again.</summary>
+    private async Task TryDeleteStagedAsync(string remotePath)
+    {
+        try
+        {
+            await files.DeleteAsync(remotePath, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+        }
+    }
+
     public async Task SendFileToPhoneAsync(string localPath, CancellationToken ct)
     {
         var transfer = new PhoneTransfer(Guid.NewGuid(), Path.GetFileName(localPath), localPath, PhoneTransferState.Sending, 0, null);
         Publish(transfer);
+        var notifier = ShareNotifier.Start(transfer.Name, toPhone: true);
         try
         {
             if (supervisor.State != LinkState.Connected)
@@ -218,6 +341,7 @@ public sealed class ShareService(
                 {
                     lastReported = p;
                     Publish(transfer = transfer with { Progress = Math.Clamp(p, 0, 100) });
+                    notifier.Progress(p);
                 }
             });
             // PushAsync renames on conflict and returns the path actually written, so the
@@ -232,30 +356,20 @@ public sealed class ShareService(
                 }),
                 ct);
             Publish(transfer with { State = PhoneTransferState.Done, Progress = 100, Message = "Sent to your phone (Download/Linc)" });
+            notifier.Finish("Sent to your phone", "In Download/Linc on the phone");
             log.Log(LogLevel.Info, $"Sent {name} to the phone");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Publish(transfer with
-            {
-                State = PhoneTransferState.Failed,
-                Message = ex is LincException ? ex.Message : "Couldn't send it — check the phone is connected and has storage space.",
-            });
+            var reason = ex is LincException ? ex.Message : "Couldn't send it — check the phone is connected and has storage space.";
+            Publish(transfer with { State = PhoneTransferState.Failed, Message = reason });
+            notifier.Finish("Couldn't send to your phone", reason);
             throw;
         }
-    }
-
-    private static void Toast(string title, string body)
-    {
-        try
+        catch (OperationCanceledException)
         {
-            Microsoft.Windows.AppNotifications.AppNotificationManager.Default.Show(
-                new Microsoft.Windows.AppNotifications.Builder.AppNotificationBuilder()
-                    .AddText(title).AddText(body).BuildNotification());
-        }
-        catch (Exception)
-        {
-            // Toasts unavailable; the log entry still records it.
+            notifier.Finish("Stopped sending to your phone");
+            throw;
         }
     }
 }

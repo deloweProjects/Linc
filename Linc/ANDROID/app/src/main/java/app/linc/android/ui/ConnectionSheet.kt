@@ -85,6 +85,15 @@ fun ConnectionSheet(onDismiss: () -> Unit) {
                     p.adbVia == "wireless" -> "Up, over wireless debugging"
                     else -> "Up"
                 }) } },
+                // Whether the Wi-Fi could read the link (link.state `encrypted`; only plain ADB on 5555 isn't).
+                pcLink?.takeIf { connected != null }?.let { p -> { s -> SettingsRow("Security", s, LincSymbols.Lock,
+                    value = when {
+                        !p.encrypted -> "Not encrypted"
+                        p.route == "usb" -> "Private (USB cable)"
+                        else -> "Encrypted"
+                    },
+                    supporting = if (!p.encrypted) "Plain ADB over Wi-Fi (port 5555). On the PC, turn on Settings › Connection › Encrypt Wi-Fi links, or use wireless debugging or the cable." else null,
+                ) } },
                 link?.address?.let { address -> { s -> SettingsRow("Address", s, LincSymbols.Link, value = address) } },
                 connected?.let { c -> { s -> SettingsRow("Linc on the PC", s, LincSymbols.Info, value = "Version ${c.desktopVersion}", supporting = "Protocol v${c.protocolVersion}") } },
                 if (connected != null && rtt >= 0) { s -> SettingsRow("Round trip", s, LincSymbols.Schedule, value = "$rtt ms") } else null,

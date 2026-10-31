@@ -48,6 +48,9 @@ class CompanionService : Service() {
         // The first line of every run says what this is and who made it (Provenance.kt).
         LogStore.log(LogLevel.INFO, Provenance.banner(BuildConfig.VERSION_NAME))
         ClipboardHistoryStore.init(this)
+        PendingSends.attach(this)
+        // Pause for banking apps: restores anything a crash left switched off, then watches.
+        BankingPause.start(this, scope)
         // The PC as a Direct Share target, named after it once it says its name (D-083).
         scope.launch {
             CompanionStateHolder.state
@@ -169,7 +172,8 @@ class CompanionService : Service() {
                 appsGet = { AppInventory.payload(this) },
                 onShareIncoming = { name, path ->
                     ShareStore.addReceived(name, path)
-                    LogStore.log(LogLevel.INFO, "Received a file from the PC")
+                    ShareProgress.received(this, name, path)
+                    LogStore.log(LogLevel.INFO, "Received $name from the PC")
                 },
                 // v18 (M13b): tell the PC which port adbd is accepting on, having just proved
                 // it locally. Nothing here arms anything — that is M13c.

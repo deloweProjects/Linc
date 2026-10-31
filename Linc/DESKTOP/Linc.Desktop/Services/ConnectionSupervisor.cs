@@ -115,6 +115,18 @@ public interface IConnectionSupervisor : IDisposable
     /// <summary>The engine asked the phone to turn wireless debugging on and ADB isn't up yet ("turning on…").</summary>
     bool AdbArming => false;
 
+    /// <summary>Whether the live link is encrypted, in one plain line; null when not connected.</summary>
+    string? SecurityCaption => null;
+
+    /// <summary>True while the live link is legacy ADB over Wi-Fi (port 5555), which is not encrypted.</summary>
+    bool LinkIsPlainWifi => false;
+
+    /// <summary>Encrypt Wi-Fi links was just turned on: if the live link is plain, try the encrypted one now.</summary>
+    void UpgradeToEncryptedIfPlain() { }
+
+    /// <summary>ADB reaches the phone but its Linc app isn't installed (connected with ADB only).</summary>
+    bool AdbOnlyAppMissing => false;
+
     /// <summary>True when the engine re-arms wireless debugging by itself (the new engine on); pages then only offer a retry.</summary>
     bool ArmsAdbItself => false;
 
@@ -247,7 +259,8 @@ public sealed class ConnectionSupervisor(
         paired: registry.PairedSerial is not null,
         paused: State == LinkState.Paused,
         linked: State == LinkState.Connected,
-        adbReachesPhone: _adbOnlySerial is not null && State != LinkState.Connected);
+        adbReachesPhone: _adbOnlySerial is not null && State != LinkState.Connected,
+        appMissing: _appMissing);
 
     public bool AdbUp => LinkBrain.AdbChipLit(State == LinkState.Connected && (connection.HasAdb || _adbVia is not null), _adbOnlySerial is not null);
 
@@ -309,7 +322,8 @@ public sealed class ConnectionSupervisor(
         }
         var via = connection.HasAdb ? (live.Transport == LinkTransport.AdbUsb ? "cable" : "wireless") : _adbVia;
         var arming = AdbArming;
-        _ = Task.Run(() => connection.SendLinkStateAsync(route, AdbUp, AdbUp ? via : null, arming));
+        var encrypted = !LinkPolicy.IsPlainWifi(live.Transport, live.Serial);
+        _ = Task.Run(() => connection.SendLinkStateAsync(route, AdbUp, AdbUp ? via : null, arming, encrypted));
     }
 
     /// <summary>With the engine on, every 3 s while connected: does adb see the phone (by cable or wireless debugging)?</summary>
@@ -357,15 +371,27 @@ public sealed class ConnectionSupervisor(
     /// <summary>The address key a PC→phone dial is backed off under (never an ADB address).</summary>
     private static string DialKey(string address) => "linc:" + address;
 
-    private void SetAdbOnly(string? serial)
+    private void SetAdbOnly(string? serial, AdvancedSharpAdbClient.Models.DeviceData? device = null, bool appMissing = false)
     {
-        if (_adbOnlySerial == serial)
+        // ADB-only (Tools PLAN.md §1.2): Files and screenshots use this device while the app is away.
+        connection.AdbOnlyDevice = serial is null ? null : device;
+        if (_adbOnlySerial == serial && _appMissing == (serial is not null && appMissing))
         {
             return;
         }
+        if (serial is not null && appMissing && !_appMissing)
+        {
+            log.Log(LogLevel.Info, "Connected with ADB only: the Linc app isn't installed on the phone. Tools, Files and screenshots work; Home offers to install it.");
+        }
         _adbOnlySerial = serial;
+        _appMissing = serial is not null && appMissing;
         StateChanged?.Invoke(); // the status and the ADB chip changed, even if State didn't
     }
+
+    private bool _appMissing;
+
+    /// <summary>ADB reaches the phone but its Linc app isn't installed (connected with ADB only).</summary>
+    public bool AdbOnlyAppMissing => _appMissing && _adbOnlySerial is not null && State != LinkState.Connected;
 
     public void SetManualTransport(LinkTransport? transport)
     {
@@ -459,6 +485,8 @@ public sealed class ConnectionSupervisor(
             }
             _handoffUntilUtc = null;
             _adbOnlySerial = null;
+            _appMissing = false;
+            connection.AdbOnlyDevice = null;
             LastRttMs = null;
             ConnectedAtUtc = null;
             SetState(registry.PairedSerial is null ? LinkState.NoDevice : LinkState.Searching);
@@ -1053,11 +1081,21 @@ public sealed class ConnectionSupervisor(
                 Succeeded(address);
                 Adopt(device, handoff, address);
                 LearnWifiMac(device.SerialNo, HostOf(address));
+                MaybeUpgradeToEncrypted();
             }
             catch (OperationCanceledException) when (attemptCt.IsCancellationRequested)
             {
                 EndFailedAttempt(handoff); // stopped on purpose (disconnect, phone or engine switch)
                 log.Log(LogLevel.Info, $"Stopped connecting to {address}.");
+            }
+            catch (AdbOnlyException ex) when (Engine)
+            {
+                // Wireless ADB reaches the phone but its app doesn't answer or isn't installed:
+                // connected with ADB only, as over the cable. The search tries again on its backoff.
+                Failed(address);
+                EndFailedAttempt(handoff);
+                LastErrorMessage = ex.Message;
+                SetAdbOnly(address, ex.Device, ex.AppMissing);
             }
             catch (LincException ex)
             {
@@ -1119,6 +1157,8 @@ public sealed class ConnectionSupervisor(
         }
         _firstProbeFailureUtc = null;
         _adbOnlySerial = null;
+        _appMissing = false;
+        connection.AdbOnlyDevice = null;
         StartHealthLoop();
         if (handedOff)
         {
@@ -1298,15 +1338,16 @@ public sealed class ConnectionSupervisor(
                 Succeeded(device.Serial);
                 Adopt(connected, handoff, "USB");
             }
-            catch (CompanionNotAnsweringException ex) when (Engine)
+            catch (AdbOnlyException ex) when (Engine)
             {
-                // LincLink: ADB reaches the phone, its app is being started. That is connected,
-                // not an error — the status says so, and the next USB poll tries again (the
-                // backoff paces it: 1, 2, 5, 10 … 30 s, and a cable or app signal cuts it short).
+                // LincLink: ADB reaches the phone, its app is being started (or isn't installed:
+                // connected with ADB only, PLAN.md §1.2). That is connected, not an error — the
+                // status says so, and the next USB poll tries again (the backoff paces it: 1, 2, 5,
+                // 10 … 30 s, and a cable or app signal cuts it short), so an install upgrades in place.
                 Failed(device.Serial);
                 EndFailedAttempt(handoff);
                 LastErrorMessage = ex.Message;
-                SetAdbOnly(device.Serial);
+                SetAdbOnly(device.Serial, ex.Device, ex.AppMissing);
             }
             catch (OperationCanceledException) when (attemptCt.IsCancellationRequested)
             {
@@ -1679,7 +1720,8 @@ public sealed class ConnectionSupervisor(
         }
         try
         {
-            if (!(State is LinkState.Searching || IsHandingOff) || !ShouldEngage(LinkTransport.DirectTls) ||
+            var upgrading = registry.EncryptWifiLinks && LinkIsPlainWifi; // Encrypt Wi-Fi links (MaybeUpgradeToEncrypted)
+            if (!(State is LinkState.Searching || IsHandingOff || upgrading) || !ShouldEngage(LinkTransport.DirectTls) ||
                 (_expectNewOnly && registry.PairedSerial != _justPaired) ||
                 registry.KnownDevices.FirstOrDefault(d => d.Serial == registry.PairedSerial) is not { PhoneCertBase64: { } cert } phone ||
                 LinkSecretStore.PhoneIdOf(cert) is not { } phoneId)
@@ -1983,7 +2025,33 @@ public sealed class ConnectionSupervisor(
     /// </summary>
     private bool ShouldEngage(LinkTransport transport) =>
         LinkPolicy.ShouldEngage(transport, EngageActivity(),
-            IsHandingOff ? null : Device?.Transport, ManualTransport, registry.ConnectionPreference);
+            IsHandingOff ? null : Device?.Transport, ManualTransport, registry.ConnectionPreference,
+            encryptWifi: registry.EncryptWifiLinks, currentIsPlain: !IsHandingOff && LinkIsPlainWifi);
+
+    /// <summary>True while the live link is legacy ADB over Wi-Fi (port 5555): readable on the Wi-Fi.</summary>
+    public bool LinkIsPlainWifi =>
+        State == LinkState.Connected && Device is { } d && LinkPolicy.IsPlainWifi(d.Transport, d.Serial);
+
+    /// <summary>"Encrypted (TLS)", "Not encrypted: plain ADB over Wi-Fi (port 5555)"…; null when not connected.</summary>
+    public string? SecurityCaption =>
+        State == LinkState.Connected && Device is { } d ? LinkPolicy.SecurityCaption(d.Transport, d.Serial) : null;
+
+    /// <summary>
+    /// Encrypt Wi-Fi links: a plain ADB Wi-Fi link just came up, so try the encrypted direct link
+    /// beside it (make-before-break); if the phone answers, ShouldEngage lets it take over. The
+    /// plain link keeps working if it doesn't. Needs the new engine (the PC dials the phone).
+    /// </summary>
+    public void UpgradeToEncryptedIfPlain() => MaybeUpgradeToEncrypted();
+
+    private void MaybeUpgradeToEncrypted()
+    {
+        if (!registry.EncryptWifiLinks || !Engine || !LinkIsPlainWifi)
+        {
+            return;
+        }
+        log.Log(LogLevel.Info, "This link is plain ADB over Wi-Fi (not encrypted); trying the encrypted direct link to take over.");
+        _ = Task.Run(DialPhoneAsync);
+    }
 
     /// <summary>
     /// The user changed the connection method under Devices. Drop the current link only if the new

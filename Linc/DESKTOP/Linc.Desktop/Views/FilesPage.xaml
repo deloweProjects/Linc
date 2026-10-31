@@ -50,6 +50,11 @@
                         Command="{x:Bind ViewModel.DownloadCommand}"
                         IsEnabled="{x:Bind ViewModel.HasSelection, Mode=OneWay}" />
                     <AppBarButton
+                        Icon="Copy"
+                        Label="Copy path"
+                        Command="{x:Bind ViewModel.CopyPathCommand}"
+                        ToolTipService.ToolTip="Copy the phone path of the selected item (or this folder)" />
+                    <AppBarButton
                         Icon="Rename"
                         Label="Rename"
                         Click="OnRenameClick"
@@ -78,9 +83,18 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Spacing="4">
-                        <TextBlock
-                            Text="{x:Bind ViewModel.TransferText, Mode=OneWay}"
-                            Style="{StaticResource BodyText}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock
+                                Text="{x:Bind ViewModel.TransferText, Mode=OneWay}"
+                                Style="{StaticResource BodyText}"
+                                VerticalAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                            <HyperlinkButton
+                                Content="Show in folder"
+                                Padding="4,0"
+                                Command="{x:Bind ViewModel.ShowLastSavedCommand}"
+                                Visibility="{x:Bind ViewModel.HasLastSaved, Mode=OneWay}" />
+                        </StackPanel>
                         <ProgressBar
                             Maximum="100"
                             Value="{x:Bind ViewModel.TransferProgress, Mode=OneWay}"

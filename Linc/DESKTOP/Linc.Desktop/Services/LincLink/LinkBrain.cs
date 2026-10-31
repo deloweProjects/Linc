@@ -38,6 +38,10 @@ public enum LinkPresence
     /// starting it in the background. Shown as connected, never as an error.</summary>
     ConnectedStartingApp,
 
+    /// <summary>ADB reaches the phone and the Linc app isn't installed on it: connected with ADB only.
+    /// Tools, Files, screenshots and the mirror work; messages, notifications and clipboard need the app.</summary>
+    ConnectedAdbOnly,
+
     Paused,
 }
 
@@ -129,10 +133,11 @@ public static class LinkBrain
     /// repaired in the background — so the owner never sees "can't reach the Linc app" while the
     /// cable plainly works.
     /// </summary>
-    public static LinkPresence Presence(bool paired, bool paused, bool linked, bool adbReachesPhone) =>
+    public static LinkPresence Presence(bool paired, bool paused, bool linked, bool adbReachesPhone, bool appMissing = false) =>
         !paired ? LinkPresence.NoPhone
         : paused ? LinkPresence.Paused
         : linked ? LinkPresence.Connected
+        : adbReachesPhone && appMissing ? LinkPresence.ConnectedAdbOnly
         : adbReachesPhone ? LinkPresence.ConnectedStartingApp
         : LinkPresence.Searching;
 

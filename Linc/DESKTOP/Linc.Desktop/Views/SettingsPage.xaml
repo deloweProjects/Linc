@@ -166,11 +166,26 @@
                             OnContent="On" OffContent="Off"
                             IsOn="{x:Bind ViewModel.LincLinkEnabled, Mode=TwoWay}" />
                     </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="Encrypt Wi-Fi links — when Linc rides plain ADB over Wi-Fi (port 5555, which anyone on the network could read), switch to the encrypted direct link. Mirror, Tools and fast file copies then need wireless debugging or the cable. Needs the new connection engine"
+                            Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.EncryptWifiLinks, Mode=TwoWay}" />
+                    </Grid>
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button
                             Content="Resume auto-reconnect"
                             Command="{x:Bind ViewModel.ResumeAutomaticCommand}"
                             Visibility="{x:Bind ViewModel.IsPaused, Mode=OneWay}" />
+                        <Button Content="Connection Doctor" Click="OnConnectionDoctorClick"
+                                ToolTipService.ToolTip="Checks what can stop the PC and phone finding each other (firewall, network type, VPN, Wi-Fi isolation, the phone's battery settings) and fixes what it can" />
                         <Button Content="Clear saved phone data" Command="{x:Bind ViewModel.ClearDeviceDataCommand}" ToolTipService.ToolTip="Drops the offline copy of this phone (stats, wallpaper, photo thumbnails) without unpairing it" />
                     </StackPanel>
                 </StackPanel>
@@ -262,6 +277,19 @@
                         </StackPanel>
                         <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.WallpaperBackdrop, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Linc Island" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="A dark pill at the top of your phone on Home (and in the title bar on other pages) that shows what&apos;s happening: a file sending, a call, music, mirroring, reconnecting, low battery. Click it for buttons." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
+                                      AutomationProperties.AutomationId="LiveIslandToggle"
+                                      IsOn="{x:Bind ViewModel.LiveIsland, Mode=TwoWay}" />
                     </Grid>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>

@@ -123,4 +123,121 @@ public sealed partial class SettingsPage : Page
             AsyncVoidGuard.Report(ex, "SettingsPage.OnClearHistoryClick");
         }
     }
+
+    // ---- Connection Doctor -------------------------------------------------------------
+
+    /// <summary>
+    /// Runs every check, shows each result with its plain reason, and a Fix button where Linc can
+    /// fix it; "Check again" re-runs them. Built in code: one list, no page of its own.
+    /// </summary>
+    private async void OnConnectionDoctorClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        try
+        {
+            var doctor = App.Services.GetRequiredService<ConnectionDoctor>();
+            var list = new StackPanel { Spacing = 14, MinWidth = 460 };
+            var scroller = new ScrollViewer { Content = list, MaxHeight = 520 };
+            var dialog = new ContentDialog
+            {
+                Title = "Connection Doctor",
+                Content = scroller,
+                PrimaryButtonText = "Check again",
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+
+            async Task RunAsync()
+            {
+                list.Children.Clear();
+                list.Children.Add(new StackPanel
+                {
+                    Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+                    Spacing = 10,
+                    Children = { new ProgressRing { IsActive = true, Width = 18, Height = 18 }, new TextBlock { Text = "Checking…" } },
+                });
+                var findings = await Task.Run(() => doctor.RunAsync(CancellationToken.None));
+                list.Children.Clear();
+                foreach (var finding in findings)
+                {
+                    list.Children.Add(Row(finding));
+                }
+            }
+
+            Microsoft.UI.Xaml.UIElement Row(DoctorFinding finding)
+            {
+                var (glyph, brush) = finding.Status switch
+                {
+                    DoctorStatus.Ok => ("", "SuccessBrush"),
+                    DoctorStatus.Warning => ("", "WarningBrush"),
+                    DoctorStatus.Problem => ("", "ErrorBrush"),
+                    _ => ("", "OnSurfaceVariantBrush"),
+                };
+                var icon = new FontIcon { Glyph = glyph, FontSize = 16, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Top, Margin = new Microsoft.UI.Xaml.Thickness(0, 2, 0, 0) };
+                if (Microsoft.UI.Xaml.Application.Current.Resources.TryGetValue(brush, out var b) && b is Microsoft.UI.Xaml.Media.Brush color)
+                {
+                    icon.Foreground = color;
+                }
+                var text = new StackPanel { Spacing = 2 };
+                text.Children.Add(new TextBlock { Text = finding.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+                var detail = new TextBlock { Text = finding.Detail, TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap, Opacity = 0.85 };
+                text.Children.Add(detail);
+                if (finding is { FixLabel: { } label, Fix: { } fix })
+                {
+                    var button = new Button { Content = label, Margin = new Microsoft.UI.Xaml.Thickness(0, 6, 0, 0) };
+                    button.Click += async (_, _) =>
+                    {
+                        try
+                        {
+                            button.IsEnabled = false;
+                            detail.Text = await Task.Run(fix);
+                        }
+                        catch (Exception ex)
+                        {
+                            detail.Text = $"That didn't work: {ex.Message}";
+                            button.IsEnabled = true;
+                        }
+                    };
+                    text.Children.Add(button);
+                }
+                var grid = new Grid { ColumnSpacing = 12 };
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new Microsoft.UI.Xaml.GridLength(1, Microsoft.UI.Xaml.GridUnitType.Star) });
+                grid.Children.Add(icon);
+                Grid.SetColumn(text, 1);
+                grid.Children.Add(text);
+                return grid;
+            }
+
+            dialog.PrimaryButtonClick += async (_, args) =>
+            {
+                args.Cancel = true; // stay open and check again
+                var deferral = args.GetDeferral();
+                try
+                {
+                    await RunAsync();
+                }
+                finally
+                {
+                    deferral.Complete();
+                }
+            };
+            dialog.Opened += async (_, _) =>
+            {
+                try
+                {
+                    await RunAsync();
+                }
+                catch (Exception ex)
+                {
+                    AsyncVoidGuard.Report(ex, "SettingsPage.ConnectionDoctor");
+                }
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            AsyncVoidGuard.Report(ex, "SettingsPage.OnConnectionDoctorClick");
+        }
+    }
 }

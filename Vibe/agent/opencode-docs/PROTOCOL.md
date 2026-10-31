@@ -821,7 +821,7 @@ as before.
 | `link.where` | phone → desktop | `{addrs: [IPv4…], port: 46002}` | Where the PC can dial this phone (its Wi-Fi/Ethernet/tethering addresses), sent on every session start and resume. |
 | `link.pair` | phone → desktop, first frame | `{proof: base64, model}` → `{ok, name, pcId}` | Pairing by QR code, below. Accepted only inside the PC's pairing window. |
 | `link.noop` | either way, numbered | `{}` | Does nothing; holds the `seq` of a request given up on (above). |
-| `link.state` | desktop → phone, numbered | `{route: "usb"\|"wifi"\|"direct", adb: bool, adbVia?: "cable"\|"wireless", arming?: true}` | How the two are connected, as the PC sees it: sent on connect and on every change. `arming`: the PC just asked the phone to turn wireless debugging on (`adb.arm`, now / 30 s / 2 min / every 10 min while a v32 session has no ADB route) and ADB isn't up yet: "turning on…". The phone shows exactly this ("Connected over USB" for `usb`, else "over Wi-Fi", plus the ADB chip); anything it doesn't understand is shown as nothing. `usb` includes a direct link riding adb reverse. |
+| `link.state` | desktop → phone, numbered | `{route: "usb"\|"wifi"\|"direct", adb: bool, adbVia?: "cable"\|"wireless", arming?: true, encrypted?: false}` | How the two are connected, as the PC sees it: sent on connect and on every change. `arming`: the PC just asked the phone to turn wireless debugging on (`adb.arm`, now / 30 s / 2 min / every 10 min while a v32 session has no ADB route) and ADB isn't up yet: "turning on…". The phone shows exactly this ("Connected over USB" for `usb`, else "over Wi-Fi", plus the ADB chip); anything it doesn't understand is shown as nothing. `usb` includes a direct link riding adb reverse. `encrypted` (2026-10-31, optional, no version gate; an older phone ignores it) is sent only as `false`, when the link is plain ADB over Wi-Fi (see **Link security** below). |
 
 ### The phone's listener (TCP 46002)
 
@@ -861,3 +861,17 @@ constant time and pins the phone (a record keyed `linc:<phone id>` until an ADB 
 hardware serial, then merged), replies `ok`, and both sides connect as paired peers. Test vector: token
 `00..0f`, phone cert `"phone"`, PC cert `"pc"` → `cbce564e…f95d8978`. Check code vector: `k` = `ab`×32,
 token `00..0f` → `764 252`.
+
+## Link security (2026-10-31)
+
+Which routes the Wi-Fi can read:
+
+| Route | Encrypted? | Why |
+|---|---|---|
+| USB cable (ADB over USB, or a direct link through `adb reverse`) | n/a: private | never leaves the cable |
+| Direct TLS (v9) and LincLink (v32, either side dialling) | yes | mutual TLS with certificates pinned by `tls.exchange` |
+| Wireless debugging (`adb pair`, its own random port, or an `._adb-tls-connect._tcp` serial) | yes | adb itself runs TLS |
+| Legacy ADB over Wi-Fi (`adb tcpip`, port **5555**) | **no** | adb sends everything, the `adb forward` carrying Linc's session included, in plain text |
+
+The PC classifies the live link with `LinkPolicy.IsPlainWifi` (a network adb serial ending `:5555`) and shows it on Home; the phone shows it under Connection › Security from `link.state.encrypted`. 
+**Encrypt Wi-Fi links** (PC Settings › Connection, off by default, needs the new engine): when a plain link comes up (or the switch is turned on), the PC dials the phone's LincLink listener beside it and `LinkPolicy.ShouldEngage` lets Direct TLS take over the plain ADB Wi-Fi link (make-before-break; the v32 session moves without loss). Nothing ever moves back to plain ADB Wi-Fi on its own. Cost: on the encrypted link `HasAdb` is false, so Mirror, Tools and fast ADB file copies wait for wireless debugging or the cable. No wire change beyond the optional field.

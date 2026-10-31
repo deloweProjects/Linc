@@ -11,6 +11,7 @@
     <!-- D-081: the connection policy, compiled verbatim from the app. Pure: no sockets, no adb,
          no phone, no settings file touched. -->
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\LinkPolicy.cs" />
+    <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\AdbSerial.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\DeviceAdmission.cs" />
     <Compile Include="..\..\DESKTOP\Linc.Desktop\Services\TransportRank.cs" />
     <!-- The standby's retire rule (HotspotHealth) and what it leans on. -->

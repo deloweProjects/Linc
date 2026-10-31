@@ -67,7 +67,7 @@ object ClipboardBridge {
         lastSent = text
         ClipboardHistoryStore.init(context)
         ClipboardHistoryStore.record(text, fromPhone = true)
-        send(text)
+        send(text, context)
         LogStore.log(LogLevel.INFO, "Clipboard synced to PC")
     }
 
@@ -107,7 +107,12 @@ object ClipboardBridge {
         if (focused) pushIfChanged(context, force = true)
     }
 
-    private fun send(text: String) {
+    private fun send(text: String, context: Context? = null) {
+        if (context != null && !CompanionOutbox.canSend(1)) {
+            // Offline delivery: the newest copy reaches the PC when it next connects.
+            PendingSends.add(context, PendingSends.CLIP, text)
+            return
+        }
         CompanionOutbox.trySend(Envelope(
             type = MessageType.CLIPBOARD_CHANGED,
             payload = buildJsonObject { put("text", text) },

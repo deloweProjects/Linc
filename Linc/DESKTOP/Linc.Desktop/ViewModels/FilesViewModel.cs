@@ -30,6 +30,7 @@ public partial class FilesViewModel : ObservableObject
     private readonly IFileService _files;
     private readonly DispatcherQueue _dispatcher;
     private CancellationTokenSource? _transferCts;
+    private string? _resumePath;
 
     public ObservableCollection<RemoteEntryVm> Entries { get; } = [];
     public ObservableCollection<StorageRoot> Roots { get; } = [];
@@ -41,14 +42,32 @@ public partial class FilesViewModel : ObservableObject
         CurrentPath = "";
         TransferText = "";
 
+        // Ready when connected, or with ADB only (no Linc app answering, Tools PLAN.md §1.2).
+        // StateChanged also fires for ADB-chip changes, so only a not-ready → ready edge reloads.
+        bool Ready() => supervisor.State == LinkState.Connected ||
+            supervisor.Presence is LinkPresence.ConnectedAdbOnly or LinkPresence.ConnectedStartingApp;
+        var wasReady = Ready();
         supervisor.StateChanged += () => _dispatcher.TryEnqueue(() =>
         {
-            if (supervisor.State == LinkState.Connected)
+            var ready = Ready();
+            var edge = ready && (!wasReady || Entries.Count == 0 && CurrentPath.Length == 0);
+            var reconnected = supervisor.State == LinkState.Connected && !_wasConnected;
+            wasReady = ready;
+            _wasConnected = supervisor.State == LinkState.Connected;
+            if (ready)
             {
-                _ = InitializeAsync();
+                if (edge || reconnected)
+                {
+                    _ = InitializeAsync();
+                }
             }
             else
             {
+                // Remembered so a reconnect reopens the same folder instead of jumping to the top.
+                if (CurrentPath.Length > 0)
+                {
+                    _resumePath = CurrentPath;
+                }
                 Entries.Clear();
                 Roots.Clear();
                 CurrentPath = "";
@@ -60,11 +79,14 @@ public partial class FilesViewModel : ObservableObject
         // happens *after* AppShellViewModel has already started the supervisor and reached
         // Connected. StateChanged is edge-triggered, so a transition that fired before this VM
         // existed is lost — without this, the listing stays blank until the next reconnect.
-        if (supervisor.State == LinkState.Connected)
+        _wasConnected = supervisor.State == LinkState.Connected;
+        if (wasReady)
         {
             _ = InitializeAsync();
         }
     }
+
+    private bool _wasConnected;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PathSegments))]
@@ -95,6 +117,13 @@ public partial class FilesViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasError))]
     public partial string? ErrorMessage { get; set; }
 
+    /// <summary>The PC file the last download wrote, for "Show in folder"; null until one finishes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLastSaved))]
+    public partial string? LastSavedPath { get; set; }
+
+    public bool HasLastSaved => LastSavedPath is not null;
+
     public bool HasSelection => SelectedEntry is not null;
     public bool IsNotTransferring => !TransferActive;
     public bool HasError => ErrorMessage is not null;
@@ -110,7 +139,12 @@ public partial class FilesViewModel : ObservableObject
             }
             // Auto-open at the first root (internal storage / sdcard); the "Go to" menu jumps to
             // any other root — including the phone root "/" — on demand (M2a).
-            if (Roots.FirstOrDefault() is { } start)
+            if (_resumePath is { } resume)
+            {
+                _resumePath = null;
+                await NavigateAsync(resume);
+            }
+            else if (Roots.FirstOrDefault() is { } start)
             {
                 await NavigateAsync(start.Path);
             }
@@ -196,12 +230,38 @@ public partial class FilesViewModel : ObservableObject
         // Downloads\Linc share convention rather than dumping into the Downloads root (M2a).
         var downloads = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Linc");
-        Directory.CreateDirectory(downloads);
+        LastSavedPath = null;
         await RunTransferAsync($"Downloading {file.Name}…", async (progress, ct) =>
         {
+            Directory.CreateDirectory(downloads);
             var localPath = await _files.PullAsync(file.Entry.FullPath, downloads, progress, ct);
+            LastSavedPath = localPath;
             return $"Saved to {localPath}";
         });
+    }
+
+    /// <summary>Puts the selected item's phone path (or the open folder's) on the PC clipboard.</summary>
+    [RelayCommand]
+    private void CopyPath()
+    {
+        var path = SelectedEntry?.Entry.FullPath ?? CurrentPath;
+        if (path.Length == 0)
+        {
+            return;
+        }
+        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        package.SetText(path);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        TransferText = $"Copied {path}";
+    }
+
+    [RelayCommand]
+    private void ShowLastSaved()
+    {
+        if (LastSavedPath is { } path && File.Exists(path))
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+        }
     }
 
     public async Task UploadFilesAsync(IReadOnlyList<string> localPaths)
@@ -299,24 +359,37 @@ public partial class FilesViewModel : ObservableObject
         TransferText = description;
         TransferProgress = 0;
         _transferCts = new CancellationTokenSource();
+        var finished = false;
         try
         {
             var progress = new Progress<double>(value =>
             {
+                // Progress reports are posted to the UI thread and can land after the transfer
+                // returned; without this a late "97%" overwrote "Saved to …".
+                if (finished)
+                {
+                    return;
+                }
                 TransferProgress = value;
                 TransferText = $"{description} {value:0}%";
             });
-            TransferText = await transfer(progress, _transferCts.Token);
+            var result = await transfer(progress, _transferCts.Token);
+            finished = true;
+            TransferText = result;
             return true;
         }
         catch (OperationCanceledException)
         {
+            finished = true;
             TransferText = "Cancelled";
             return false;
         }
-        catch (LincException ex)
+        catch (Exception ex)
         {
-            ErrorMessage = ex.Message;
+            // Not only LincException: anything else used to escape the command unreported.
+            finished = true;
+            TransferText = "";
+            ErrorMessage = ex is LincException ? ex.Message : $"The transfer failed: {ex.Message}";
             return false;
         }
         finally

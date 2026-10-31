@@ -36,6 +36,10 @@ VB-CABLE's installer from vb-audio.com.
 | **First setup** | PC: Add a phone (the `+` by the tabs) · phone: the setup pages on first launch | The PC finds the phone over USB or wireless debugging (QR code or pairing code), installs the bundled phone app if needed (or "Linc is already on my phone — don't install it"), and pins each side's certificate for Direct TLS. Setup explains ADB pairing and ticks off when it worked. | Phone: Settings › Run setup again |
 | **Links and handover** | Automatic; PC: Device › Connection shows the link, "Use this link now" pins one | USB is preferred; plugging the cable in switches to it without a drop, unplugging goes back to Wi-Fi. The phone reconnects when it rejoins Wi-Fi, the screen comes on or Linc opens, trying the PC's last address first. The PC also recognises the phone by its Wi-Fi address. | PC: Settings › Connection › Allow USB connections (on), Background connection (on) · phone: Settings › Connection › Background connection (on) |
 | **Stay connected in the background** | Phone: Settings › Connection; Home shows a warning card when it matters | Asks Android to exempt Linc from battery optimisation, and opens the phone maker's own auto-start screen (itel, Tecno, Infinix, Xiaomi, Oppo, Vivo). Without it many phones freeze Linc with the screen off and the Wi-Fi link drops. | Off until you allow it |
+| **Link security / Encrypt Wi-Fi links** | PC: Home (lock line), Settings › Connection · phone: Connection sheet › Security | Says whether the Wi-Fi could read the link: only legacy ADB over Wi-Fi (`adb tcpip`, port 5555) is plain; USB, wireless debugging, Direct TLS and LincLink are not. With the switch on (needs the new engine), the PC dials the phone beside a plain link and the encrypted direct link takes over without a drop; Mirror, Tools and fast ADB copies then wait for wireless debugging or the cable. `PROTOCOL.md` § Link security. | Off |
+| **Connected with ADB only** | PC: Home | A phone ADB reaches without the Linc app installed shows as "Connected with ADB only" with an **Install Linc** button; Files and Tools work over ADB; the next poll upgrades in place once the app answers. New engine only (`AdbOnlyException`, `LinkPresence.ConnectedAdbOnly`). | — |
+| **Connection Doctor** | PC: Settings › Connection › Connection Doctor | Checks the link, ADB, the Windows Firewall rule (`Linc-LincLink`, for this exe's folder), Public vs Private network, VPNs, whether the phone's last address answers (Wi-Fi client isolation), and the phone's battery restrictions (over ADB). Fixes the firewall and network type (one Windows prompt), battery restrictions (ADB) and plain Wi-Fi (Encrypt Wi-Fi links). | — |
+| **Pause for banking apps** | Phone: Settings › Pause for banking apps | Picked apps that refuse to run with Developer options or debugging on: while one is in front (usage access, polled every 0.7 s), Linc saves then switches off Developer options, USB and wireless debugging, and restores them when you leave it, at service start and after a reboot (`BankingPause.kt`). Needs the PC-granted settings permission and usage access. | None picked |
 | **Hotspot quick link** | Phone: Settings › Connection | When the phone shares a hotspot, the PC joins over ADB in about half a second (measured 514 ms), no discovery needed. | See the row's explanation |
 | **Tap to connect (NFC)** | Phone: Settings | Writes `linc://tap` to a cheap NFC sticker; tapping the phone on it starts Linc and dials the PC at once. | Optional |
 | **Several PCs** | Phone: Connection sheet › PCs | The phone remembers every PC it paired with. Pick one, or "Any of my PCs". Linc is with one PC at a time; another PC is told the phone is busy and by whom. Forget removes a PC. | "Any of my PCs" |
@@ -118,7 +122,7 @@ Control is a set of full-screen pages; the **Pages** button or the edge handle o
 | What | Where | How it works | Settings (default) |
 |---|---|---|---|
 | **Files** | PC: Files page | Browse the phone's storage, transfer both ways, delete, rename, new folder, screenshot. Over ADB or the Direct TLS files channel. | Phone: All files access (asked) |
-| **Share** | Phone: Share tab · PC: Share page, tray menu, Explorer | Send files, text and links. Each side says whether it sends over Linc (fast, no prompts) or with **Quick Share** when Linc isn't connected, and picks by itself; progress and retry. On the PC: drop files on the Share page, the tray's **Send to phone**, Explorer right-click → **Send to phone (Linc)** / **Send with Quick Share**, or Send to → **Phone (Linc)** / **Quick Share (Linc)**. A link opens on the phone; text lands on its clipboard. | PC: the Explorer entries (on), "Accept from my connected phone without asking", "Name phones see", Visible / Hidden — all on the Share page |
+| **Share** | Phone: Share tab · PC: Share page, tray menu, Explorer | Send files, text and links. Each side says whether it sends over Linc (fast, no prompts) or with **Quick Share** when Linc isn't connected, and picks by itself; progress and retry. On the PC: drop files on the Share page, the tray's **Send to phone**, Explorer right-click → **Send to phone (Linc)** / **Send with Quick Share**, or Send to → **Phone (Linc)** / **Quick Share (Linc)**. A link opens on the phone; text lands on its clipboard. Every file shows a notification on both sides (PC: live progress bar each way; phone: Share tab and share sheet sends, plus "Received from your PC") ending in Sent / Received or the reason it failed. Phone → PC files wait in the phone's `Download/Linc/outbox`; the PC sweeps it on every connect and remembers what it already took in `%LOCALAPPDATA%\Linc\share-ledger.json` (name + size + time), so a file the PC can't delete over Direct TLS is never fetched twice, and one that fails 3 times is left alone (logged + notified) until it is shared again. Links, text and clipboard copies sent while the other side is away wait (phone: `PendingSends.kt`, 20 items; PC: `OutboxService` kinds `continue.url` / `clipboard.set`) and go in order on reconnect, a day at most, only the newest clip. | PC: the Explorer entries (on), "Accept from my connected phone without asking", "Name phones see", Visible / Hidden — all on the Share page |
 | **Received files** | Phone: Share › Received from your PC · PC: Share › Received | Files from the PC land in `Download/Linc` and pictures show in the Gallery. On the phone: Open folder, long-press to select several, then Send, Share or Delete. | — |
 | **Quick Share on the PC** | PC: Share page | Send to and receive from nearby Android devices with Google's Quick Share protocol. | Visible / Hidden |
 | **Send to PC from any app** | Phone: Android share sheet (Linc, and the PC as a Direct Share target) | Shares a file or link to the PC; a notification shows sending, then "Sent". | — |
@@ -237,3 +241,60 @@ Details, or run `aapt dump xmltree <apk> AndroidManifest.xml | grep -A1 app.linc
 
 Keep the two Provenance files identical, and don't change the statement: the fingerprint is only
 useful if it stays the same.
+
+## Linc Island (PC) and frosted top bar (phone)
+
+Both are looks, behind a switch in Settings › Appearance that is **off by default**, so nothing
+changes until the owner turns them on. Mockup the owner approved:
+<https://claude.ai/artifact/2Tg7VvZaLt8jcbAzbDTWRc>.
+
+### PC: Linc Island
+
+A dark pill, like a phone's camera island, that shows what is happening right now and morphs
+between a compact pill and an expanded card with buttons (click it; a ringing call opens by
+itself). Where: at the top of the phone picture on Home, and in the centre of the title bar on
+every other page (hidden there when the window is too narrow to fit it beside the phone tabs).
+When nothing is live it disappears.
+
+- **Module.** `Services/LiveActivityService.cs` is the feed: `ILiveActivityService.Post(LiveActivity)`
+  adds or replaces an activity by `Id`, `End(id)` / `EndAfter(id, delay)` remove it, and `Changed`
+  fires on the UI thread. Any thread may call it. `Views/DynamicIsland.xaml(.cs)` is the reusable
+  control; a page can host as many as it likes (`InTitleBar` for the slim one, `Suppressed` to
+  hide one). Its buttons can open a page through `RequestNavigate(tag)` (MainWindow selects it).
+- **What feeds it** (`Services/LiveActivityFeeder.cs`, started with the shell; it only reads these
+  events, it changes none of them):
+  - a file going to the phone: `IShareService.TransferChanged` (name, progress ring, "Saved on
+    <phone> ✓", or the failure), and a file arriving: `IShareService.ShareReceived` (Open, Show in
+    folder);
+  - an incoming call: Home's `IncomingRinging` / `IncomingText` (Decline, Open Calls);
+  - music: `IMediaSyncService` while playing, and for 30 s after a pause (previous / play-pause /
+    next, album art);
+  - mirroring: `IMirrorService.State == Running` (Stop);
+  - connecting / reconnecting: `IConnectionSupervisor.StateChanged`, only within 90 s of Linc
+    starting or the link dropping, so a phone that is simply away doesn't keep it busy;
+  - low battery: 15 % or less and not charging, once per low spell (like the Windows alert),
+    shown for a minute.
+- **Priority** (`LiveActivityKind` order): call, connecting, share, mirroring, low battery, music;
+  among equals the newest. The next one waits as a small bubble beside the pill; clicking the
+  bubble opens that one.
+- **Setting.** `IDeviceRegistry.LiveIsland` / `SaveLiveIsland` (settings.json `LiveIsland`,
+  missing = off). The interface members have default bodies so the harnesses' fakes still build.
+- **Title bar.** The title bar's drag strip swallows clicks, so while the island shows there its
+  bounds are a pass-through region of the window frame (`MainWindow.UpdateIslandPassthrough`,
+  `InputNonClientPointerSource`).
+
+### Phone: frosted top bar
+
+With it on, a page that scrolls under the top bar shows through it, blurred like frosted glass,
+matching the floating nav bar. At the top of a page (nothing under the bar) it looks exactly as
+before. `LincScaffold` (`ui/kit/Kit.kt`) does it for every screen: the content is a Haze source
+(`dev.chrisbanes.haze:haze:1.1.1`, built on the same Compose 1.7.5 / Kotlin 2.0.21 as the app) and
+the large top bar a Haze child whose alpha follows `scrollBehavior.state.overlappedFraction`; the
+bar's scrolled colour goes clear so the glass shows. Screens already pad their lists by the bar's
+height (`pagePadding`), so no screen changed. The small bar (Remote, `compactBar`) is left as it is.
+
+- **Wallpaper background.** With it on nothing solid goes behind the glass, so the wallpaper still
+  shows through; with it off the plain surface does. The tint is the theme's surface container.
+- **Android 11 and older** can't blur: Haze draws a denser see-through tint instead.
+- **Setting.** `ui/theme/FrostedTopBar.kt` (prefs `linc` › `frosted_top_bar`, default off),
+  Settings › Appearance › Frosted top bar.

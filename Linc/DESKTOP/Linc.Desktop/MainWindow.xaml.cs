@@ -105,6 +105,11 @@ public sealed partial class MainWindow : Window
         ApplyBackdrop();
         App.Services.GetRequiredService<IDeviceRegistry>().AppearanceChanged += () => DispatcherQueue.TryEnqueue(ApplyNavStyle);
 
+        // The Linc Island: its buttons can open a page, and the title-bar copy must stay clickable.
+        App.Services.GetRequiredService<ILiveActivityService>().NavigateRequested += SelectPage;
+        TitleIsland.BoundsChanged += UpdateIslandPassthrough;
+        TitleBarDragArea.SizeChanged += (_, _) => UpdateTitleIsland();
+
         // Closing the window hides Linc to the tray; it keeps watching for the phone.
         AppWindow.Closing += OnAppWindowClosing;
 
@@ -940,5 +945,51 @@ public sealed partial class MainWindow : Window
             _ => typeof(HomePage),
         };
         ContentFrame.Navigate(pageType);
+        UpdateTitleIsland();
+    }
+
+    // ---- The Linc Island in the title bar ----
+
+    /// <summary>The narrowest free title-bar strip the island may sit over without covering the tabs.</summary>
+    private const double TitleIslandRoom = 520;
+
+    /// <summary>Home has its own island on the phone picture; elsewhere the title bar shows it, room allowing.</summary>
+    private void UpdateTitleIsland()
+    {
+        bool onHome = ContentFrame.Content is HomePage;
+        TitleIsland.Suppressed = onHome || TitleBarDragArea.ActualWidth < TitleIslandRoom;
+    }
+
+    /// <summary>
+    /// The title bar's drag strip would swallow clicks on the island (see TitleBarDragArea), so the
+    /// island's bounds are a pass-through region of the window's frame while it shows.
+    /// </summary>
+    private void UpdateIslandPassthrough()
+    {
+        try
+        {
+            var source = Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
+            var rects = Array.Empty<Windows.Graphics.RectInt32>();
+            if (TitleIsland.IslandBounds(Content) is { } b && Content.XamlRoot is { } root)
+            {
+                var scale = root.RasterizationScale;
+                rects = [new Windows.Graphics.RectInt32((int)(b.X * scale), (int)(b.Y * scale), (int)Math.Ceiling(b.Width * scale), (int)Math.Ceiling(b.Height * scale))];
+            }
+            source.SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Passthrough, rects);
+        }
+        catch (Exception ex)
+        {
+            App.Services.GetRequiredService<ILogService>().Log(LogLevel.Info, $"Linc Island: title bar region not set ({ex.GetType().Name}: {ex.Message})");
+        }
+    }
+
+    /// <summary>Opens a page by its Nav tag (the island's "Open Share", "Details"…).</summary>
+    private void SelectPage(string tag)
+    {
+        var item = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == tag);
+        if (item is not null)
+        {
+            Nav.SelectedItem = item; // OnNavSelectionChanged does the navigation
+        }
     }
 }

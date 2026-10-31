@@ -901,6 +901,7 @@ class SocketServer(
                         (message.payload["adb"] as? JsonPrimitive)?.booleanOrNull,
                         (message.payload["adbVia"] as? JsonPrimitive)?.contentOrNull,
                         (message.payload["arming"] as? JsonPrimitive)?.booleanOrNull,
+                        (message.payload["encrypted"] as? JsonPrimitive)?.booleanOrNull,
                     ))
                     continue
                 }

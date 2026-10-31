@@ -45,6 +45,17 @@ True(!LinkPolicy.ShouldEngage(LinkTransport.AdbUsb, LinkActivity.Idle, null, nul
 True(!LinkPolicy.ShouldEngage(LinkTransport.AdbUsb, LinkActivity.Connected, LinkTransport.AdbWireless, LinkTransport.AdbWireless, auto), "a hand-picked transport is not taken over");
 True(LinkPolicy.ShouldEngage(LinkTransport.AdbWireless, LinkActivity.Idle, null, LinkTransport.AdbWireless, auto), "...and is still engaged when idle");
 
+// Encrypt Wi-Fi links: only legacy `adb tcpip` (5555) is plain; with the setting on, Direct TLS takes it over.
+True(LinkPolicy.IsPlainWifi(LinkTransport.AdbWireless, "192.168.2.6:5555"), "adb tcpip on 5555 is plain");
+True(!LinkPolicy.IsPlainWifi(LinkTransport.AdbWireless, "192.168.2.6:37451"), "wireless debugging's own port is TLS");
+True(!LinkPolicy.IsPlainWifi(LinkTransport.AdbWireless, "adb-2C141FDH20089M-abc._adb-tls-connect._tcp"), "an mDNS wireless-debugging serial is TLS");
+True(!LinkPolicy.IsPlainWifi(LinkTransport.AdbUsb, "2C141FDH20089M"), "USB is never plain Wi-Fi");
+True(LinkPolicy.ShouldEngage(LinkTransport.DirectTls, LinkActivity.Connected, LinkTransport.AdbWireless, null, auto, encryptWifi: true, currentIsPlain: true), "encrypt on: TLS takes over plain ADB Wi-Fi");
+True(!LinkPolicy.ShouldEngage(LinkTransport.DirectTls, LinkActivity.Connected, LinkTransport.AdbWireless, null, auto, encryptWifi: false, currentIsPlain: true), "encrypt off: exactly as before");
+True(!LinkPolicy.ShouldEngage(LinkTransport.DirectTls, LinkActivity.Connected, LinkTransport.AdbWireless, null, auto, encryptWifi: true, currentIsPlain: false), "encrypt on: wireless debugging (TLS) is left alone");
+True(!LinkPolicy.ShouldEngage(LinkTransport.AdbWireless, LinkActivity.Connected, LinkTransport.DirectTls, null, auto, encryptWifi: true, currentIsPlain: false), "encrypt on: never back to ADB Wi-Fi (no loop)");
+True(!LinkPolicy.ShouldEngage(LinkTransport.DirectTls, LinkActivity.Connected, LinkTransport.AdbWireless, LinkTransport.AdbWireless, auto, encryptWifi: true, currentIsPlain: true), "a hand-picked plain link is respected");
+
 Console.WriteLine("--- signals");
 foreach (var strong in new[] { LinkSignal.CableIn, LinkSignal.CableOut, LinkSignal.NetworkChanged, LinkSignal.Resume, LinkSignal.BleSighting, LinkSignal.PhoneDialledIn, LinkSignal.UserAsked, LinkSignal.AppStart })
 {

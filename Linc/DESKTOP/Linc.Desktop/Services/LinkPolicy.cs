@@ -59,7 +59,9 @@ public static class LinkPolicy
         LinkActivity activity,
         LinkTransport? current,
         LinkTransport? manual,
-        ConnectionPreference preference)
+        ConnectionPreference preference,
+        bool encryptWifi = false,
+        bool currentIsPlain = false)
     {
         if (!IsAllowed(candidate, preference))
         {
@@ -72,10 +74,35 @@ public static class LinkPolicy
         return activity switch
         {
             LinkActivity.Idle => true,
-            LinkActivity.Connected => current is { } live && Rank(candidate) > Rank(live),
+            // Encrypt Wi-Fi links: the encrypted direct link takes over from plain ADB Wi-Fi.
+            // Wireless ADB never takes over from anything here, so this can't loop.
+            LinkActivity.Connected => current is { } live && (Rank(candidate) > Rank(live) ||
+                (encryptWifi && currentIsPlain && live == LinkTransport.AdbWireless && candidate == LinkTransport.DirectTls)),
             _ => false,
         };
     }
+
+    /// <summary>The port `adb tcpip` listens on by default: legacy ADB over Wi-Fi, not encrypted.</summary>
+    public const int PlainAdbPort = 5555;
+
+    /// <summary>
+    /// Is this link readable by anyone on the Wi-Fi? Only legacy ADB over Wi-Fi (`adb tcpip`,
+    /// <see cref="PlainAdbPort"/>) is. Wireless debugging's own port is TLS (adb pairing), Direct
+    /// TLS and LincLink are mutual TLS, and a USB cable never leaves the desk.
+    /// </summary>
+    public static bool IsPlainWifi(LinkTransport transport, string? serial) =>
+        transport == LinkTransport.AdbWireless &&
+        AdbSerial.HostOf(serial) is not null &&
+        serial!.EndsWith($":{PlainAdbPort}", StringComparison.Ordinal);
+
+    /// <summary>One plain line for both screens: whether the link is encrypted, and why.</summary>
+    public static string SecurityCaption(LinkTransport transport, string? serial) => transport switch
+    {
+        LinkTransport.AdbUsb => "Private: USB cable",
+        LinkTransport.DirectTls => "Encrypted (TLS)",
+        _ when IsPlainWifi(transport, serial) => "Not encrypted: plain ADB over Wi-Fi (port 5555)",
+        _ => "Encrypted (wireless debugging)",
+    };
 
     public static bool IsAllowed(LinkTransport transport, ConnectionPreference preference) => preference switch
     {

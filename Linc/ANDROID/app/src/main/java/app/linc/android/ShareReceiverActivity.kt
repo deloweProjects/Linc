@@ -58,6 +58,10 @@ class ShareReceiverActivity : ComponentActivity() {
         if (!CompanionOutbox.canSend(SHARE_ITEM_VERSION)) {
             if (app.linc.android.service.QuickShareLauncher.sendText(this, text)) {
                 Toast.makeText(this, R.string.share_via_quick_share, Toast.LENGTH_SHORT).show()
+            } else if (app.linc.android.service.PendingSends.add(this,
+                    if (URL_REGEX.matches(text)) app.linc.android.service.PendingSends.URL else app.linc.android.service.PendingSends.TEXT, text)) {
+                // No Quick Share either: it waits and goes to the PC when it reconnects.
+                Toast.makeText(this, "Linc sends it to your PC when it reconnects", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, R.string.share_not_connected, Toast.LENGTH_SHORT).show()
             }
@@ -94,28 +98,13 @@ class ShareReceiverActivity : ComponentActivity() {
 
         LogStore.log(LogLevel.INFO, "Sharing ${uris.size} item(s) with the PC")
         // The notification, not a toast, carries the feedback (D-092): it stays while the copy
-        // runs, turns into "Sent" when every item is across, then dismisses itself.
-        val progress = ShareProgress(this, uris.size)
-        progress.sending(0, ShareSender.nameFor(this, uris[0]))
-
+        // runs, turns into "Sent" (or the reason it failed) when every item is across, then
+        // dismisses itself. ShareStore.sendAll owns it, so the Share tab gets the same one.
         // Copying + sending can be slow (I/O over a large file); the activity must finish
         // promptly and never hold the UI open for a transfer (B2.6), so this rides a
-        // process-lifetime scope rather than one tied to the activity — the same posture
-        // CompanionService's own background scope uses for its long-lived work.
+        // process-lifetime scope rather than one tied to the activity.
         val appContext = applicationContext
-        backgroundScope.launch {
-            // Sequential, in selection order (B2.3) — not a new batch message.
-            val ids = uris.map { ShareStore.send(appContext, it) }
-            // Follow ShareStore's own transfer states into the notification.
-            ShareStore.transfers.first { list ->
-                val mine = list.filter { it.id in ids }
-                val done = mine.count { it.state != TransferState.Copying }
-                mine.firstOrNull { it.state == TransferState.Copying }?.let { progress.sending(done, it.name, it.progress.takeIf { p -> p > 0f }) }
-                mine.size == ids.size && done == ids.size
-            }.let { list ->
-                progress.done(failed = list.count { it.id in ids && it.state == TransferState.Failed })
-            }
-        }
+        backgroundScope.launch { ShareStore.sendAll(appContext, uris) }
     }
 
     private companion object {

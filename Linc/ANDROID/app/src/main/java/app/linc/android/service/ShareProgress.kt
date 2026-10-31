@@ -2,9 +2,14 @@ package app.linc.android.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.webkit.MimeTypeMap
 import androidx.core.app.NotificationCompat
+import androidx.core.content.FileProvider
 import app.linc.android.R
+import java.io.File
 
 /**
  * The "Send to PC" share target's progress, as a notification that outlives the share sheet:
@@ -56,19 +61,32 @@ class ShareProgress(context: Context, private val total: Int) {
         )
     }
 
-    /** Every item went; [failed] of them could not be read or sent. Dismisses itself. */
-    fun done(failed: Int) {
+    /**
+     * Every item went; [failed] of them could not be read or sent, [reason] says why (the first
+     * failure's own words), [waiting] were staged for the PC to collect when it reconnects.
+     * Dismisses itself.
+     */
+    fun done(failed: Int, reason: String? = null, waiting: Int = 0) {
         val sent = total - failed
         post(
             builder()
                 .setContentTitle(
                     when {
+                        failed == 0 && waiting > 0 -> if (total == 1) "Waiting for your PC" else "$waiting of $total waiting for your PC"
                         failed == 0 -> if (total == 1) "Sent to your PC" else "Sent $total items to your PC"
                         sent == 0 -> "Couldn't send to your PC"
                         else -> "Sent $sent of $total items to your PC"
                     }
                 )
-                .setContentText(if (failed == 0) "Done" else "Check that Linc is connected, then share again.")
+                .setContentText(
+                    when {
+                        failed > 0 -> reason ?: "Check that Linc is connected, then share again."
+                        waiting > 0 -> "Your PC collects it when it reconnects"
+                        else -> "Done"
+                    }
+                )
+                // The reason can be long ("Linc needs All files access…"): let it expand.
+                .apply { if (failed > 0 && reason != null) setStyle(NotificationCompat.BigTextStyle().bigText(reason)) }
                 .setOngoing(false)
                 .setAutoCancel(true)
                 .setTimeoutAfter(if (failed == 0) DONE_VISIBLE_MS else FAILED_VISIBLE_MS)
@@ -88,11 +106,43 @@ class ShareProgress(context: Context, private val total: Int) {
         runCatching { manager.notify(id, builder.build()) }
     }
 
-    private companion object {
-        const val OLD_CHANNEL_ID = "linc.share"
-        const val CHANNEL_ID = "linc.share.progress"
-        const val DONE_VISIBLE_MS = 3_000L
-        const val FAILED_VISIBLE_MS = 8_000L
-        val NEXT_ID = java.util.concurrent.atomic.AtomicInteger(4_000)
+    companion object {
+        /**
+         * A file the PC just put on the phone: its name, tap to open it. The PC pushes it itself,
+         * so the phone hears of it only once it has fully landed (`share.incoming`).
+         */
+        fun received(context: Context, name: String, path: String) {
+            val app = context.applicationContext
+            val manager = app.getSystemService(NotificationManager::class.java)
+            ShareProgress(app, 1) // makes sure the channel exists
+            val open = runCatching {
+                val uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", File(path))
+                val mime = MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "*/*"
+                PendingIntent.getActivity(
+                    app, NEXT_ID.get(),
+                    Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+            }.getOrNull()
+            val builder = NotificationCompat.Builder(app, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_linc)
+                .setContentTitle("Received from your PC")
+                .setContentText(name)
+                .setSubText("Linc")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setTimeoutAfter(RECEIVED_VISIBLE_MS)
+            open?.let { builder.setContentIntent(it) }
+            runCatching { manager.notify(NEXT_ID.getAndIncrement(), builder.build()) }
+        }
+
+        private const val OLD_CHANNEL_ID = "linc.share"
+        private const val CHANNEL_ID = "linc.share.progress"
+        private const val DONE_VISIBLE_MS = 3_000L
+        private const val FAILED_VISIBLE_MS = 15_000L
+        private const val RECEIVED_VISIBLE_MS = 30_000L
+        private val NEXT_ID = java.util.concurrent.atomic.AtomicInteger(4_000)
     }
 }

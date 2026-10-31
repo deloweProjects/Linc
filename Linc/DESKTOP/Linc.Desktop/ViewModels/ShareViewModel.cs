@@ -157,7 +157,8 @@ public sealed partial class ShareViewModel : ObservableObject
             }
             catch (LincException)
             {
-                Say("Your phone isn't connected.");
+                // Offline delivery: it opens on the phone when it reconnects.
+                await QueueForPhoneAsync(OutboxService.UrlKind, uri.AbsoluteUri);
             }
             return;
         }
@@ -165,6 +166,23 @@ public sealed partial class ShareViewModel : ObservableObject
         {
             TextToPhone = "";
             Say("Sent — it's on your phone's clipboard.");
+        }
+        else
+        {
+            await QueueForPhoneAsync(OutboxService.ClipKind, text);
+        }
+    }
+
+    private async Task QueueForPhoneAsync(string kind, string text)
+    {
+        var outbox = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+            .GetRequiredService<OutboxService>(App.Services);
+        if (await outbox.EnqueueTextAsync(kind, text) > 0)
+        {
+            TextToPhone = "";
+            Say(kind == OutboxService.UrlKind
+                ? "Your phone isn't connected. The link opens on it as soon as it reconnects."
+                : "Your phone isn't connected. It lands on its clipboard as soon as it reconnects.");
         }
         else
         {

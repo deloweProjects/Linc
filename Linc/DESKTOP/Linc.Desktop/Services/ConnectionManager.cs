@@ -112,7 +112,7 @@ public interface IConnectionManager
     bool IsSessionDetached { get; }
 
     /// <summary>v32: tell the phone the link state this PC sees (route, ADB); only when it changed. No-op below v32.</summary>
-    Task SendLinkStateAsync(string route, bool adb, string? adbVia, bool arming = false);
+    Task SendLinkStateAsync(string route, bool adb, string? adbVia, bool arming = false, bool encrypted = true);
 
     /// <summary>How ADB reaches the live phone right now, whatever the link rides on: "cable", "wireless" or null.</summary>
     Task<string?> AdbViaAsync(CancellationToken ct);
@@ -128,6 +128,12 @@ public interface IConnectionManager
 
     /// <summary>True when the link runs over ADB — mirror/screenshot need this.</summary>
     bool HasAdb { get; }
+
+    /// <summary>
+    /// The phone ADB reaches while its Linc app isn't answering or isn't installed (ADB-only,
+    /// Tools PLAN.md §1.2), so Files and screenshots work without the app. Set by the supervisor.
+    /// </summary>
+    AdvancedSharpAdbClient.Models.DeviceData? AdbOnlyDevice { get => null; set { } }
 
     /// <summary>Opens the files channel (2) and returns its stream (v10 — Direct TLS file transfer).</summary>
     Task<System.IO.Stream> OpenFileChannelAsync(CancellationToken ct);
@@ -191,6 +197,8 @@ public sealed class ConnectionManager(
 
     public bool HasAdb => RawDevice is not null;
 
+    public DeviceData? AdbOnlyDevice { get; set; }
+
     public ConnectedDevice? Current { get; private set; }
     public DeviceData? RawDevice { get; private set; }
 
@@ -208,15 +216,15 @@ public sealed class ConnectionManager(
 
     public bool IsSessionDetached => _companion is { IsDetached: true };
 
-    private (CompanionClient Client, string Route, bool Adb, string? Via, bool Arming)? _sentLinkState;
+    private (CompanionClient Client, string Route, bool Adb, string? Via, bool Arming, bool Encrypted)? _sentLinkState;
 
-    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia, bool arming = false)
+    public async Task SendLinkStateAsync(string route, bool adb, string? adbVia, bool arming = false, bool encrypted = true)
     {
         if (_companion is not { HasLinkSession: true } companion)
         {
             return;
         }
-        var state = (companion, route, adb, adbVia, arming);
+        var state = (companion, route, adb, adbVia, arming, encrypted);
         if (_sentLinkState == state)
         {
             return; // the phone already shows exactly this
@@ -224,7 +232,7 @@ public sealed class ConnectionManager(
         _sentLinkState = state;
         try
         {
-            await companion.SendLinkStateAsync(route, adb, adbVia, CancellationToken.None, arming);
+            await companion.SendLinkStateAsync(route, adb, adbVia, CancellationToken.None, arming, encrypted);
         }
         catch (Exception ex) when (ex is LincException or IOException or InvalidOperationException)
         {
@@ -429,6 +437,12 @@ public sealed class ConnectionManager(
         // Install the companion and grant its permissions if this phone has never had it
         // (M01, D-035). No-ops in a few milliseconds once the package is present.
         await setup.EnsureReadyAsync(device, ct);
+        if (registry.LincLinkEnabled && await setup.IsCompanionInstalledAsync(device, ct) == false)
+        {
+            // No app to reach (and the user hasn't installed it yet): connected with ADB only,
+            // rather than 15 s of "starting Linc on your phone" for an app that isn't there.
+            throw new AdbOnlyException(device, appMissing: true);
+        }
 
         int localPort;
         try
@@ -621,7 +635,7 @@ public sealed class ConnectionManager(
             if (clock.Elapsed > LinkBrain.AppProbeBudget)
             {
                 log.Log(LogLevel.Warn, $"Linc on the phone still isn't answering after {clock.Elapsed.TotalSeconds:0} s ({attempts} tries, last: {why}); trying again shortly.");
-                throw new CompanionNotAnsweringException();
+                throw new AdbOnlyException(device, appMissing: false);
             }
             await Task.Delay(LinkBrain.AppProbeEvery, ct);
         }
@@ -1065,4 +1079,17 @@ public sealed class ConnectionManager(
         "Linc couldn't reach the phone at that address. Check that Wireless debugging is on, " +
         "the address matches the phone's Wireless debugging screen (it changes sometimes), " +
         "and both devices are on the same Wi-Fi network.";
+}
+
+/// <summary>
+/// ADB reaches the phone but its Linc app doesn't answer (<paramref name="appMissing"/> false: being
+/// started) or isn't installed (true). With the new engine that is "connected with ADB only" (Tools
+/// PLAN.md §1.2), not an error: the supervisor keeps <see cref="Device"/> for Files and screenshots.
+/// </summary>
+public sealed class AdbOnlyException(DeviceData device, bool appMissing) : LincException(appMissing
+    ? "Connected with ADB only: the Linc app isn't on this phone. Install it for messages, notifications, clipboard and more."
+    : "Linc is getting ready on your phone. It starts by itself over the cable; this takes a few seconds.")
+{
+    public DeviceData Device { get; } = device;
+    public bool AppMissing { get; } = appMissing;
 }

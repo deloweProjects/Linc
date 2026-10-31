@@ -1,4 +1,13 @@
 # What's new in the current test release (shown in the Telegram post; plain lines, no headings below)
+• Link security: PC Home and the phone's Connection sheet say whether the link is encrypted. Only plain ADB over Wi-Fi (port 5555) isn't; PC Settings › Connection › Encrypt Wi-Fi links (off by default) moves such a link to the encrypted direct one without dropping it
+• Connected with ADB only: a phone with USB or wireless debugging but no Linc app now shows as connected with ADB, Files work, and Home has an Install Linc button (instead of "starting Linc on your phone…" for ever)
+• Pause for banking apps (phone Settings): pick apps that refuse to open with Developer options or debugging on; while one is open Linc turns them off and back on when you leave it, even after a crash or restart
+• Connection Doctor (PC Settings › Connection): checks Windows Firewall, the network type (Public/Private), VPNs, Wi-Fi isolation, ADB and the phone's battery settings, and fixes what it can
+• Sent while away: links, text and clipboard copies sent while the other side wasn't connected now arrive in order when it reconnects (up to 20 items, a day at most; only the newest clipboard copy)
+• Share fix: a file shared from the phone is no longer received again on every reconnect (over Wi-Fi without ADB the PC couldn't clear it from the phone, so it kept fetching it). A file that fails to arrive is tried 3 times, then Linc stops and tells you why, in the log and in a notification
+• Share notifications on both sides: the PC shows each file with a live progress bar either way, then "Sent", "Received" or the reason it failed; the phone shows one for sends from Linc's own Share tab too (not only the share sheet), names the reason when one fails, and pops up "Received from your PC" (tap to open)
+• PC Files: downloads over Wi-Fi without ADB no longer leave half-written files behind (which turned the next try into "name (2)"), no longer stutter on big files, and any failure shows a plain reason; "Show in folder" after a download; a reconnect reopens the folder you were in
+• PC Files: Copy path puts the phone path of the selected item (or the open folder) on the clipboard
 • Phone Settings › Undo changes from your PC: shows if the PC left the screen size, rotation, stay-awake, show touches, the demo-mode status bar or animation speed changed, and puts each back with one tap (Fix all for everything)
 • "Fill this monitor": if the phone disconnects, its screen goes back to its own size about 5 seconds after the mirror ends (was 16)
 • Phone Settings in a clearer order (what Linc can do first, then the connection), with each choice inside its own card; the Home card's chips no longer squeeze "ADB" into a column
@@ -16,3 +25,5 @@
 • Pair without a cable: PC › Add a phone › Wi-Fi shows a Linc code; point the phone's camera at it and tap the link
 • The phone starts Linc after a restart and when you open the app; the installer offers a firewall rule (Windows asks once)
 • Mirror PC on the phone: a "Mute PC" button next to Sound. PC: the Tools page (Type, Rescue, Apps, Capture, Health, System, 331 Commands, Console)
+• New look (off until you turn it on), PC Settings › Appearance › Linc Island: a dark pill at the top of your phone on Home (and in the title bar on other pages) shows a file sending or arriving, a call, music, mirroring, reconnecting or low battery; click it for buttons
+• New look (off until you turn it on), phone Settings › Appearance › Frosted top bar: pages show through the top bar, blurred like frosted glass, as they scroll under it (a soft tint on Android 11)

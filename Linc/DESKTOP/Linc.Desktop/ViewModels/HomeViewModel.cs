@@ -1587,6 +1587,7 @@ RefreshGradient();
         // The same words the phone shows: it gets them from this PC (link.state, LinkBrain.Route).
         LinkPresence.Connected => LinkBrain.RouteCaption(_supervisor.Route ?? "wifi"),
         LinkPresence.ConnectedStartingApp => "Connected — starting Linc on your phone…",
+        LinkPresence.ConnectedAdbOnly => "Connected with ADB only — Tools and Files work. Install Linc on the phone for messages, notifications, clipboard and more.",
         LinkPresence.Paused => "Disconnected — the link is paused",
         LinkPresence.NoPhone => "Pair a phone to get started",
         _ => _supervisor.State == LinkState.Connecting ? "Connecting…" : "Looking for your phone…",
@@ -1616,6 +1617,49 @@ RefreshGradient();
             : null;
 
     public bool HasLinkAddress => LinkAddress is not null;
+
+    /// <summary>ADB-only with no Linc app on the phone: Home offers to install it (Tools PLAN.md §1.2).</summary>
+    public bool ShowInstallLinc => _supervisor.AdbOnlyAppMissing && !InstallingLinc;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowInstallLinc))]
+    public partial bool InstallingLinc { get; set; }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private async Task InstallLincAsync()
+    {
+        if (_connection.AdbOnlyDevice is not { } device)
+        {
+            return;
+        }
+        InstallingLinc = true;
+        try
+        {
+            var setup = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+                .GetRequiredService<IPhoneSetupService>(App.Services);
+            var ok = await Task.Run(() => setup.ConfirmInstallAsync(device, CancellationToken.None));
+            _log.Log(ok ? LogLevel.Info : LogLevel.Warn, ok
+                ? "Installed Linc on the phone from Home; connecting to it."
+                : "Couldn't install Linc on the phone from Home (see the lines above).");
+            // The next poll reaches the new app and upgrades the link in place.
+        }
+        catch (Exception ex)
+        {
+            _log.Log(LogLevel.Warn, $"Installing Linc on the phone failed: {ex.Message}");
+        }
+        finally
+        {
+            InstallingLinc = false;
+        }
+    }
+
+    /// <summary>"Encrypted (TLS)" / "Not encrypted: plain ADB over Wi-Fi (port 5555)": whether the Wi-Fi can read the link.</summary>
+    public string SecurityText => _supervisor.SecurityCaption ?? "";
+    public bool HasSecurityText => _supervisor.SecurityCaption is not null;
+    public string SecurityGlyph => _supervisor.LinkIsPlainWifi ? "" : ""; // unlock / lock
+    public string SecurityTip => _supervisor.LinkIsPlainWifi
+        ? "Anyone on this Wi-Fi could read what Linc sends. Turn on Settings › Connection › Encrypt Wi-Fi links, or use wireless debugging or the USB cable."
+        : "Nobody else on the network can read what Linc sends.";
 
     [ObservableProperty]
     public partial string BatteryText { get; set; }
@@ -1647,6 +1691,11 @@ RefreshGradient();
         OnPropertyChanged(nameof(AdbChipTip));
         OnPropertyChanged(nameof(LinkAddress));
         OnPropertyChanged(nameof(HasLinkAddress));
+        OnPropertyChanged(nameof(ShowInstallLinc));
+        OnPropertyChanged(nameof(SecurityText));
+        OnPropertyChanged(nameof(HasSecurityText));
+        OnPropertyChanged(nameof(SecurityGlyph));
+        OnPropertyChanged(nameof(SecurityTip));
         OnPropertyChanged(nameof(QuickActionsEnabled));
         OnPropertyChanged(nameof(SoundControlsEnabled));
         OnPropertyChanged(nameof(ShowDndAccessHint));

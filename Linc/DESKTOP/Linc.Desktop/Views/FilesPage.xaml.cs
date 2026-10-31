@@ -122,9 +122,10 @@ public sealed partial class FilesPage : Page
             await App.Services.GetRequiredService<Services.IShareService>()
                 .SendFileToPhoneAsync(file.Path, CancellationToken.None);
         }
-        catch (Services.LincException ex)
+        catch (Exception ex)
         {
-            ViewModel.ErrorMessage = ex.Message;
+            // The transfer is already marked failed with its reason; an async void must not throw.
+            ViewModel.ErrorMessage = ex is Services.LincException ? ex.Message : $"Couldn't send it: {ex.Message}";
         }
     }
 

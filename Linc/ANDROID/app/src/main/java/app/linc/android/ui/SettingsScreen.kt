@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
@@ -74,6 +76,7 @@ import app.linc.android.ui.kit.rememberNotify
 import app.linc.android.ui.theme.AppFont
 import app.linc.android.ui.theme.AppFontSetting
 import app.linc.android.ui.theme.FloatingNav
+import app.linc.android.ui.theme.FrostedTopBar
 import app.linc.android.ui.theme.LincTheme
 import app.linc.android.ui.theme.headingFamily
 import kotlinx.coroutines.Dispatchers
@@ -117,12 +120,26 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
     val allFiles = remember(tick) { Environment.isExternalStorageManager() }
     val wallpaperBackground by app.linc.android.ui.theme.WallpaperBackground.flow(context).collectAsState()
     val floatingNav by FloatingNav.flow(context).collectAsState()
+    val frostedTopBar by FrostedTopBar.flow(context).collectAsState()
     val appFont by AppFontSetting.flow(context).collectAsState()
     val canFix = remember(tick) { PcChanges.canFix(context) }
     val pcChanges = remember(tick) { PcChanges.detect(PcChanges.snapshot(context)) }
     var fixing by remember { mutableStateOf<PcChanges.Item?>(null) }
     val scope = rememberCoroutineScope()
     var choosingFont by remember { mutableStateOf(false) }
+    var bankApps by remember { mutableStateOf(app.linc.android.service.BankingPause.apps(context)) }
+    var choosingBankApps by remember { mutableStateOf(false) }
+    if (choosingBankApps) {
+        BankAppsDialog(
+            chosen = bankApps,
+            onDone = { picked ->
+                bankApps = picked
+                app.linc.android.service.BankingPause.setApps(context, picked)
+                choosingBankApps = false
+            },
+            onDismiss = { choosingBankApps = false },
+        )
+    }
     if (choosingFont) {
         FontDialog(
             current = appFont ?: AppFont.Default,
@@ -242,6 +259,20 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                 })
             }
 
+            // Pause for banking apps: Developer options and debugging off while a picked app is open.
+            item { SectionHeader("Pause for banking apps") }
+            item {
+                val bankWorks = remember(tick) { app.linc.android.service.BankingPause.canWork(context) }
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Apps that need it", s, LincSymbols.Lock,
+                        value = when (bankApps.size) { 0 -> "None"; 1 -> app.linc.android.service.BankingPause.label(context, bankApps.first()); else -> "${bankApps.size} apps" },
+                        supporting = if (bankWorks) "Some banking apps won't open while Developer options or debugging are on. While one of these is open, Linc turns them off, and back on when you leave it (also after a restart)."
+                            else "Needs your PC once: plug this phone in with Linc open on the PC, so it can grant Linc usage access and the settings permission.",
+                        supportingKind = if (bankWorks) Explanations.Kind.Helper else Explanations.Kind.Warning,
+                        onClick = { choosingBankApps = true }) },
+                ))
+            }
+
             item { SectionHeader("Clipboard") }
             item {
                 SettingsGroup(rows = listOf(
@@ -276,6 +307,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                     { s -> SettingsRow("Floating navigation bar", s, LincSymbols.TaskView,
                         supporting = "The tabs as a floating pill above the bottom edge, instead of a full-width bar.",
                         trailing = { Switch(floatingNav == true, { FloatingNav.set(context, it) }) }) },
+                    { s -> SettingsRow("Frosted top bar", s, LincSymbols.FitScreen,
+                        supporting = if (android.os.Build.VERSION.SDK_INT >= 31) "The page shows through the top bar, blurred like frosted glass, as it scrolls under."
+                            else "The page shows through the top bar as it scrolls under. This Android version can't blur, so it's a soft tint.",
+                        trailing = { Switch(frostedTopBar == true, { FrostedTopBar.set(context, it) }) }) },
                     { s -> SettingsRow("Font", s, LincSymbols.TextSnippet,
                         value = (appFont ?: AppFont.Default).label,
                         supporting = "The typeface used across Linc.",
@@ -459,3 +494,34 @@ private fun SettingsPreviewDark() = LincTheme(darkTheme = true) { SettingsScreen
 @Preview(name = "Settings — large font", widthDp = 360, heightDp = 3200, fontScale = 2f)
 @Composable
 private fun SettingsPreviewLargeFont() = LincTheme { SettingsScreen({}, {}, {}) }
+
+/** The apps Pause for banking apps watches for: every launchable app, ticked or not. */
+@Composable
+private fun BankAppsDialog(chosen: Set<String>, onDone: (Set<String>) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val apps = remember { app.linc.android.service.BankingPause.launchableApps(context) }
+    var picked by remember { mutableStateOf(chosen) }
+    LincAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pause for these apps") },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                items(apps.size) { i ->
+                    val (pkg, label) = apps[i]
+                    val on = pkg in picked
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .toggleable(value = on, role = Role.Checkbox, onValueChange = { picked = if (it) picked + pkg else picked - pkg })
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.Checkbox(checked = on, onCheckedChange = null)
+                        Text(label, modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(picked) }) { Text("Done") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}

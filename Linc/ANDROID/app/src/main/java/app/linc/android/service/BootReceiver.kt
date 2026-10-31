@@ -15,6 +15,12 @@ import app.linc.android.service.link.LinkStore
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        // Pause for banking apps: a restart while paused must never leave debugging off for good.
+        // Before every other rule here, so it happens even when Linc won't start by itself.
+        if (BankingPause.isPaused(context)) {
+            LogStore.init(context)
+            BankingPause.restoreIfStale(context, "the phone restarted")
+        }
         if (!LinkStore.engineOn(context) || !LinkStore.mayStartByItself(context) || !TransportStore.hasAnyPc(context)) return
         LogStore.init(context)
         runCatching { context.startForegroundService(Intent(context, CompanionService::class.java)) }

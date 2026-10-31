@@ -12,11 +12,15 @@ material3 = "1.4.0-alpha18"
 # material3 1.4 no longer pulls in the core icons the rest of the app uses; the small core set only.
 materialIconsCore = "1.7.8"
 kotlinxSerializationJson = "1.7.3"
+# Haze: the frosted top bar's blur (Settings › Appearance). 1.1.1 is built on Compose 1.7.5 and
+# Kotlin 2.0.21, the versions this app is on; newer Haze needs a newer Compose.
+haze = "1.1.1"
 junit = "4.13.2"
 
 [libraries]
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }

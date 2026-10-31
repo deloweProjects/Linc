@@ -239,6 +239,18 @@ public partial class SettingsViewModel : ObservableObject
         set { _registry.SaveLincLinkEnabled(value); OnPropertyChanged(); }
     }
 
+    /// <summary>Settings › Connection › Encrypt Wi-Fi links (off by default).</summary>
+    public bool EncryptWifiLinks
+    {
+        get => _registry.EncryptWifiLinks;
+        set
+        {
+            _registry.SaveEncryptWifiLinks(value);
+            OnPropertyChanged();
+            _supervisor.UpgradeToEncryptedIfPlain(); // on a plain link now: try the encrypted one at once
+        }
+    }
+
     /// <summary>Standing presence (v9, D-014): advertise + accept direct phone connections.</summary>
     public bool BackgroundConnectionEnabled
     {
@@ -334,6 +346,13 @@ public partial class SettingsViewModel : ObservableObject
     {
         get => _registry.WallpaperBackdrop;
         set { _registry.SaveWallpaperBackdrop(value); OnPropertyChanged(); }
+    }
+
+    /// <summary>Settings › Appearance › Linc Island: what's happening now, in a pill on Home and in the title bar.</summary>
+    public bool LiveIsland
+    {
+        get => _registry.LiveIsland;
+        set { _registry.SaveLiveIsland(value); OnPropertyChanged(); }
     }
 
     /// <summary>Settings › Appearance › Clock style, in the order the radio buttons list them; the first is the default.</summary>

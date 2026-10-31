@@ -38,6 +38,7 @@ object CompanionOutbox {
     internal fun register(negotiatedVersion: Int, send: (Envelope) -> Unit): Registration {
         val registration = Registration(negotiatedVersion, send)
         registrations.add(registration)
+        PendingSends.flushSoon() // what was shared or copied while no PC was connected
         return registration
     }
 

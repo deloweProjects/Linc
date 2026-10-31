@@ -45,30 +45,53 @@ public sealed class TlsFileService(IConnectionManager connection, ILogService lo
 
     public async Task<string> PullAsync(string remotePath, string localDirectory, IProgress<double> progress, CancellationToken ct)
     {
-        var localPath = UniqueLocalPath(Path.Combine(localDirectory, Path.GetFileName(remotePath)));
-        using var stream = await connection.OpenFileChannelAsync(ct);
-        await WriteJsonAsync(stream, new JsonObject { ["op"] = "pull", ["path"] = remotePath }, ct);
-        var header = await ReadJsonAsync(stream, ct);
-        ThrowIfError(header);
-        var size = (long?)header["size"] ?? 0;
-        await using (var file = File.Create(localPath))
+        var name = Path.GetFileName(remotePath);
+        var localPath = UniqueLocalPath(Path.Combine(localDirectory, name));
+        try
         {
-            var buffer = new byte[64 * 1024];
-            long received = 0;
-            while (received < size)
+            using var stream = await connection.OpenFileChannelAsync(ct);
+            await WriteJsonAsync(stream, new JsonObject { ["op"] = "pull", ["path"] = remotePath }, ct);
+            var header = await ReadJsonAsync(stream, ct);
+            ThrowIfError(header);
+            var size = (long?)header["size"] ?? 0;
+            await using (var file = File.Create(localPath))
             {
-                var read = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, size - received)), ct);
-                if (read <= 0)
+                var buffer = new byte[64 * 1024];
+                long received = 0;
+                var reported = -1;
+                while (received < size)
                 {
-                    throw new LincException($"The transfer of {Path.GetFileName(remotePath)} was cut short.");
+                    var read = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, size - received)), ct);
+                    if (read <= 0)
+                    {
+                        throw new LincException($"The transfer of {name} was cut short — the link dropped.");
+                    }
+                    await file.WriteAsync(buffer.AsMemory(0, read), ct);
+                    received += read;
+                    // Whole percents only: one report per 64 KB flooded the UI thread on big files.
+                    var percent = (int)(received * 100 / size);
+                    if (percent != reported)
+                    {
+                        reported = percent;
+                        progress.Report(percent);
+                    }
                 }
-                await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                received += read;
-                progress.Report(size > 0 ? received * 100.0 / size : 100);
             }
+            progress.Report(100);
+            log.Log(LogLevel.Info, $"Downloaded {name} (direct)");
+            return localPath;
         }
-        log.Log(LogLevel.Info, $"Downloaded {Path.GetFileName(remotePath)} (direct)");
-        return localPath;
+        catch (Exception ex)
+        {
+            // A half-written file used to stay behind, so the next try saved "name (2)" and so on.
+            TryDeleteLocal(localPath);
+            if (ex is OperationCanceledException or LincException)
+            {
+                throw;
+            }
+            log.Log(LogLevel.Error, $"Direct download of {name} failed: {ex.Message}");
+            throw new LincException($"Couldn't download {name} from the phone — the link dropped or the disk is full.", ex);
+        }
     }
 
     public async Task<string> PushAsync(string localPath, string remoteDirectory, IProgress<double> progress, CancellationToken ct)
@@ -76,25 +99,39 @@ public sealed class TlsFileService(IConnectionManager connection, ILogService lo
         var fileName = Path.GetFileName(localPath);
         var remotePath = $"{remoteDirectory.TrimEnd('/')}/{fileName}";
         var size = new FileInfo(localPath).Length;
-        using var stream = await connection.OpenFileChannelAsync(ct);
-        await WriteJsonAsync(stream, new JsonObject { ["op"] = "push", ["path"] = remotePath, ["size"] = size }, ct);
-        await using (var file = File.OpenRead(localPath))
+        try
         {
-            var buffer = new byte[64 * 1024];
-            long sent = 0;
-            int read;
-            while ((read = await file.ReadAsync(buffer, ct)) > 0)
+            using var stream = await connection.OpenFileChannelAsync(ct);
+            await WriteJsonAsync(stream, new JsonObject { ["op"] = "push", ["path"] = remotePath, ["size"] = size }, ct);
+            await using (var file = File.OpenRead(localPath))
             {
-                await stream.WriteAsync(buffer.AsMemory(0, read), ct);
-                sent += read;
-                progress.Report(size > 0 ? sent * 100.0 / size : 100);
+                var buffer = new byte[64 * 1024];
+                long sent = 0;
+                int read;
+                var reported = -1;
+                while ((read = await file.ReadAsync(buffer, ct)) > 0)
+                {
+                    await stream.WriteAsync(buffer.AsMemory(0, read), ct);
+                    sent += read;
+                    var percent = size > 0 ? (int)(sent * 100 / size) : 100;
+                    if (percent != reported)
+                    {
+                        reported = percent;
+                        progress.Report(percent);
+                    }
+                }
+                await stream.FlushAsync(ct);
             }
-            await stream.FlushAsync(ct);
+            var reply = await ReadJsonAsync(stream, ct);
+            ThrowIfError(reply);
+            log.Log(LogLevel.Info, $"Uploaded {fileName} (direct)");
+            return remotePath;
         }
-        var reply = await ReadJsonAsync(stream, ct);
-        ThrowIfError(reply);
-        log.Log(LogLevel.Info, $"Uploaded {fileName} (direct)");
-        return remotePath;
+        catch (Exception ex) when (ex is not (OperationCanceledException or LincException))
+        {
+            log.Log(LogLevel.Error, $"Direct upload of {fileName} failed: {ex.Message}");
+            throw new LincException($"Couldn't send {fileName} to the phone — the link dropped.", ex);
+        }
     }
 
     public Task RenameAsync(string path, string newName, CancellationToken ct) => throw NeedsAdb();
@@ -126,6 +163,17 @@ public sealed class TlsFileService(IConnectionManager connection, ILogService lo
         }
     }
 
+    private static void TryDeleteLocal(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception)
+        {
+        }
+    }
+
     private static string UniqueLocalPath(string desired)
     {
         if (!File.Exists(desired))
@@ -149,7 +197,7 @@ public sealed class TlsFileService(IConnectionManager connection, ILogService lo
 /// <summary>Routes file operations to ADB sync or Direct TLS by the live transport (D-024).</summary>
 public sealed class FileServiceRouter(FileService adb, TlsFileService tls, IConnectionManager connection) : IFileService
 {
-    private IFileService Active => connection.HasAdb ? adb : tls;
+    private IFileService Active => connection.HasAdb || connection.AdbOnlyDevice is not null ? adb : tls;
 
     public Task<IReadOnlyList<StorageRoot>> GetRootsAsync(CancellationToken ct) => Active.GetRootsAsync(ct);
     public Task<IReadOnlyList<RemoteEntry>> ListAsync(string path, CancellationToken ct) => Active.ListAsync(path, ct);

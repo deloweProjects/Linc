@@ -35,7 +35,14 @@ object CompanionStateHolder {
      * so both screens say the same. Null from an older PC, or until the PC has said; the UI then
      * falls back to what this phone can see of its own link.
      */
-    data class PcLink(val route: String, val adb: Boolean, val adbVia: String?, val arming: Boolean = false) {
+    data class PcLink(
+        val route: String,
+        val adb: Boolean,
+        val adbVia: String?,
+        val arming: Boolean = false,
+        /** False only when the PC says the link is plain ADB over Wi-Fi (port 5555); older PCs never say. */
+        val encrypted: Boolean = true,
+    ) {
         /** "USB cable" or "Wi-Fi": the PC's "Connected over USB / Wi-Fi" (LinkBrain.RouteCaption). */
         val label: String get() = if (route == "usb") "USB cable" else "Wi-Fi"
 
@@ -44,9 +51,9 @@ object CompanionStateHolder {
             private val VIAS = setOf("cable", "wireless")
 
             /** The payload of a `link.state`, or null when it isn't one this phone understands. */
-            fun from(route: String?, adb: Boolean?, adbVia: String?, arming: Boolean? = null): PcLink? {
+            fun from(route: String?, adb: Boolean?, adbVia: String?, arming: Boolean? = null, encrypted: Boolean? = null): PcLink? {
                 if (route !in ROUTES || adb == null) return null
-                return PcLink(route!!, adb, adbVia?.takeIf { adb && it in VIAS }, arming == true && !adb)
+                return PcLink(route!!, adb, adbVia?.takeIf { adb && it in VIAS }, arming == true && !adb, encrypted != false)
             }
         }
     }
