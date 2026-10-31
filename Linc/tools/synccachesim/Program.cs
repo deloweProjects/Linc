@@ -385,5 +385,8 @@ namespace Linc.Desktop.Services
     public interface IConnectionManager
     {
         Task SmsSendAsync(string address, string body, CancellationToken ct);
+        // Offline links and clips (OutboxService.SendTextRowAsync).
+        Task ContinueUrlAsync(string url, CancellationToken ct);
+        Task SendClipboardAsync(string text, CancellationToken ct);
     }
 }
