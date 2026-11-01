@@ -274,6 +274,7 @@ public sealed class BlePresenceService(IDeviceRegistry registry, ILogService log
             }
             catch (Exception)
             {
+                // Already stopped, or the radio went away underneath it.
             }
         }
         _publisher = null;
@@ -292,6 +293,7 @@ public sealed class BlePresenceService(IDeviceRegistry registry, ILogService log
         }
         catch (FormatException)
         {
+            // A corrupted stored cert: no beacon for this phone, as if it never paired.
             return null;
         }
     }
