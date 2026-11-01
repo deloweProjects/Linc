@@ -55,10 +55,11 @@
                 </StackPanel>
             </Border>
 
-            <!-- Files going to the phone over Linc -->
+            <!-- Files moving between the PC and the phone over Linc, both ways: a little flight while
+                 one moves, live progress, Cancel (owner, 2026-11-01). -->
             <Border Style="{StaticResource ExpressiveCard}" Padding="20" Visibility="{x:Bind Linc.HasTransfers, Mode=OneWay}">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Sent to your phone" Style="{StaticResource TitleText}" />
+                    <TextBlock Text="Moving between your PC and phone" Style="{StaticResource TitleText}" />
                     <ItemsControl ItemsSource="{x:Bind Linc.Transfers}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:PhoneTransferVm">
@@ -69,12 +70,16 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="{x:Bind Glyph}" FontSize="18" VerticalAlignment="Center" />
-                                    <StackPanel Grid.Column="1" Spacing="2">
+                                    <StackPanel Grid.Column="1" Spacing="4">
                                         <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                        <views:TransferFlight ToPhone="{x:Bind ToPhone}" Visibility="{x:Bind IsSending}" />
                                         <TextBlock Text="{x:Bind StatusText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Opacity="0.8" />
                                         <ProgressBar Value="{x:Bind Progress}" Visibility="{x:Bind IsSending}" />
                                     </StackPanel>
-                                    <Button Grid.Column="2" Content="Retry" Visibility="{x:Bind IsFailed}" Command="{x:Bind RetryCommand}" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <Button Content="Cancel" Visibility="{x:Bind IsSending}" Command="{x:Bind CancelCommand}" />
+                                        <Button Content="Retry" Visibility="{x:Bind IsFailed}" Command="{x:Bind RetryCommand}" />
+                                    </StackPanel>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

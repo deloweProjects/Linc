@@ -98,6 +98,8 @@ object FileChannelServer {
                 }
             }
         }.isSuccess
+        // Cut off part-way (the PC's Cancel, or the link dropped): don't leave half a file behind.
+        if (!ok) runCatching { file.delete() }
         // Index what the PC just wrote (Share, Files, Sync), so pictures and videos reach the
         // Gallery at once.
         if (ok) ShareStore.scan(file.absolutePath)

@@ -145,10 +145,11 @@ public sealed class FileService(IConnectionManager connection, ILogService log) 
     public async Task<string> PushAsync(string localPath, string remoteDirectory, IProgress<double> progress, CancellationToken ct)
     {
         var fileName = Path.GetFileName(localPath);
+        string? remotePath = null;
         try
         {
             using var sync = new SyncService(_adb, Device);
-            var remotePath = await UniqueRemotePathAsync(sync, Combine(remoteDirectory, fileName), ct);
+            remotePath = await UniqueRemotePathAsync(sync, Combine(remoteDirectory, fileName), ct);
             await using var stream = File.OpenRead(localPath);
             await sync.PushAsync(
                 stream,
@@ -163,6 +164,18 @@ public sealed class FileService(IConnectionManager connection, ILogService log) 
         }
         catch (OperationCanceledException)
         {
+            // Cancelled part-way: take the half-sent file off the phone.
+            if (remotePath is not null)
+            {
+                try
+                {
+                    await DeleteAsync(remotePath, CancellationToken.None);
+                }
+                catch (Exception)
+                {
+                    // Gone already, or ADB went with the link; nothing more to do.
+                }
+            }
             throw;
         }
         catch (Exception ex) when (ex is not LincException)

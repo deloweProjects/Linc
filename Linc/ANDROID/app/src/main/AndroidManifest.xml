@@ -194,6 +194,10 @@
         <!-- Background clipboard (D-092): an invisible window that takes focus just long enough
              to read the clipboard and send it to the PC, then closes. Started by
              ClipboardWatcher only. -->
+        <receiver
+            android:name=".service.ShareCancelReceiver"
+            android:exported="false" />
+
         <activity
             android:name=".JoinPcHotspotActivity"
             android:exported="false"

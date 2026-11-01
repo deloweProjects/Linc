@@ -9,23 +9,35 @@ using Microsoft.UI.Dispatching;
 
 namespace Linc.Desktop.ViewModels;
 
-public sealed partial class PhoneTransferVm(PhoneTransfer transfer, Action<string> retry)
+public sealed partial class PhoneTransferVm(PhoneTransfer transfer, Action<string> retry, Action<Guid> cancel)
 {
     [RelayCommand]
     private void Retry() => retry(Transfer.LocalPath);
+
+    [RelayCommand]
+    private void Cancel() => cancel(Transfer.Id);
 
     public PhoneTransfer Transfer { get; } = transfer;
     public string Name => Transfer.Name;
     public double Progress => Transfer.Progress;
     public bool IsSending => Transfer.State == PhoneTransferState.Sending;
-    public bool IsFailed => Transfer.State == PhoneTransferState.Failed;
+    /// <summary>Retry only for a file sent from this PC (a received one is shared again from the phone).</summary>
+    public bool IsFailed => Transfer.ToPhone && Transfer.State is PhoneTransferState.Failed or PhoneTransferState.Cancelled;
+    public bool ToPhone => Transfer.ToPhone;
     public string Glyph => Transfer.State switch
     {
-        PhoneTransferState.Done => "",
-        PhoneTransferState.Failed => "",
-        _ => "",
+        PhoneTransferState.Done => "\uE73E",
+        PhoneTransferState.Failed => "\uE783",
+        PhoneTransferState.Cancelled => "\uE711",
+        _ => Transfer.ToPhone ? "\uE898" : "\uE896",
     };
-    public string StatusText => Transfer.Message ?? (IsSending ? $"Sending… {Transfer.Progress:0} %" : "");
+    public string Direction => Transfer.ToPhone ? "To your phone" : "From your phone";
+    public string StatusText => Transfer.State switch
+    {
+        PhoneTransferState.Sending => $"{Direction} · {Transfer.Progress:0} %",
+        PhoneTransferState.Cancelled => "Cancelled",
+        _ => Transfer.Message ?? "",
+    };
 }
 
 public sealed partial class ReceivedVm(ReceivedShare share)
@@ -69,7 +81,7 @@ public sealed partial class ShareViewModel : ObservableObject
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         TextToPhone = "";
         Message = "";
-        foreach (var t in share.Transfers) Transfers.Add(new PhoneTransferVm(t, RetryPath));
+        foreach (var t in share.Transfers) Transfers.Add(new PhoneTransferVm(t, RetryPath, share.Cancel));
         foreach (var r in share.Received) Received.Add(new ReceivedVm(r));
         share.TransferChanged += t => _dispatcher.TryEnqueue(() => OnTransfer(t));
         share.ShareReceived += r => _dispatcher.TryEnqueue(() =>
@@ -202,8 +214,8 @@ public sealed partial class ShareViewModel : ObservableObject
     private void OnTransfer(PhoneTransfer t)
     {
         var index = Transfers.ToList().FindIndex(x => x.Transfer.Id == t.Id);
-        if (index >= 0) Transfers[index] = new PhoneTransferVm(t, RetryPath);
-        else Transfers.Insert(0, new PhoneTransferVm(t, RetryPath));
+        if (index >= 0) Transfers[index] = new PhoneTransferVm(t, RetryPath, _share.Cancel);
+        else Transfers.Insert(0, new PhoneTransferVm(t, RetryPath, _share.Cancel));
         OnPropertyChanged(nameof(HasTransfers));
     }
 

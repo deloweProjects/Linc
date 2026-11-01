@@ -1142,6 +1142,9 @@ class SocketServer(
                 MessageType.PC_MEDIA_STATE -> if (negotiated >= 13) {
                     onPcMediaState(message.payload)
                 }
+                MessageType.SHARE_PROGRESS -> if (negotiated >= 13) {
+                    AudioEverywhere.context()?.let { ShareLive.onProgress(it, message.payload) }
+                }
                 MessageType.SHARE_INCOMING -> if (negotiated >= 13) {
                     val name = (message.payload["name"] as? JsonPrimitive)?.contentOrNull
                     val path = (message.payload["path"] as? JsonPrimitive)?.contentOrNull

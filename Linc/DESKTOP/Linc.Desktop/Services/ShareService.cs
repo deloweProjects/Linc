@@ -8,10 +8,14 @@ namespace Linc.Desktop.Services;
 /// <summary>A file the phone shared and the PC has now saved.</summary>
 public sealed record ReceivedShare(string Name, string LocalPath, DateTimeOffset ReceivedAt);
 
-public enum PhoneTransferState { Sending, Done, Failed }
+public enum PhoneTransferState { Sending, Done, Failed, Cancelled }
 
-/// <summary>One file going to the phone over Linc (1.0.0.11, D-083). Progress is 0–100.</summary>
-public sealed record PhoneTransfer(Guid Id, string Name, string LocalPath, PhoneTransferState State, double Progress, string? Message);
+/// <summary>
+/// One file moving between the PC and the phone over Linc (1.0.0.11, D-083), either way since
+/// 2026-11-01 (<see cref="ToPhone"/>). Progress is 0–100. <see cref="LocalPath"/> is the file sent,
+/// or the folder a received one goes to.
+/// </summary>
+public sealed record PhoneTransfer(Guid Id, string Name, string LocalPath, PhoneTransferState State, double Progress, string? Message, bool ToPhone = true);
 
 public interface IShareService
 {
@@ -23,8 +27,11 @@ public interface IShareService
     /// <summary>Send files to the phone over Linc, one after another, each tracked in <see cref="Transfers"/>.</summary>
     Task SendFilesToPhoneAsync(IReadOnlyList<string> paths);
 
-    /// <summary>Files going to the phone this session, newest first.</summary>
+    /// <summary>Files moving between the PC and the phone this session, either way, newest first.</summary>
     IReadOnlyList<PhoneTransfer> Transfers { get; }
+
+    /// <summary>Stop a file that is moving (the Share page, the island, a notification, or the phone's Cancel).</summary>
+    void Cancel(Guid id) { }
 
     event Action<PhoneTransfer>? TransferChanged;
 
@@ -125,8 +132,113 @@ public sealed class ShareService(
 
     public event Action<PhoneTransfer>? TransferChanged;
 
+    private readonly Dictionary<Guid, CancellationTokenSource> _cancels = [];
+    private readonly Dictionary<Guid, (int Percent, DateTime At, PhoneTransferState State)> _reported = [];
+
+    public void Cancel(Guid id)
+    {
+        CancellationTokenSource? cts;
+        lock (_cancels)
+        {
+            _cancels.TryGetValue(id, out cts);
+        }
+        if (cts is null)
+        {
+            return;
+        }
+        log.Log(LogLevel.Info, $"Share: cancelling {Transfers.FirstOrDefault(t => t.Id == id)?.Name ?? "a transfer"}.");
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // It finished in the meantime: nothing left to stop.
+        }
+    }
+
+    private CancellationTokenSource Track(Guid id, CancellationToken outer)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(outer);
+        lock (_cancels)
+        {
+            _cancels[id] = cts;
+        }
+        return cts;
+    }
+
+    private void Untrack(Guid id)
+    {
+        lock (_cancels)
+        {
+            if (_cancels.Remove(id, out var cts))
+            {
+                cts.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tell the phone how a file is getting on (`share.progress`): the PC does the copying both
+    /// ways, so this is the only way the phone can show progress and offer Cancel. Each state
+    /// change, and while moving every 3 % or second at most.
+    /// </summary>
+    private void ReportToPhone(PhoneTransfer t)
+    {
+        var percent = (int)Math.Clamp(t.Progress, 0, 100);
+        lock (_reported)
+        {
+            if (_reported.TryGetValue(t.Id, out var last) && last.State == t.State && t.State == PhoneTransferState.Sending &&
+                (percent - last.Percent < 3 || DateTime.UtcNow - last.At < TimeSpan.FromMilliseconds(300)) && percent < 100)
+            {
+                return;
+            }
+            _reported[t.Id] = (percent, DateTime.UtcNow, t.State);
+            if (t.State != PhoneTransferState.Sending)
+            {
+                _reported.Remove(t.Id);
+            }
+        }
+        if (connection.Current is null)
+        {
+            return;
+        }
+        var payload = new JsonObject
+        {
+            ["id"] = t.Id.ToString("N"),
+            ["name"] = t.Name,
+            ["toPhone"] = t.ToPhone,
+            ["percent"] = percent,
+            ["state"] = t.State switch
+            {
+                PhoneTransferState.Done => "done",
+                PhoneTransferState.Failed => "failed",
+                PhoneTransferState.Cancelled => "cancelled",
+                _ => "moving",
+            },
+        };
+        if (t.State == PhoneTransferState.Failed && t.Message is { } reason)
+        {
+            payload["reason"] = reason;
+        }
+        _ = SendQuietlyAsync(Envelope.Create(MessageType.ShareProgress, payload));
+    }
+
+    private async Task SendQuietlyAsync(Envelope envelope)
+    {
+        try
+        {
+            await connection.SendToPhoneAsync(envelope, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // The phone went away mid-transfer; the transfer itself reports that.
+        }
+    }
+
     private void Publish(PhoneTransfer transfer)
     {
+        ReportToPhone(transfer);
         lock (_transfers)
         {
             var index = _transfers.FindIndex(t => t.Id == transfer.Id);
@@ -153,6 +265,10 @@ public sealed class ShareService(
             try
             {
                 await SendFileToPhoneAsync(path, CancellationToken.None);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancelled by the owner: recorded as such; the rest still go.
             }
             catch (Exception ex)
             {
@@ -192,6 +308,14 @@ public sealed class ShareService(
 
     private void OnCompanionMessage(Envelope envelope)
     {
+        if (envelope.Type == MessageType.ShareCancel)
+        {
+            if (Guid.TryParse((string?)envelope.Payload["id"], out var id))
+            {
+                Cancel(id);
+            }
+            return;
+        }
         if (envelope.Type != MessageType.ShareItem || (string?)envelope.Payload["kind"] != "file")
         {
             return; // text/url share is handled by the Home view model
@@ -258,11 +382,23 @@ public sealed class ShareService(
                     skippedGivenUp++;
                     continue;
                 }
-                var notifier = ShareNotifier.Start(entry.Name, toPhone: false);
+                var incoming = new PhoneTransfer(Guid.NewGuid(), entry.Name, ReceivedFolder, PhoneTransferState.Sending, 0, null, ToPhone: false);
+                Publish(incoming);
+                var notifier = ShareNotifier.Start(entry.Name, toPhone: false, incoming.Id);
+                using var cts = Track(incoming.Id, CancellationToken.None);
+                var lastReported = -10.0;
+                var pullProgress = new Progress<double>(p =>
+                {
+                    notifier.Progress(p);
+                    if (p - lastReported >= 2 || p >= 100)
+                    {
+                        lastReported = p;
+                        Publish(incoming = incoming with { Progress = Math.Clamp(p, 0, 100) });
+                    }
+                });
                 try
                 {
-                    var local = await files.PullAsync(
-                        remotePath, ReceivedFolder, new Progress<double>(notifier.Progress), CancellationToken.None);
+                    var local = await files.PullAsync(remotePath, ReceivedFolder, pullProgress, cts.Token);
                     var share = new ReceivedShare(Path.GetFileName(local), local, DateTimeOffset.Now);
                     lock (_ledgerLock)
                     {
@@ -273,8 +409,23 @@ public sealed class ShareService(
                     lock (_received) { _received.Insert(0, share); }
                     log.Log(LogLevel.Info, $"Received {share.Name} from the phone");
                     ShareReceived?.Invoke(share);
+                    Publish(incoming with { Name = share.Name, LocalPath = local, State = PhoneTransferState.Done, Progress = 100, Message = $"Saved in {ReceivedFolder}" });
                     notifier.Finish("Received from your phone", $"Saved in {ReceivedFolder}");
                     await TryDeleteStagedAsync(remotePath);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancelled by the owner (here or on the phone): not fetched again until it is
+                    // shared again; the phone drops it from its outbox when it hears "cancelled".
+                    lock (_ledgerLock)
+                    {
+                        record.Attempts = MaxPullAttempts;
+                        record.LastError = "Cancelled";
+                        SaveLedger();
+                    }
+                    log.Log(LogLevel.Info, $"Stopped receiving {entry.Name} from the phone (cancelled).");
+                    Publish(incoming with { State = PhoneTransferState.Cancelled, Message = "Cancelled" });
+                    notifier.Finish("Stopped receiving from your phone");
                 }
                 catch (Exception ex)
                 {
@@ -287,6 +438,7 @@ public sealed class ShareService(
                         record.LastError = ex.Message;
                         SaveLedger();
                     }
+                    Publish(incoming with { State = PhoneTransferState.Failed, Message = ex.Message });
                     if (attempts >= MaxPullAttempts)
                     {
                         log.Log(LogLevel.Warn, $"Gave up receiving {entry.Name} from the phone after {attempts} tries: {ex.Message}. Share it again from the phone to retry.");
@@ -297,6 +449,10 @@ public sealed class ShareService(
                         log.Log(LogLevel.Warn, $"Couldn't fetch {entry.Name} from the phone (try {attempts} of {MaxPullAttempts}): {ex.Message}");
                         notifier.Finish("Couldn't receive from your phone", $"{ex.Message} Linc tries again on the next connect ({attempts} of {MaxPullAttempts}).");
                     }
+                }
+                finally
+                {
+                    Untrack(incoming.Id);
                 }
             }
             if (skippedDone > 0 || skippedGivenUp > 0)
@@ -327,7 +483,10 @@ public sealed class ShareService(
     {
         var transfer = new PhoneTransfer(Guid.NewGuid(), Path.GetFileName(localPath), localPath, PhoneTransferState.Sending, 0, null);
         Publish(transfer);
-        var notifier = ShareNotifier.Start(transfer.Name, toPhone: true);
+        var notifier = ShareNotifier.Start(transfer.Name, toPhone: true, transfer.Id);
+        using var cts = Track(transfer.Id, ct);
+        var outer = ct;
+        ct = cts.Token;
         try
         {
             if (supervisor.State != LinkState.Connected)
@@ -368,8 +527,18 @@ public sealed class ShareService(
         }
         catch (OperationCanceledException)
         {
+            log.Log(LogLevel.Info, $"Stopped sending {transfer.Name} to the phone (cancelled).");
+            Publish(transfer with { State = PhoneTransferState.Cancelled, Message = "Cancelled" });
             notifier.Finish("Stopped sending to your phone");
-            throw;
+            if (outer.IsCancellationRequested)
+            {
+                throw;
+            }
+            throw new OperationCanceledException("Cancelled by you");
+        }
+        finally
+        {
+            Untrack(transfer.Id);
         }
     }
 }

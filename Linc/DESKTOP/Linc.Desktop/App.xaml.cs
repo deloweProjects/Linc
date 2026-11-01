@@ -303,8 +303,16 @@ public partial class App : Application
                 // Toast buttons (Quick Share's Accept/Decline) arrive here. Must be subscribed
                 // before Register(), or presses made while the app was starting are lost.
                 Microsoft.Windows.AppNotifications.AppNotificationManager.Default.NotificationInvoked += (_, invoked) =>
+                {
+                    // A share's Cancel (ShareNotifier); everything else is Quick Share's.
+                    if (invoked.Arguments.TryGetValue(ShareNotifier.CancelArgument, out var cancel) && Guid.TryParse(cancel, out var transfer))
+                    {
+                        Services.GetRequiredService<IShareService>().Cancel(transfer);
+                        return;
+                    }
                     Services.GetRequiredService<Linc.Desktop.QuickShare.IQuickShareService>()
                         .HandleNotificationArguments(invoked.Arguments);
+                };
                 // Required once per process before toasts can be shown (unpackaged app).
                 Microsoft.Windows.AppNotifications.AppNotificationManager.Default.Register();
             }

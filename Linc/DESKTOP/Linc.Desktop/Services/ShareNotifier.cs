@@ -19,12 +19,21 @@ public sealed class ShareNotifier
     private int _lastPercent = -1;
     private DateTime _lastUpdate = DateTime.MinValue;
 
-    private ShareNotifier(string name) => _name = name;
+    /// <summary>The notification's Cancel button carries this argument: the transfer's id (App routes it to ShareService.Cancel).</summary>
+    public const string CancelArgument = "linc-share-cancel";
 
-    /// <summary>Shows the notification for a file starting to move. [toPhone] picks the wording.</summary>
-    public static ShareNotifier Start(string name, bool toPhone)
+    private readonly Guid? _transfer;
+
+    private ShareNotifier(string name, Guid? transfer)
     {
-        var notifier = new ShareNotifier(name);
+        _name = name;
+        _transfer = transfer;
+    }
+
+    /// <summary>Shows the notification for a file starting to move. [toPhone] picks the wording; with [transfer] it has a Cancel button.</summary>
+    public static ShareNotifier Start(string name, bool toPhone, Guid? transfer = null)
+    {
+        var notifier = new ShareNotifier(name, transfer);
         notifier.Show(toPhone ? "Sending to your phone" : "Receiving from your phone", toPhone ? "Sending…" : "Receiving…");
         return notifier;
     }
@@ -33,7 +42,7 @@ public sealed class ShareNotifier
     {
         try
         {
-            var notification = new AppNotificationBuilder()
+            var builder = new AppNotificationBuilder()
                 .AddText(title)
                 .AddProgressBar(new AppNotificationProgressBar()
                     .BindTitle()
@@ -41,8 +50,12 @@ public sealed class ShareNotifier
                     .BindValueStringOverride()
                     .BindStatus())
                 .SetTag(_tag)
-                .SetGroup(Group)
-                .BuildNotification();
+                .SetGroup(Group);
+            if (_transfer is { } id)
+            {
+                builder.AddButton(new AppNotificationButton("Cancel").AddArgument(CancelArgument, id.ToString("N")));
+            }
+            var notification = builder.BuildNotification();
             notification.Progress = Data(0, "0%", status);
             AppNotificationManager.Default.Show(notification);
         }
@@ -78,6 +91,7 @@ public sealed class ShareNotifier
         }
         catch (Exception)
         {
+            // Notifications unavailable; the Share page shows the same progress.
         }
     }
 
@@ -96,6 +110,7 @@ public sealed class ShareNotifier
         }
         catch (Exception)
         {
+            // Notifications unavailable; the Share page says how it ended.
         }
     }
 }

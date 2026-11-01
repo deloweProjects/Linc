@@ -17,7 +17,7 @@ import java.io.File
  * activity finishes at once (B2.6), so a toast was the only feedback before and it vanished
  * long before a big file was actually across.
  */
-class ShareProgress(context: Context, private val total: Int) {
+class ShareProgress(context: Context, private val total: Int, private val transferIds: List<Long> = emptyList()) {
 
     private val context = context.applicationContext
     private val manager = this.context.getSystemService(NotificationManager::class.java)
@@ -58,7 +58,17 @@ class ShareProgress(context: Context, private val total: Int) {
                 .setSubText("Linc")
                 .setOngoing(true)
                 .setProgress(total * 100, overall, fraction == null && total == 1)
+                .apply {
+                    if (transferIds.isNotEmpty()) {
+                        addAction(0, "Cancel", ShareLive.cancelIntent(context, transferIds.joinToString(","), local = true))
+                    }
+                }
         )
+    }
+
+    /** The owner cancelled: the copy notification goes. */
+    fun cancelled() {
+        runCatching { manager.cancel(id) }
     }
 
     /**
@@ -68,6 +78,12 @@ class ShareProgress(context: Context, private val total: Int) {
      */
     fun done(failed: Int, reason: String? = null, waiting: Int = 0) {
         val sent = total - failed
+        if (failed == 0 && waiting == 0) {
+            // Handed to the PC, which fetches it now: its own notification, with progress and
+            // Cancel, takes over from this one (ShareLive).
+            runCatching { manager.cancel(id) }
+            return
+        }
         post(
             builder()
                 .setContentTitle(

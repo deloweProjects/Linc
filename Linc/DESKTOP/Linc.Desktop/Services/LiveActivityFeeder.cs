@@ -72,17 +72,25 @@ public sealed class LiveActivityFeeder(
         {
             case PhoneTransferState.Sending:
                 var pct = (int)Math.Clamp(t.Progress, 0, 100);
-                island.Post(new LiveActivity(id, LiveActivityKind.Share, "\uE898", t.Name,
-                    $"Sending to {Phone} · {pct}%", $"{pct}%", pct, [openShare]));
+                island.Post(new LiveActivity(id, LiveActivityKind.Share, t.ToPhone ? "\uE898" : "\uE896", t.Name,
+                    t.ToPhone ? $"Sending to {Phone} · {pct}%" : $"Receiving from {Phone} · {pct}%", $"{pct}%", pct,
+                    [new LiveAction("Cancel", () => share.Cancel(t.Id), Danger: true), openShare]));
                 break;
-            case PhoneTransferState.Done:
+            case PhoneTransferState.Done when t.ToPhone:
                 island.Post(new LiveActivity(id, LiveActivityKind.Share, "\uE73E", t.Name,
                     $"Saved on {Phone}", "✓", 100, [openShare]));
                 island.EndAfter(id, TimeSpan.FromSeconds(4));
                 break;
+            case PhoneTransferState.Done:
+                island.End(id); // OnReceived shows the received file, with Open
+                break;
+            case PhoneTransferState.Cancelled:
+                island.Post(new LiveActivity(id, LiveActivityKind.Share, "\uE711", t.Name, "Cancelled", null, null, [openShare]));
+                island.EndAfter(id, TimeSpan.FromSeconds(3));
+                break;
             case PhoneTransferState.Failed:
                 island.Post(new LiveActivity(id, LiveActivityKind.Share, "\uE783", t.Name,
-                    t.Message ?? "Couldn't send it", "!", null, [openShare]));
+                    t.Message ?? (t.ToPhone ? "Couldn't send it" : "Couldn't receive it"), "!", null, [openShare]));
                 island.EndAfter(id, TimeSpan.FromSeconds(8));
                 break;
         }

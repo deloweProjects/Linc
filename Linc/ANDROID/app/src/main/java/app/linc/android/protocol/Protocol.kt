@@ -78,6 +78,9 @@ object MessageType {
     const val PC_MEDIA_STATE = "pc.media.state"      // desktop → phone
     const val PC_MEDIA_CONTROL = "pc.media.control"  // phone → desktop
     const val SHARE_INCOMING = "share.incoming"      // desktop → phone
+    // 2026-11-01, no version bump (an older peer ignores them): live progress and Cancel for files both ways.
+    const val SHARE_PROGRESS = "share.progress"      // desktop → phone: {id, name, toPhone, percent, state, reason?}
+    const val SHARE_CANCEL = "share.cancel"          // phone → desktop: {id}
 
     // v14 — reverse mirror: the phone views and controls the PC (M05, D-029)
     const val PC_MIRROR_START = "pc.mirror.start"    // phone → desktop

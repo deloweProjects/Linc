@@ -81,6 +81,9 @@ public static class MessageType
     public const string PcMediaState = "pc.media.state";      // desktop → phone
     public const string PcMediaControl = "pc.media.control";  // phone → desktop
     public const string ShareIncoming = "share.incoming";     // desktop → phone
+    // 2026-11-01, no version bump (an older peer ignores them): live progress and Cancel both ways.
+    public const string ShareProgress = "share.progress";     // desktop → phone: {id, name, toPhone, percent, state, reason?}
+    public const string ShareCancel = "share.cancel";         // phone → desktop: {id}
 
     // v14 — reverse mirror: the phone views and controls the PC (M05, D-029)
     public const string PcMirrorStart = "pc.mirror.start";    // phone → desktop

@@ -100,6 +100,7 @@ fun ShareScreen(onSettings: (() -> Unit)? = null) {
     val connection by CompanionStateHolder.state.collectAsState()
     val received by ShareStore.received.collectAsState()
     val transfers by ShareStore.transfers.collectAsState()
+    val moving by app.linc.android.service.ShareLive.items.collectAsState()
     val context = LocalContext.current
     var allFiles by remember { mutableStateOf(Environment.isExternalStorageManager()) }
     LaunchedEffect(Unit) {
@@ -117,6 +118,7 @@ fun ShareScreen(onSettings: (() -> Unit)? = null) {
         received = received,
         transfers = transfers,
         onSettings = onSettings,
+        moving = moving,
     )
 }
 
@@ -128,6 +130,7 @@ private fun ShareContent(
     received: List<ReceivedFile>,
     transfers: List<Transfer>,
     onSettings: (() -> Unit)?,
+    moving: List<app.linc.android.service.LiveShare> = emptyList(),
 ) {
     val context = LocalContext.current
     var textSheet by remember { mutableStateOf(false) }
@@ -199,6 +202,9 @@ private fun ShareContent(
                         else "Quick Share asks the PC to accept. When Linc reconnects, sending goes back to the Linc link.",
                     )
                 }
+            }
+            if (moving.isNotEmpty()) {
+                item("moving") { MovingNowCard(moving) }
             }
             if (overLinc && !allFiles) {
                 item("allfiles") {
@@ -419,12 +425,16 @@ private fun TransferRow(t: Transfer) {
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (t.state) {
-                TransferState.Copying -> ProgressLine(t.progress, t.name)
+                TransferState.Copying -> {
+                    ProgressLine(t.progress, "Getting ${t.name} ready")
+                    TextButton(onClick = { ShareStore.cancel(context, t.id) }) { Text("Cancel") }
+                }
                 else -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         when (t.state) {
                             TransferState.Failed -> LincSymbols.Error
                             TransferState.Waiting -> LincSymbols.Schedule
+                            TransferState.Cancelled -> LincSymbols.Close
                             else -> LincSymbols.CheckCircle
                         },
                         contentDescription = null,
@@ -442,8 +452,11 @@ private fun TransferRow(t: Transfer) {
                             color = if (t.state == TransferState.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (t.state == TransferState.Failed && t.uri != null) {
-                        TextButton(onClick = { ShareStore.retry(context, t.id) }) { Text("Retry") }
+                    val fetching = t.state == TransferState.Sent && app.linc.android.service.ShareLive.fetching(t.name) != null
+                    if ((t.state == TransferState.Failed || t.state == TransferState.Cancelled) && t.uri != null) {
+                        TextButton(onClick = { ShareStore.retry(context, t.id) }) { Text(if (t.state == TransferState.Cancelled) "Send again" else "Retry") }
+                    } else if (fetching || t.state == TransferState.Waiting) {
+                        TextButton(onClick = { ShareStore.cancel(context, t.id) }) { Text("Cancel") }
                     } else {
                         IconButton(onClick = { ShareStore.dismiss(t.id) }) { Icon(LincSymbols.Close, contentDescription = "Dismiss") }
                     }
