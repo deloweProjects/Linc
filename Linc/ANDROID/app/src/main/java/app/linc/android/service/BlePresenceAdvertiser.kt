@@ -141,6 +141,9 @@ class BlePresenceAdvertiser(
     private var receiver: BroadcastReceiver? = null
     private var lastPcFlags: Int? = null
     private var lastNearCall = 0L
+    private var staleSince = 0L
+    private var lastStaleDrop = 0L
+    private var lastScanKick = 0L
 
     fun start() {
         if (loopJob != null) return
@@ -177,8 +180,9 @@ class BlePresenceAdvertiser(
         val slot = System.currentTimeMillis() / 1000 / ROTATION_SECONDS
         val status = status()
         if (force || published != slot to status || callback == null) republish(slot, status)
-        val linked = status and LINKED != 0
-        if (!linked && bluetoothOn(context)) startScan() else stopScan()
+        // Listening goes on while linked too (low power, filtered to the PC's beacon): the PC
+        // saying "no link" while this phone thinks it has one is how a stale link is caught.
+        if (bluetoothOn(context)) startScan() else stopScan()
     }
 
     /** This phone's status byte. */
@@ -283,19 +287,55 @@ class BlePresenceAdvertiser(
     private fun onPcBeacon(payload: ByteArray) {
         val certificate = runCatching { TlsIdentity.certificateDer() }.getOrNull() ?: return
         val flags = matchPc(payload, certificate, System.currentTimeMillis() / 1000 / ROTATION_SECONDS) ?: return
-        _pcHeard.value = PcHeard(flags, android.os.SystemClock.elapsedRealtime())
-        if (CompanionStateHolder.state.value is CompanionStateHolder.ServiceState.Connected) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        _pcHeard.value = PcHeard(flags, now)
+        if (CompanionStateHolder.state.value is CompanionStateHolder.ServiceState.Connected) {
+            checkStale(flags, now)
+            return
+        }
+        staleSince = 0L
         if (flags != lastPcFlags) {
             lastPcFlags = flags
             LogStore.log(LogLevel.INFO, "Your PC is nearby (Bluetooth): ${describePc(flags)}.")
         }
-        val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastNearCall > 20_000) {
             lastNearCall = now
+            // Both ways: announce on the network AND dial the PC now (not wait for it to find us).
             onPcNear("PC nearby over Bluetooth")
+            ReconnectSignal.poke("your PC is nearby (Bluetooth)")
         }
         if (flags and PC_HOTSPOT_ON != 0 && !WifiNow.onPcHotspot(context)) {
+            if (WifiNow.radioOn(context) && WifiNow.network(context) == null && now - lastScanKick > 30_000) {
+                // No Wi-Fi at all: a scan now lets Android join the suggested PC hotspot at once
+                // instead of at its next scan, a minute or more later.
+                lastScanKick = now
+                @Suppress("DEPRECATION")
+                runCatching { context.applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)?.startScan() }
+            }
             PcHotspotJoin.offerJoin(context, why = "Your PC is nearby with its hotspot on")
         }
+    }
+
+    /**
+     * Linked here, but the PC's beacon says it has no link (it only advertises without one): the
+     * link this phone holds is stale (owner: "the phone says connected but nothing in it works").
+     * Two such sightings 6 s apart drop it and redial, instead of waiting a minute for it to time out.
+     */
+    private fun checkStale(flags: Int, now: Long) {
+        if (flags and PC_LINKED != 0) {
+            staleSince = 0L
+            return
+        }
+        if (staleSince == 0L) {
+            staleSince = now
+            return
+        }
+        if (now - staleSince < 6_000 || now - lastStaleDrop < 60_000) return
+        lastStaleDrop = now
+        staleSince = 0L
+        LogStore.log(LogLevel.INFO, "Your PC says over Bluetooth it has no link with this phone: the link here is stale, dropping it and reconnecting")
+        PcGate.instance?.dropAll()
+        ReconnectSignal.poke("the old link was stale")
+        onPcNear("stale link dropped")
     }
 }

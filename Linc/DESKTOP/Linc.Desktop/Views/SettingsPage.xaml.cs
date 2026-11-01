@@ -50,10 +50,14 @@ public sealed partial class SettingsPage : Page
             : "The phone hasn't been heard over Bluetooth yet. On the phone: Linc › Settings › Finding your PC › Bluetooth helper (needs Nearby devices).";
         var current = NearbyRules.CurrentNetworks();
         var home = _nearby.AtHome;
+        var learnt = _nearby.LinkedNetworks();
         NearbyHome.Text = current.Count == 0 ? "Home networks: this PC isn't on a network right now."
-            : home ? $"Home: you're on {string.Join(", ", current)}, marked as home."
+            : home ? $"Home: you're on {string.Join(", ", current)}" + (current.Any(c => learnt.Contains(c, StringComparer.OrdinalIgnoreCase)) ? ", where the phone has linked before." : ", marked as home.")
             : $"This PC is on {string.Join(", ", current)}" + (_registryForNearby.HomeNetworks.Count > 0 ? $" (home is {string.Join(", ", _registryForNearby.HomeNetworks)})." : ". Mark it as home to use the home rule below.");
         NearbyHomeButton.Content = home ? "Not home" : "This is home";
+        // Learnt places can't be un-marked here (they come back on the next link); marked ones can.
+        NearbyHomeButton.Visibility = home && !current.Any(c => _registryForNearby.HomeNetworks.Contains(c, StringComparer.OrdinalIgnoreCase))
+            ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
         NearbyHomeButton.IsEnabled = current.Count > 0;
         NearbyBluetoothAtHome.IsOn = _registryForNearby.BluetoothAtHome;
         _showingNearby = false;

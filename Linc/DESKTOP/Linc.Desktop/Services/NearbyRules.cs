@@ -36,11 +36,19 @@ public sealed class NearbyRules(
         supervisor.StateChanged += () =>
         {
             Publish();
+            if (supervisor.State == LinkState.Connected)
+            {
+                _ = Task.Run(LearnLinkedNetworks);
+            }
             _ = Task.Run(OnLinkChangedAsync);
         };
         hotspot.Changed += Publish;
         ble.StatusHeard += OnPhoneStatus;
-        _tick = new Timer(_ => Publish(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10));
+        _tick = new Timer(_ =>
+        {
+            Publish();
+            KeepBluetoothOnAtHome();
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10));
         _ = Task.Run(CheckHomeAsync);
     }
 
@@ -63,7 +71,52 @@ public sealed class NearbyRules(
         }
     }
 
-    public bool AtHome => CurrentNetworks().Any(n => registry.HomeNetworks.Contains(n, StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// Home, or anywhere a link is wanted: a network marked as home, or one where the phone has
+    /// been linked with this PC before (learnt by itself, up to 10; owner: "if I'm home, or
+    /// anywhere I'd need a link").
+    /// </summary>
+    public bool AtHome => CurrentNetworks().Any(n =>
+        registry.HomeNetworks.Contains(n, StringComparer.OrdinalIgnoreCase) || LinkedNetworks().Contains(n, StringComparer.OrdinalIgnoreCase));
+
+    private string LinkedPath => System.IO.Path.Combine(registry.RootPath, "linked-networks.json");
+
+    /// <summary>The networks the phone has been linked on, newest last.</summary>
+    public IReadOnlyList<string> LinkedNetworks()
+    {
+        try
+        {
+            return System.IO.File.Exists(LinkedPath)
+                ? System.Text.Json.JsonSerializer.Deserialize<List<string>>(System.IO.File.ReadAllText(LinkedPath)) ?? []
+                : [];
+        }
+        catch (Exception)
+        {
+            return []; // unreadable: learnt again on the next link
+        }
+    }
+
+    private void LearnLinkedNetworks()
+    {
+        // The PC's own hotspot isn't a place: only the networks the PC itself is on.
+        var current = CurrentNetworks();
+        var known = LinkedNetworks().ToList();
+        var added = current.Where(n => !known.Contains(n, StringComparer.OrdinalIgnoreCase)).ToList();
+        if (added.Count == 0)
+        {
+            return;
+        }
+        known.AddRange(added);
+        try
+        {
+            System.IO.File.WriteAllText(LinkedPath, System.Text.Json.JsonSerializer.Serialize(known.TakeLast(10).ToList()));
+            log.Log(LogLevel.Info, $"Finding your phone: remembered {string.Join(", ", added)} as a place the phone links (Bluetooth comes on there when the at-home rule is on).");
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Info, $"Finding your phone: couldn't remember this network ({ex.Message}).");
+        }
+    }
 
     public void MarkCurrentAsHome(bool home)
     {
@@ -99,6 +152,23 @@ public sealed class NearbyRules(
             return;
         }
         await TurnPcBluetoothOnAsync();
+    }
+
+    private DateTime _lastRadioTry = DateTime.MinValue;
+
+    /// <summary>
+    /// No link, at home, rule on, and Bluetooth off (switched off by hand, or by Windows): switch it
+    /// back on so the two can find each other, at most once every 5 minutes.
+    /// </summary>
+    private void KeepBluetoothOnAtHome()
+    {
+        if (!registry.BluetoothAtHome || ble.IsScanning || supervisor.State == LinkState.Connected ||
+            DateTime.UtcNow - _lastRadioTry < TimeSpan.FromMinutes(5) || !AtHome)
+        {
+            return;
+        }
+        _lastRadioTry = DateTime.UtcNow;
+        _ = Task.Run(TurnPcBluetoothOnAsync);
     }
 
     /// <summary>Switch this PC's Bluetooth radio on (Windows asks once whether Linc may control radios).</summary>

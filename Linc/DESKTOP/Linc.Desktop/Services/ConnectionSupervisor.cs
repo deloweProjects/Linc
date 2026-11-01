@@ -326,7 +326,9 @@ public sealed class ConnectionSupervisor(
         {
             return;
         }
-        var via = connection.HasAdb ? (live.Transport == LinkTransport.AdbUsb ? "cable" : "wireless") : _adbVia;
+        // A direct link with ADB beside it (AttachSideAdb) says how adb reaches it, not how the link does.
+        var via = live.Transport == LinkTransport.DirectTls ? _adbVia
+            : connection.HasAdb ? (live.Transport == LinkTransport.AdbUsb ? "cable" : "wireless") : _adbVia;
         var arming = AdbArming;
         var encrypted = !LinkPolicy.IsPlainWifi(live.Transport, live.Serial);
         _ = Task.Run(() => connection.SendLinkStateAsync(route, AdbUp, AdbUp ? via : null, arming, encrypted));

@@ -254,11 +254,102 @@ public sealed class ConnectionManager(
             var hosts = new List<string>();
             if (PeerAddress is { } peer) hosts.Add(peer);
             if (registry.LastHostPort is { } last && last.LastIndexOf(':') is var colon and > 0) hosts.Add(last[..colon]);
-            return LinkBrain.AdbVia(devices.Select(d => (d.Serial ?? "", d.State == DeviceState.Online)), serialNo, hosts);
+            var online = devices.Where(d => d.State == DeviceState.Online && !string.IsNullOrEmpty(d.Serial)).ToList();
+            var via = LinkBrain.AdbVia(online.Select(d => (d.Serial!, true)), serialNo, hosts);
+            var match = via is null ? null : online.FirstOrDefault(d => LinkBrain.AdbVia([(d.Serial!, true)], serialNo, hosts) is not null);
+            if (match is null && serialNo is not null)
+            {
+                // On a PC hotspot the phone's link can arrive from the PC's own address (Windows
+                // translates it), so the address can't tell which adb device is this phone. Ask
+                // each unknown network device its hardware serial instead (once per adb name).
+                foreach (var d in online.Where(d => d.Serial!.Contains(':')))
+                {
+                    if (await HardwareSerialAsync(d, ct) is { } hw && string.Equals(hw, serialNo, StringComparison.OrdinalIgnoreCase))
+                    {
+                        match = d;
+                        via = "wireless";
+                        break;
+                    }
+                }
+            }
+            AttachSideAdb(current, match);
+            return via;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return null; // the adb server isn't up: no ADB
+        }
+    }
+
+    private readonly Dictionary<string, string?> _hardwareSerials = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>`getprop ro.serialno` of an adb device, remembered per adb name; null when it won't say.</summary>
+    private async Task<string?> HardwareSerialAsync(DeviceData device, CancellationToken ct)
+    {
+        lock (_hardwareSerials)
+        {
+            if (_hardwareSerials.TryGetValue(device.Serial!, out var known))
+            {
+                return known;
+            }
+        }
+        string? serial = null;
+        try
+        {
+            var receiver = new ConsoleOutputReceiver();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            await _adb.ExecuteRemoteCommandAsync("getprop ro.serialno", device, receiver, timeout.Token);
+            serial = receiver.ToString().Trim();
+            if (serial.Length == 0) serial = null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return null; // not answering right now: ask again next time
+        }
+        lock (_hardwareSerials)
+        {
+            _hardwareSerials[device.Serial!] = serial;
+        }
+        return serial;
+    }
+
+    // The route's own adb name of a direct link, kept while a side ADB route stands in for it.
+    private string? _directSerial;
+
+    /// <summary>
+    /// ADB beside a direct link (owner, 2026-11-01: "PC says ADB online but no features"): the chip
+    /// lit as soon as adb saw the phone, but every ADB feature (Mirror, screenshots, Tools, apps,
+    /// fast files) asked adb for the phone under the direct link's name, which adb doesn't know, or
+    /// found no adb handle at all. Now, while the link is direct, the adb device that is this phone
+    /// becomes the link's ADB side: <see cref="RawDevice"/> and the name adb knows it by in
+    /// <see cref="ConnectedDevice.Serial"/>, exactly as on a link that rides ADB. It goes again
+    /// when adb loses the phone; the link itself is untouched either way.
+    /// </summary>
+    private void AttachSideAdb(ConnectedDevice seen, DeviceData? match)
+    {
+        // Only the link that was looked at, and only a direct one: an ADB link has its own device.
+        if (!ReferenceEquals(Current, seen) || Current is not { Transport: LinkTransport.DirectTls } current)
+        {
+            return;
+        }
+        if (match is not null)
+        {
+            if (RawDevice?.Serial == match.Serial && current.Serial == match.Serial)
+            {
+                return;
+            }
+            _directSerial ??= current.Serial;
+            RawDevice = match;
+            Current = current with { Serial = match.Serial! };
+            log.Log(LogLevel.Info, $"ADB reaches the phone beside the direct link ({match.Serial}): Mirror, Tools and fast file copies use it now.");
+        }
+        else if (_directSerial is not null)
+        {
+            Current = current with { Serial = _directSerial };
+            RawDevice = null;
+            _directSerial = null;
+            log.Log(LogLevel.Info, "ADB no longer reaches the phone; the direct link carries on (Mirror and Tools need ADB again).");
         }
     }
 
@@ -901,6 +992,7 @@ public sealed class ConnectionManager(
         _companion = companion;
         Current = current;
         RawDevice = rawDevice;
+        _directSerial = null; // a new link starts without a side ADB route (AttachSideAdb)
         PeerAddress = peer;
         PcDialled = pcDialled;
         if (old is not null && fresh)

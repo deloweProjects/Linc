@@ -63,9 +63,14 @@ public sealed class PcHotspot(
         ble.DeviceSighted += serial => _ = Task.Run(() => OnPhoneNearAsync(serial, wantsHotspot: false));
         ble.StatusHeard += (serial, flags) =>
         {
+            // The phone says it's on a PC hotspot but there's no link: dial everyone on ours now.
+            if (flags.HasFlag(PhoneBeaconFlags.OnPcHotspot) && supervisor.State != LinkState.Connected)
+            {
+                RehintClients();
+            }
             // The phone says its Wi-Fi is on but it's on no network, and it knows this PC's hotspot:
             // no point waiting out the grace period.
-            if (flags.HasFlag(PhoneBeaconFlags.WifiOn) && !flags.HasFlag(PhoneBeaconFlags.OnWifi) && flags.HasFlag(PhoneBeaconFlags.KnowsPcHotspot))
+            if (flags.HasFlag(PhoneBeaconFlags.WifiOn) && !flags.HasFlag(PhoneBeaconFlags.OnWifi))
             {
                 _ = Task.Run(() => OnPhoneNearAsync(serial, wantsHotspot: true));
             }
@@ -140,7 +145,9 @@ public sealed class PcHotspot(
         }
         _nearSinceUtc = null;
         _autoStarted = false; // the phone is here: an automatic hotspot no longer times out
-        if (!registry.AutoHotspot || supervisor.LinkIsPlainWifi || connection.Current is not { Companion.V: >= 32 } live)
+        // Given whenever the link is encrypted, not only with the automatic start on: then the
+        // phone can join the hotspot however it was switched on (by hand, or already on in Windows).
+        if (supervisor.LinkIsPlainWifi || connection.Current is not { Companion.V: >= 32 } live)
         {
             return;
         }
@@ -446,6 +453,11 @@ public sealed class PcHotspot(
         _ = WatchClientsAsync(manager);
     }
 
+    private volatile bool _rehint;
+
+    /// <summary>Forget who was already dialled, so the next look dials every device on the hotspot again.</summary>
+    private void RehintClients() => _rehint = true;
+
     /// <summary>
     /// While the hotspot is on, every 3 s: who has joined? The phone doesn't look for the PC at its
     /// hotspot's address by itself, so the PC dials each new device (LincLink, the phone's listener).
@@ -461,6 +473,11 @@ public sealed class PcHotspot(
                 {
                     return; // stopped
                 }
+            }
+            if (_rehint)
+            {
+                _rehint = false;
+                seen.Clear();
             }
             try
             {
