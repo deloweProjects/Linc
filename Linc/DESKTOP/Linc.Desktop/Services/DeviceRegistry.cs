@@ -186,6 +186,10 @@ public interface IDeviceRegistry
     bool LiveIsland => false;
     void SaveLiveIsland(bool show) { }
 
+    /// <summary>Settings › Appearance › Linc Bubble: a floating Linc bubble on the desktop (off by default).</summary>
+    bool LiveBubble => false;
+    void SaveLiveBubble(bool show) { }
+
     /// <summary>Raised after any of <see cref="SaveFloatingNav"/>, <see cref="SaveHomeClock"/>, <see cref="SaveWallpaperBackdrop"/>, <see cref="SaveClockStyle"/>, <see cref="SaveAppFont"/>.</summary>
     event Action? AppearanceChanged;
 
@@ -227,6 +231,19 @@ public interface IDeviceRegistry
     bool AutoHotspot { get; }
 
     void SaveAutoHotspot(bool enabled);
+
+    /// <summary>
+    /// Settings › Finding your phone: the networks (Windows' network names) the owner marked as
+    /// home. At home LincLink turns Bluetooth on (<see cref="BluetoothAtHome"/>) and looks hard.
+    /// </summary>
+    IReadOnlyList<string> HomeNetworks => [];
+
+    void SaveHomeNetworks(IReadOnlyList<string> networks) { }
+
+    /// <summary>At home, turn this PC's Bluetooth on, and the phone's over ADB (off by default).</summary>
+    bool BluetoothAtHome => false;
+
+    void SaveBluetoothAtHome(bool enabled) { }
 
     /// <summary>
     /// A phone paired by QR code, with no ADB (v32): its record is keyed <c>linc:&lt;phone id&gt;</c>
@@ -410,7 +427,12 @@ public sealed class DeviceRegistry : IDeviceRegistry
         // Encrypt Wi-Fi links: appended at the end like every field above it; missing reads back as off.
         bool? EncryptWifiLinks = null,
         // PC hotspot when the phone is near: appended at the end; missing reads back as off.
-        bool? AutoHotspot = null);
+        bool? AutoHotspot = null,
+        // Linc Bubble: appended at the end; missing reads back as off.
+        bool? LiveBubble = null,
+        // Finding your phone: appended at the end; missing reads back as none / off.
+        string[]? HomeNetworks = null,
+        bool? BluetoothAtHome = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -469,6 +491,10 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public event Action? LincLinkChanged;
     public bool EncryptWifiLinks { get; private set; }
     public bool AutoHotspot { get; private set; }
+
+    public IReadOnlyList<string> HomeNetworks { get; private set; } = [];
+
+    public bool BluetoothAtHome { get; private set; }
     public event Action? ShowExplanationsChanged;
 
     /// <summary>Raised when <see cref="UsePhoneColours"/> changes, so the theme can re-derive.</summary>
@@ -586,12 +612,15 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 LincLinkEnabled = settings?.LincLinkEnabled ?? true;
                 EncryptWifiLinks = settings?.EncryptWifiLinks ?? false;
                 AutoHotspot = settings?.AutoHotspot ?? false;
+                HomeNetworks = settings?.HomeNetworks ?? [];
+                BluetoothAtHome = settings?.BluetoothAtHome ?? false;
                 FloatingNav = settings?.FloatingNav ?? true;
                 HomeClock = settings?.HomeClock ?? true;
                 WallpaperBackdrop = settings?.WallpaperBackdrop ?? true;
                 ClockStyle = Blank(settings?.ClockStyle) ?? "classic";
                 AppFont = Blank(settings?.AppFont) ?? "default";
                 LiveIsland = settings?.LiveIsland ?? false;
+                LiveBubble = settings?.LiveBubble ?? false;
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -824,12 +853,14 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public string ClockStyle { get; private set; } = "classic";
     public string AppFont { get; private set; } = "default";
     public bool LiveIsland { get; private set; }
+    public bool LiveBubble { get; private set; }
     public event Action? AppearanceChanged;
 
     public void SaveFloatingNav(bool floating) => SaveAppearance(FloatingNav, floating, v => FloatingNav = v);
     public void SaveHomeClock(bool show) => SaveAppearance(HomeClock, show, v => HomeClock = v);
     public void SaveWallpaperBackdrop(bool show) => SaveAppearance(WallpaperBackdrop, show, v => WallpaperBackdrop = v);
     public void SaveLiveIsland(bool show) => SaveAppearance(LiveIsland, show, v => LiveIsland = v);
+    public void SaveLiveBubble(bool show) => SaveAppearance(LiveBubble, show, v => LiveBubble = v);
 
     public void SaveClockStyle(string style)
     {
@@ -895,6 +926,22 @@ public sealed class DeviceRegistry : IDeviceRegistry
             return;
         }
         EncryptWifiLinks = enabled;
+        Persist();
+    }
+
+    public void SaveHomeNetworks(IReadOnlyList<string> networks)
+    {
+        HomeNetworks = networks.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        Persist();
+    }
+
+    public void SaveBluetoothAtHome(bool enabled)
+    {
+        if (BluetoothAtHome == enabled)
+        {
+            return;
+        }
+        BluetoothAtHome = enabled;
         Persist();
     }
 
@@ -1055,7 +1102,10 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 LincLinkEnabled: LincLinkEnabled,
                 LiveIsland: LiveIsland,
                 EncryptWifiLinks: EncryptWifiLinks,
-                AutoHotspot: AutoHotspot)));
+                AutoHotspot: AutoHotspot,
+                LiveBubble: LiveBubble,
+                HomeNetworks: HomeNetworks.ToArray(),
+                BluetoothAtHome: BluetoothAtHome)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

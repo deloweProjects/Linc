@@ -100,24 +100,9 @@ object DeviceStatusReporter {
      * 17), but rssi/linkSpeed stay valid. A genuinely disconnected radio reports
      * rssi == WifiInfo.INVALID_RSSI (-127).
      */
-    private fun readWifiStats(context: Context): Pair<Int, Int>? = try {
-        val wifiManager = context.applicationContext
-            .getSystemService(Context.WIFI_SERVICE) as? WifiManager
-        @Suppress("DEPRECATION")
-        val info = wifiManager?.connectionInfo
-        val rssi = info?.rssi
-        // linkSpeed is -1 and rssi is the invalid sentinel (-127) when the radio
-        // isn't associated; a live connection has linkSpeed > 0 and a real dBm rssi.
-        if (info == null || rssi == null || rssi <= INVALID_RSSI || info.linkSpeed <= 0) {
-            null
-        } else {
-            @Suppress("DEPRECATION")
-            val level = WifiManager.calculateSignalLevel(rssi, 5)
-            level to info.linkSpeed
-        }
-    } catch (_: Exception) {
-        null
-    }
+    // Not WifiManager.connectionInfo: on a Wi-Fi with no internet (a PC hotspot) Android keeps
+    // mobile data as the default and that said "not on Wi-Fi" (WifiNow).
+    private fun readWifiStats(context: Context): Pair<Int, Int>? = WifiNow.signal(context)
 
     /**
      * The phone's Material You dynamic palette as hex strings, so the desktop can

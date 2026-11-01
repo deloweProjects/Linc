@@ -192,10 +192,14 @@ class CompanionService : Service() {
             linkRuntime?.start(server!!)
             // A BLE hint costs nothing when it fails: no radio, no grant or no certificate all
             // just mean the PC never hears it (M04, D-034).
-            blePresence = BlePresenceAdvertiser(this, scope).also { it.start() }
+            blePresence = BlePresenceAdvertiser(this, scope) { why -> linkRuntime?.announce(why) }.also { it.start() }
             callWatcher = CallStateWatcher(this).also { it.start() }
             LogStore.log(LogLevel.INFO, "Companion service started")
-            watch = ConnectionWatch(this) { why -> linkRuntime?.announce(why) }.also { it.start() }
+            watch = ConnectionWatch(this) { why ->
+                linkRuntime?.announce(why)
+                if (why == "Wi-Fi connected") NearbyRules.onWifiJoined(this)
+            }.also { it.start() }
+            NearbyRules.start(this, scope)
         }
         return START_STICKY
     }

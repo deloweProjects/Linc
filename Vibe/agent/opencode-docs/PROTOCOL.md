@@ -310,6 +310,13 @@ Consequences, all deliberate:
 
 **Degradation.** No Bluetooth radio on the PC, Bluetooth off on either side, `BLUETOOTH_ADVERTISE` not granted, or no certificate yet — each simply means no sightings. Everything else about Linc behaves exactly as it did before M04.
 
+**Both ways, with one status byte (build 13, 2026-11-01).** Still never content and never a transport, but each side now says a little about itself so the other can act and the logs can say why the two can't reach each other.
+
+- **Phone → PC:** `4C 43 ‖ id (8) ‖ status (1)`, 11 bytes. Status bits: `1` Linc on the phone has a link, `2` Wi-Fi radio on, `4` joined to a Wi-Fi (any, not only the default network), `8` wireless debugging on, `16` on a Windows Mobile Hotspot (gateway 192.168.137.1), `32` knows this PC's hotspot (`link.hotspot`). Re-advertised within 5 s of a change, and at once when Bluetooth is switched on. A 10-byte beacon (older phones) still matches; it simply carries no status.
+- **PC → phone:** `4C 50` (`"LP"`) `‖ id (8) ‖ status (1)`, where `id` is the **same** rotating id (the phone's certificate is the one secret the pair shares). Status bits: `1` linked, `2` PC hotspot on, `4` looking for the phone. Advertised while the PC has no link, or while its hotspot is on. The phone scans for it (filtered on `FFFF` + `4C 50`, low power) only while it has no link.
+- **What each does with it.** The PC logs the phone's status as a plain clue when there's no link, and starts its hotspot at once (no 20 s grace) when the phone says Wi-Fi on, no network, knows the hotspot, and "Start the PC hotspot when the phone is near" is on. The phone, hearing its PC with no link, announces itself on the network (rate-limited to once per 20 s), and when the PC says its hotspot is on and the phone isn't on it, posts "Join your PC's hotspot?" (a tap asks Android to join it with `WifiNetworkSpecifier`).
+- **Permissions.** The phone needs "Nearby devices" (`BLUETOOTH_ADVERTISE`, `BLUETOOTH_SCAN` with `neverForLocation`, `BLUETOOTH_CONNECT`), asked once on opening Linc with a paired PC. The PC retries its watcher every 15 s, so Bluetooth switched on later is noticed.
+
 ## v14 — Reverse mirror (Era 2, M05; D-029, D-039, D-040)
 
 The mirror flips: the phone views and controls the PC. First **desktop-served stream**: a new **pc-video channel (5)** carries H.264 from the desktop to the phone.

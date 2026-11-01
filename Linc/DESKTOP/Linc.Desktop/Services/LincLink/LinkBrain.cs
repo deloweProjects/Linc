@@ -84,12 +84,23 @@ public static class LinkBrain
     /// one, capped. Two devices that lost each other at the same moment don't retry in lockstep,
     /// and a strong event (cable, Wi-Fi joined, the phone seen) resets it to nothing anyway.
     /// </summary>
-    public static TimeSpan NextBackoff(TimeSpan previous, Random random)
+    public static TimeSpan NextBackoff(TimeSpan previous, Random random, TimeSpan? cap = null)
     {
         var low = BackoffBase.TotalMilliseconds;
-        var high = Math.Max(low, Math.Min(BackoffCap.TotalMilliseconds, previous.TotalMilliseconds * 3));
+        var high = Math.Max(low, Math.Min((cap ?? BackoffCap).TotalMilliseconds, previous.TotalMilliseconds * 3));
         return TimeSpan.FromMilliseconds(low + random.NextDouble() * (high - low));
     }
+
+    /// <summary>
+    /// Searching for a long time with nothing new (no cable, no Wi-Fi change, no Bluetooth
+    /// sighting, nobody opening Linc) means the phone is most likely away: ask the network less
+    /// often to save power (owner, 2026-11-01: "for a long while pause, keep trying after some
+    /// time"). Any strong signal starts the search over at full speed.
+    /// </summary>
+    public static TimeSpan RestCap(TimeSpan searchingFor) =>
+        searchingFor < TimeSpan.FromMinutes(10) ? BackoffCap
+        : searchingFor < TimeSpan.FromMinutes(30) ? TimeSpan.FromMinutes(2)
+        : TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// The order to race candidates in: what won last time on this network first (most recent

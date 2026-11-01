@@ -142,6 +142,7 @@ public partial class App : Application
             .AddSingleton<IShareService, ShareService>()
             .AddSingleton<ConnectionDoctor>()
             .AddSingleton<PcHotspot>()
+            .AddSingleton<NearbyRules>()
             .AddSingleton<ILiveActivityService, LiveActivityService>()
             .AddSingleton<LiveActivityFeeder>()
             .AddSingleton<PcBluetoothAudio>()
@@ -344,12 +345,14 @@ public partial class App : Application
             // PC hotspot when the phone is near (LincLink step 5): hands the phone the network while
             // connected, and starts the hotspot when its Bluetooth beacon is heard with no link.
             Services.GetRequiredService<PcHotspot>().Begin();
+            Services.GetRequiredService<NearbyRules>().Begin();
             // M9e: view models are constructed synchronously as part of Activate() — always call
             // it, even on a silent startup launch, or AppShellViewModel never starts and the app
             // sits in the tray connected to nothing. A startup launch just hides the window right
             // after, via the same AppWindow.Hide() the close-to-tray path already uses (see
             // MainWindow.OnAppWindowClosing) — no second hiding mechanism.
             _window.Activate();
+            Views.LincBubbleHost.Begin(); // Settings › Appearance › Linc Bubble (off by default)
             var commandLineArgs = Environment.GetCommandLineArgs();
             if (StartupRegistration.IsStartupLaunch(commandLineArgs) && quickSharePaths.Count == 0 && phonePaths.Count == 0)
             {

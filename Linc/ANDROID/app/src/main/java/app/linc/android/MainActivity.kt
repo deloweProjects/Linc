@@ -96,6 +96,21 @@ class MainActivity : ComponentActivity() {
                 LincApp()
             }
         }
+        askNearbyOnce()
+    }
+
+    /**
+     * Bluetooth both ways needs "Nearby devices" (never location); it was declared but never asked
+     * for, so the phone's beacon never went out (owner, 2026-11-01). Asked once, with a paired PC;
+     * after that it's Settings › Finding your PC › Allow.
+     */
+    private fun askNearbyOnce() {
+        val prefs = getSharedPreferences("linc.nearby", MODE_PRIVATE)
+        val ble = app.linc.android.service.BlePresenceAdvertiser
+        if (prefs.getBoolean("askedPermission", false) || !app.linc.android.service.TransportStore.hasAnyPc(this) ||
+            ble.PERMISSIONS.all { ble.hasPermission(this, it) }) return
+        prefs.edit().putBoolean("askedPermission", true).apply()
+        requestPermissions(ble.PERMISSIONS, 0x1C59)
     }
 
     override fun onResume() {

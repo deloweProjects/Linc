@@ -72,6 +72,13 @@
         android:name="android.permission.BLUETOOTH_ADVERTISE"
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
+    <!-- Two-way since build 13: the phone also listens for its PC's beacon (never for location)
+         and may ask Android to turn Bluetooth on at home. One "Nearby devices" grant. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <!-- v15 display control (M5c, D-055): lets the PC's orientation/brightness widgets write
          Settings.System. This is an appop, not a runtime permission — declaring it grants
@@ -187,6 +194,12 @@
         <!-- Background clipboard (D-092): an invisible window that takes focus just long enough
              to read the clipboard and send it to the PC, then closes. Started by
              ClipboardWatcher only. -->
+        <activity
+            android:name=".JoinPcHotspotActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Linc.Invisible" />
+
         <activity
             android:name=".ClipboardSyncActivity"
             android:exported="false"

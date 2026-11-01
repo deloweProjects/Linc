@@ -1704,6 +1704,8 @@ public sealed class ConnectionSupervisor(
     private async Task SearchLoopAsync(CancellationToken ct)
     {
         var wait = TimeSpan.Zero;
+        var since = DateTimeOffset.UtcNow; // since the last strong signal, for LinkBrain.RestCap
+        var resting = TimeSpan.Zero;
         while (!ct.IsCancellationRequested)
         {
             var kick = _searchKick;
@@ -1724,14 +1726,25 @@ public sealed class ConnectionSupervisor(
             {
                 Interlocked.CompareExchange(ref _searchKick, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously), kick);
                 wait = TimeSpan.Zero; // a strong signal: start the backoff over
+                since = DateTimeOffset.UtcNow;
             }
             var hunting = State is LinkState.Searching || IsHandingOff;
             if (!hunting)
             {
                 wait = TimeSpan.FromSeconds(5);
+                since = DateTimeOffset.UtcNow;
                 continue;
             }
-            wait = LinkBrain.NextBackoff(wait, _jitter);
+            var cap = LinkBrain.RestCap(DateTimeOffset.UtcNow - since);
+            if (cap != resting)
+            {
+                resting = cap;
+                if (cap > LinkBrain.BackoffCap)
+                {
+                    log.Log(LogLevel.Info, $"Still no phone after {(DateTimeOffset.UtcNow - since).TotalMinutes:0} minutes: asking the network every {cap.TotalMinutes:0} min to save power, until something changes (cable, Wi-Fi, Bluetooth, opening Linc).");
+                }
+            }
+            wait = LinkBrain.NextBackoff(wait, _jitter, cap);
             lincLink.Probe("still looking");
             await DialPhoneAsync();
         }

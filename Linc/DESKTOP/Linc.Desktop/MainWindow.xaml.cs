@@ -620,16 +620,22 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    public void ShowSharePage() => DispatcherQueue.TryEnqueue(() =>
+    public void ShowSharePage() => ShowPage("Share");
+
+    /// <summary>Bring Linc up on one of its pages (by Nav tag), or just bring it up (null). The Linc Bubble's shortcuts.</summary>
+    public void ShowPage(string? tag) => DispatcherQueue.TryEnqueue(() =>
     {
         AppWindow.Show();
         Activate();
-        var item = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == "Share");
+        var item = tag is null ? null : Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == tag);
         if (item is not null)
         {
             Nav.SelectedItem = item; // OnNavSelectionChanged does the navigation
         }
     });
+
+    /// <summary>The clipboard to the phone, as the tray's "Send clipboard" does (the Linc Bubble's shortcut).</summary>
+    public void SendClipboardToPhone() => DispatcherQueue.TryEnqueue(() => _ = SendClipboardAsync(pasteFiles: true));
 
     // The lone "pair a phone" button that stands in for the tab strip when no phone is paired
     // (M2b zero-device entry). Same destination as the strip's "+" and Home's CTA.

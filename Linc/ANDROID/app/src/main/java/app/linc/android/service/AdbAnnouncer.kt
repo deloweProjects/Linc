@@ -48,7 +48,7 @@ object AdbAnnouncer {
         val gen = AdbGeneration.next()
 
         if (detected == null) {
-            LogStore.log(LogLevel.INFO, "Wireless debugging isn't on, so there's no ADB port to share.")
+            LogStore.log(LogLevel.INFO, "Wireless debugging is off right now (Android switches it off when the Wi-Fi changes); the PC asks Linc to turn it back on.")
             CompanionOutbox.trySend(
                 Envelope(type = MessageType.ADB_DOWN, payload = AdbPayloads.down(gen, reason)),
                 REQUIRED_VERSION,

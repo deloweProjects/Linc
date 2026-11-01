@@ -226,6 +226,46 @@
                 </StackPanel>
             </Border>
 
+            <!-- Finding your phone (LincLink helpers, owner 2026-11-01): Bluetooth both ways, home
+                 networks, and what the phone last said. SettingsPage.xaml.cs fills it (NearbyRules). -->
+            <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Finding your phone" Style="{StaticResource TitleText}" />
+                    <TextBlock views:Explain.IsHelp="True"
+                               Text="The PC and the phone hear each other over Bluetooth and swap a few status clues (linked, Wi-Fi, hotspot), so they start looking for each other at once and the log says why they can't. Nothing else goes over Bluetooth. After 10 minutes with no phone, Linc looks less often to save power, and at full speed again the moment anything changes."
+                               Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock x:Name="NearbyBluetooth" Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="NearbyPhone" Style="{StaticResource BodyText}" Opacity="0.8" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button x:Name="NearbyBluetoothButton" Grid.Column="1" Content="Turn Bluetooth on" Click="OnNearbyBluetoothClick" VerticalAlignment="Top" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="NearbyHome" Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <Button x:Name="NearbyHomeButton" Grid.Column="1" Content="This is home" Click="OnNearbyHomeClick" VerticalAlignment="Top" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="At home, turn Bluetooth on — on this PC, and on the phone whenever the cable or wireless debugging reaches it. The phone can also ask you to turn its Bluetooth on at home (Linc on the phone › Settings › Finding your PC)"
+                            Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <ToggleSwitch x:Name="NearbyBluetoothAtHome" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="OnNearbyBluetoothAtHomeToggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- Startup (M12e): opt-in, default OFF. -->
             <Border Style="{StaticResource ExpressiveCard}" Padding="20,16">
                 <StackPanel Spacing="12">
@@ -325,6 +365,18 @@
                         <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
                                       AutomationProperties.AutomationId="LiveIslandToggle"
                                       IsOn="{x:Bind ViewModel.LiveIsland, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Linc Bubble" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="A small Linc bubble on your desktop, over every app. Drag it anywhere; it tucks itself into the screen edge when you're not using it. It grows into the island when something happens, and a click opens Linc's shortcuts (mirror, ring, send the clipboard, PC hotspot…)." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.LiveBubble, Mode=TwoWay}" />
                     </Grid>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>

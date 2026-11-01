@@ -202,9 +202,9 @@
                     </StackPanel>
                 </Border>
 
-                <!-- The Linc Island (Settings › Appearance › Linc Island): where a real phone's camera
-                     island is. Last, so its expanded card draws over the clock. -->
-                <views:DynamicIsland Grid.RowSpan="3" Margin="0,14,0,0" />
+                <!-- The Linc Island (Settings › Appearance › Linc Island): just above the phone card
+                     (owner, 2026-11-01), opening upward over the wallpaper. Last, so it draws on top. -->
+                <views:DynamicIsland Grid.Row="1" VerticalAlignment="Bottom" Margin="0,0,0,2" GrowsUp="True" />
             </Grid>
 
             <Grid x:Name="WidgetsArea" Grid.Column="1" Grid.RowSpan="2">

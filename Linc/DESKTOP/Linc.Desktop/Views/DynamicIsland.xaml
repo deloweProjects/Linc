@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Linc Island (Settings › Appearance › Linc Island): a dark pill that shows what is happening
-     now (ILiveActivityService) and morphs between a compact pill and an expanded card with buttons.
-     Dark in both themes on purpose, like the camera island it sits where. DynamicIsland.xaml.cs
-     sizes and animates it; nothing here binds, so a page can host as many as it likes. -->
+<!-- The Linc Island (Settings › Appearance › Linc Island): a pill that shows what is happening now
+     (ILiveActivityService) and morphs between a compact pill and an expanded card with buttons. In the
+     app's own colours (the phone's palette, frosted like the phone card; owner 2026-11-01: "make its
+     colour match the app"). DynamicIsland.xaml.cs sizes and animates it; nothing here binds, so a
+     page (or the desktop bubble) can host as many as it likes. -->
 <UserControl
     x:Class="Linc.Desktop.Views.DynamicIsland"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -20,8 +21,8 @@
             x:Name="Pill"
             Width="40" Height="32"
             CornerRadius="16"
-            Background="#F20D0E14"
-            BorderBrush="#24FFFFFF"
+            Background="{ThemeResource FrostedSurfaceBrush}"
+            BorderBrush="{ThemeResource OutlineVariantBrush}"
             BorderThickness="1"
             Translation="0,0,24"
             Tapped="OnPillTapped"
@@ -34,6 +35,9 @@
             <Grid>
                 <!-- Compact: lead icon (or a progress ring), the title, a short trailing note. -->
                 <Grid x:Name="CompactRow" Padding="6,0,12,0" ColumnSpacing="8" VerticalAlignment="Center">
+                    <Grid.RenderTransform>
+                        <TranslateTransform x:Name="CompactShift" />
+                    </Grid.RenderTransform>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -46,22 +50,25 @@
                             x:Name="LeadRing"
                             Width="20" Height="20" MinWidth="0" MinHeight="0"
                             IsIndeterminate="False" Minimum="0" Maximum="100"
-                            Foreground="#C3A2FF" Background="#33FFFFFF"
+                            Foreground="{ThemeResource PrimaryBrush}" Background="{ThemeResource OutlineVariantBrush}"
                             Visibility="Collapsed" />
                     </Grid>
                     <TextBlock
                         x:Name="CompactTitle" Grid.Column="1"
-                        FontSize="12" FontWeight="SemiBold" Foreground="White"
+                        FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource OnSurfaceBrush}"
                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="150" />
                     <TextBlock
                         x:Name="CompactTrail" Grid.Column="2"
-                        FontSize="12" Foreground="White" Opacity="0.8"
+                        FontSize="12" Foreground="{ThemeResource OnSurfaceVariantBrush}"
                         VerticalAlignment="Center" />
                 </Grid>
 
                 <!-- Expanded: tile, title and detail, a progress bar, the buttons. -->
                 <Grid x:Name="ExpandedPanel" Padding="14,14,14,12" RowSpacing="10" Opacity="0" IsHitTestVisible="False"
                       VerticalAlignment="Top">
+                    <Grid.RenderTransform>
+                        <TranslateTransform x:Name="ExpandedShift" />
+                    </Grid.RenderTransform>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -76,14 +83,14 @@
                             <FontIcon x:Name="ArtGlyph" FontSize="17" Foreground="White" />
                         </Border>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                            <TextBlock x:Name="ExpandedTitle" FontSize="14" FontWeight="SemiBold" Foreground="White"
+                            <TextBlock x:Name="ExpandedTitle" FontSize="14" FontWeight="SemiBold" Foreground="{ThemeResource OnSurfaceBrush}"
                                        TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="ExpandedSubtitle" FontSize="12" Foreground="White" Opacity="0.7"
+                            <TextBlock x:Name="ExpandedSubtitle" FontSize="12" Foreground="{ThemeResource OnSurfaceVariantBrush}"
                                        TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                     </Grid>
                     <ProgressBar x:Name="ExpandedProgress" Grid.Row="1" Minimum="0" Maximum="100"
-                                 Foreground="#C3A2FF" Background="#26FFFFFF" />
+                                 Foreground="{ThemeResource PrimaryBrush}" Background="{ThemeResource OutlineVariantBrush}" />
                     <Grid x:Name="ActionsRow" Grid.Row="2" ColumnSpacing="8" />
                 </Grid>
             </Grid>
@@ -94,7 +101,7 @@
             x:Name="Bubble" Grid.Column="1" Margin="6,0,0,0"
             Width="32" Height="32" CornerRadius="16"
             VerticalAlignment="Top"
-            Background="#F20D0E14" BorderBrush="#24FFFFFF" BorderThickness="1"
+            Background="{ThemeResource FrostedSurfaceBrush}" BorderBrush="{ThemeResource OutlineVariantBrush}" BorderThickness="1"
             Opacity="0" Visibility="Collapsed"
             Tapped="OnBubbleTapped">
             <Grid Width="20" Height="20">

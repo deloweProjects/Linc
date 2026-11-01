@@ -21,8 +21,14 @@ namespace Linc.Desktop.Services;
 ///    a hard time limit: on the owner's PC (Realtek 8852BE, unpackaged app) `Start()` never returned,
 ///    so it runs on its own thread and is given up on after a few seconds, once per run of Linc.
 ///
-/// Stop turns off only a hotspot Linc itself started. Started by hand from Settings › Connection;
-/// the automatic "phone is near" start over Bluetooth (brief step 5) is not built.
+/// Stop (the owner's button) turns it off; the automatic give-up turns off only a hotspot Linc itself
+/// started. Started by hand from Settings › Connection,
+/// or by itself when the phone is heard over Bluetooth with no link (brief step 5).
+///
+/// What Linc shows follows Windows' real state, read every 5 s (owner, 2026-11-01: "it needs to
+/// read better when it's turned off or on"): Windows switches an idle hotspot off by itself after a
+/// few minutes, and the owner can switch it in Windows' own Settings. While Linc runs a hotspot,
+/// Windows' idle switch-off is held off.
 /// </summary>
 public sealed class PcHotspot(
     IDeviceRegistry registry, ILogService log, IConnectionSupervisor supervisor,
@@ -48,11 +54,77 @@ public sealed class PcHotspot(
     private bool _autoStarted;
     private int _autoBusy;
 
-    /// <summary>Started once at launch (App.xaml.cs). Cheap: two event handlers.</summary>
+    private Timer? _stateTimer;
+
+    /// <summary>Started once at launch (App.xaml.cs): two event handlers and a 5 s look at Windows' hotspot.</summary>
     public void Begin()
     {
         supervisor.StateChanged += () => _ = Task.Run(OnLinkChangedAsync);
-        ble.DeviceSighted += serial => _ = Task.Run(() => OnPhoneNearAsync(serial));
+        ble.DeviceSighted += serial => _ = Task.Run(() => OnPhoneNearAsync(serial, wantsHotspot: false));
+        ble.StatusHeard += (serial, flags) =>
+        {
+            // The phone says its Wi-Fi is on but it's on no network, and it knows this PC's hotspot:
+            // no point waiting out the grace period.
+            if (flags.HasFlag(PhoneBeaconFlags.WifiOn) && !flags.HasFlag(PhoneBeaconFlags.OnWifi) && flags.HasFlag(PhoneBeaconFlags.KnowsPcHotspot))
+            {
+                _ = Task.Run(() => OnPhoneNearAsync(serial, wantsHotspot: true));
+            }
+        };
+        _stateTimer = new Timer(_ => SyncWithWindows(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>Make <see cref="Current"/> say what Windows really has on.</summary>
+    private void SyncWithWindows()
+    {
+        try
+        {
+            if (Current == Mode.WifiDirect)
+            {
+                return; // Linc's own network: its publisher reports its own end
+            }
+            NetworkOperatorTetheringManager? tethering;
+            lock (_lock)
+            {
+                tethering = _tethering;
+            }
+            if (Current == Mode.MobileHotspot)
+            {
+                if (tethering is not null && tethering.TetheringOperationalState == TetheringOperationalState.Off)
+                {
+                    lock (_lock)
+                    {
+                        _tethering = null;
+                    }
+                    log.Log(LogLevel.Info, "PC hotspot: Windows turned the hotspot off (in its Settings, or after no device used it).");
+                    Network = null;
+                    WasAlreadyOn = false;
+                    _autoStarted = false;
+                    Set(Mode.Off, null);
+                }
+                return;
+            }
+            // Off as far as Linc knows: was it turned on in Windows?
+            foreach (var profile in NetworkInformation.GetConnectionProfiles())
+            {
+                if (profile.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.None ||
+                    NetworkOperatorTetheringManager.GetTetheringCapabilityFromConnectionProfile(profile) != TetheringCapability.Enabled)
+                {
+                    continue;
+                }
+                var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
+                if (manager.TetheringOperationalState == TetheringOperationalState.On)
+                {
+                    Remember(manager, manager.GetCurrentAccessPointConfiguration(), alreadyOn: true);
+                    log.Log(LogLevel.Info, $"PC hotspot: Windows' hotspot \"{Network?.Ssid}\" is on (turned on outside Linc).");
+                    Set(Mode.MobileHotspot, null);
+                    return;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Tethering unavailable right now (Wi-Fi off, adapter resetting): look again in 5 s.
+        }
     }
 
     /// <summary>
@@ -100,28 +172,32 @@ public sealed class PcHotspot(
     public Task GiveToPhoneNowAsync() => Task.Run(OnLinkChangedAsync);
 
     /// <summary>The phone's beacon (about once a second while it's near). Idempotent.</summary>
-    private async Task OnPhoneNearAsync(string serial)
+    private async Task OnPhoneNearAsync(string serial, bool wantsHotspot)
     {
         if (supervisor.State == LinkState.Connected)
         {
             _nearSinceUtc = null;
             return;
         }
-        if (!registry.AutoHotspot || Current != Mode.Off || SentStamp(serial) is null ||
+        // Not "only once the phone was given the network": a phone that joined it by hand (or by
+        // its QR code) remembers it too, and the phone's beacon says whether it knows it.
+        if (!registry.AutoHotspot || Current != Mode.Off ||
             !string.Equals(serial, registry.PairedSerial, StringComparison.OrdinalIgnoreCase) ||
             DateTimeOffset.UtcNow - _lastAutoUtc < AutoCooldown)
         {
             return;
         }
         _nearSinceUtc ??= DateTimeOffset.UtcNow;
-        if (DateTimeOffset.UtcNow - _nearSinceUtc < NearGrace || Interlocked.CompareExchange(ref _autoBusy, 1, 0) != 0)
+        if ((!wantsHotspot && DateTimeOffset.UtcNow - _nearSinceUtc < NearGrace) || Interlocked.CompareExchange(ref _autoBusy, 1, 0) != 0)
         {
             return;
         }
         try
         {
             _lastAutoUtc = DateTimeOffset.UtcNow;
-            log.Log(LogLevel.Info, $"PC hotspot: the phone is near (Bluetooth) but hasn't connected in {NearGrace.TotalSeconds:0} s; starting the PC hotspot for it.");
+            log.Log(LogLevel.Info, wantsHotspot
+                ? "PC hotspot: the phone says (Bluetooth) its Wi-Fi is on but it's on no network; starting the PC hotspot for it."
+                : $"PC hotspot: the phone is near (Bluetooth) but hasn't connected in {NearGrace.TotalSeconds:0} s; starting the PC hotspot for it.");
             var result = await StartAsync();
             if (Current == Mode.Off)
             {
@@ -203,7 +279,7 @@ public sealed class PcHotspot(
     /// <summary>The network the phone joins while on: Windows' hotspot's own, or Linc's Wi-Fi Direct one.</summary>
     public (string Ssid, string Password)? Network { get; private set; }
 
-    /// <summary>True when the hotspot was already on before Linc was asked: Stop leaves it on.</summary>
+    /// <summary>True when the hotspot was already on before Linc was asked (the automatic give-up then leaves it on).</summary>
     public bool WasAlreadyOn { get; private set; }
 
     public event Action? Changed;
@@ -253,7 +329,10 @@ public sealed class PcHotspot(
         lock (_lock)
         {
             publisher = _publisher;
-            tethering = WasAlreadyOn ? null : _tethering; // never switch off the owner's own hotspot
+            // Stop is the owner's own button (the automatic give-up only ever stops a hotspot Linc
+            // started), so it turns Windows' hotspot off even when it was on before: leaving it on
+            // made Linc pick it straight back up from Windows' state and look stuck.
+            tethering = _tethering;
             _publisher = null;
             _tethering = null;
         }
@@ -266,6 +345,7 @@ public sealed class PcHotspot(
             if (tethering is not null)
             {
                 await tethering.StopTetheringAsync();
+                HoldIdleSwitchOff(false);
             }
         }
         catch (Exception ex)
@@ -274,7 +354,7 @@ public sealed class PcHotspot(
         }
         if (Current != Mode.Off)
         {
-            log.Log(LogLevel.Info, WasAlreadyOn ? "PC hotspot: left Windows' hotspot on (it was on before Linc)." : "PC hotspot off.");
+            log.Log(LogLevel.Info, "PC hotspot off.");
         }
         Network = null;
         WasAlreadyOn = false;
@@ -312,6 +392,7 @@ public sealed class PcHotspot(
                     var start = await manager.StartTetheringAsync();
                     if (start.Status == TetheringOperationStatus.Success)
                     {
+                        HoldIdleSwitchOff(true);
                         Remember(manager, config, alreadyOn: false);
                         log.Log(LogLevel.Info, $"PC hotspot: sharing \"{profile.ProfileName}\".");
                         return null;
@@ -328,6 +409,29 @@ public sealed class PcHotspot(
         catch (Exception ex)
         {
             return ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Windows turns an idle hotspot off after a few minutes ("power saving"); a hotspot started
+    /// for a phone that's on its way must stay. Put back when Linc stops it. Windows 10 2004+.
+    /// </summary>
+    private void HoldIdleSwitchOff(bool hold)
+    {
+        try
+        {
+            if (hold)
+            {
+                NetworkOperatorTetheringManager.DisableNoConnectionsTimeout();
+            }
+            else
+            {
+                NetworkOperatorTetheringManager.EnableNoConnectionsTimeout();
+            }
+        }
+        catch (Exception)
+        {
+            // Older Windows: the hotspot may go off when idle, and SyncWithWindows notices.
         }
     }
 

@@ -66,16 +66,13 @@ class LinkRuntime(private val context: Context, private val scope: CoroutineScop
     }
 
     /** The Wi-Fi network the phone is on now, as [LinkBrain.fingerprint] (gateway and subnet), or null off Wi-Fi. */
-    private fun currentNetwork(): String? = runCatching {
-        val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
-        val network = cm.activeNetwork ?: return null
-        val caps = cm.getNetworkCapabilities(network) ?: return null
-        if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) return null
-        val props = cm.getLinkProperties(network) ?: return null
-        val gateway = props.routes.firstOrNull { it.isDefaultRoute && it.gateway is java.net.Inet4Address }?.gateway?.hostAddress
-        val v4 = props.linkAddresses.firstOrNull { it.address is java.net.Inet4Address } ?: return null
-        LinkBrain.fingerprint(gateway, LinkBrain.subnetOf(v4.address.address, v4.prefixLength))
-    }.getOrNull()
+    // Any Wi-Fi, not just the default network: on a PC hotspot with no internet the default stays
+    // mobile data, and this returned null there, so wireless debugging was never turned back on.
+    private fun currentNetwork(): String? {
+        val gateway = app.linc.android.service.WifiNow.gateway(context)
+        val (address, prefix) = app.linc.android.service.WifiNow.address(context) ?: return null
+        return LinkBrain.fingerprint(gateway, LinkBrain.subnetOf(address, prefix))
+    }
 
     fun stop() {
         adbWatch?.cancel()

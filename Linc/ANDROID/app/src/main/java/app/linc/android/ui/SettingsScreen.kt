@@ -111,6 +111,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
     var updates by remember { mutableStateOf(UpdateSettings.updatesEnabled(context)) }
     val explanations by Explanations.flow(context).collectAsState(initial = Explanations.get(context))
     val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
+    val nearbyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
+    var askBtAtHome by remember { mutableStateOf(app.linc.android.service.NearbyRules.askBluetoothAtHome(context)) }
+    val pcHeard by app.linc.android.service.BlePresenceAdvertiser.pcHeard.collectAsState()
     val callPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
 
     val exempt = remember(tick) { ConnectionWatch.isBatteryExempt(context) }
@@ -213,6 +216,39 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                         },
                         supporting = if (!AdbArming.isPermissionHeld(context)) AdbArmRules.describe(AdbArmOutcome.DENIED)
                         else "Your PC connects the moment you share a hotspot either way.") },
+                ))
+            }
+
+            // LincLink's helpers (owner, 2026-11-01): Bluetooth both ways, home rules, the PC's hotspot.
+            item { SectionHeader("Finding your PC") }
+            item {
+                val ble = app.linc.android.service.BlePresenceAdvertiser
+                val nearbyGranted = remember(tick) { ble.PERMISSIONS.all { ble.hasPermission(context, it) } }
+                val btOn = remember(tick) { ble.bluetoothOn(context) }
+                val hotspot = remember(tick) { app.linc.android.service.PcHotspotJoin.held(context) }
+                val home = remember(tick) { app.linc.android.service.NearbyRules.atHome(context) }
+                SettingsGroup(rows = listOf(
+                    { s -> SettingsRow("Bluetooth helper", s, LincSymbols.Link,
+                        value = when {
+                            !nearbyGranted -> "Needs the Nearby devices permission"
+                            !btOn -> "Bluetooth is off"
+                            else -> pcHeard?.let { heard ->
+                                val ago = (android.os.SystemClock.elapsedRealtime() - heard.atMillis) / 1000
+                                if (ago < 60) "Your PC is nearby: ${ble.describePc(heard.flags)}" else "On; your PC was last heard ${ago / 60} min ago"
+                            } ?: if (ble.advertising) "On; your PC hears this phone" else "On"
+                        },
+                        supporting = "Your PC and this phone hear each other over Bluetooth and swap a few status clues, so they start looking for each other at once. Nothing else goes over Bluetooth.",
+                        supportingKind = if (nearbyGranted) Explanations.Kind.Helper else Explanations.Kind.Warning,
+                        trailing = if (nearbyGranted) null else ({ TextButton(onClick = { nearbyPermission.launch(ble.PERMISSIONS) }) { Text("Allow") } })) },
+                    { s -> SettingsRow("Turn Bluetooth on at home", s, LincSymbols.Home,
+                        value = if (home) "You're on a home Wi-Fi now" else null,
+                        supporting = "On a Wi-Fi where this phone has used your PC before, Linc asks to turn Bluetooth on (Android needs your tap).",
+                        trailing = { Switch(askBtAtHome, { askBtAtHome = it; app.linc.android.service.NearbyRules.setAskBluetoothAtHome(context, it) }) }) },
+                    { s -> SettingsRow("Your PC's hotspot", s, LincSymbols.Hotspot,
+                        value = hotspot?.first ?: "Not learnt yet",
+                        supporting = if (hotspot == null) "Turn on \"Start the PC hotspot by itself\" on the PC while connected; it gives this phone its hotspot."
+                            else "When your PC says its hotspot is on, Linc offers to join it.",
+                        trailing = if (hotspot == null) null else ({ TextButton(onClick = { app.linc.android.service.PcHotspotJoin.requestNow(context) }) { Text("Join now") } })) },
                 ))
             }
 

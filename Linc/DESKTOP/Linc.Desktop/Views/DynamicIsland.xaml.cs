@@ -5,7 +5,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media.Animation;
+using System.Numerics;
 using Windows.Foundation;
 using Windows.UI;
 
@@ -67,6 +69,18 @@ public sealed partial class DynamicIsland : UserControl
     /// <summary>The title-bar host: a slimmer pill.</summary>
     public bool InTitleBar { get; set; }
 
+    /// <summary>
+    /// Anchored at its bottom (Home, just above the phone card; owner 2026-11-01): the expanded card
+    /// opens upward and the bubble lines up with the pill's bottom.
+    /// </summary>
+    public bool GrowsUp { get; set; }
+
+    /// <summary>Shown whether or not Settings › Linc Island is on (the desktop bubble has its own setting).</summary>
+    public bool IgnoreSetting { get; set; }
+
+    /// <summary>Something is live and the island is showing it.</summary>
+    public bool HasActivity => _visible;
+
     /// <summary>Hidden even with something live (the title-bar island while Home shows its own).</summary>
     public bool Suppressed
     {
@@ -104,7 +118,7 @@ public sealed partial class DynamicIsland : UserControl
     private void Render()
     {
         var live = _island.Activities;
-        bool on = _registry.LiveIsland && !_suppressed && live.Count > 0;
+        bool on = (_registry.LiveIsland || IgnoreSetting) && !_suppressed && live.Count > 0;
         if (!on)
         {
             Hide();
@@ -122,9 +136,12 @@ public sealed partial class DynamicIsland : UserControl
             // A new activity at the top opens by itself only when it asks to (a ringing call).
             _expanded = top.AutoExpand || (_focusId is not null && _expanded);
         }
+        bool wasVisible = _visible;
         _shown = top;
         Fill(top);
         FillBubble(_expanded ? null : next);
+        ExpandedPanel.VerticalAlignment = GrowsUp ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+        Bubble.VerticalAlignment = GrowsUp ? VerticalAlignment.Bottom : VerticalAlignment.Top;
 
         if (!_visible)
         {
@@ -134,8 +151,14 @@ public sealed partial class DynamicIsland : UserControl
             Pill.Height = CompactHeight;
             Pill.Opacity = 0;
             FadeTo(Pill, 1);
+            PopIn();
+        }
+        else if (newTop && wasVisible && !_expanded)
+        {
+            SlideIn(CompactRow, CompactShift); // the next thing slides in under the old one
         }
         Resize();
+        VisibilityChanged?.Invoke();
     }
 
     private void Fill(LiveActivity a)
@@ -187,8 +210,8 @@ public sealed partial class DynamicIsland : UserControl
                 Height = 34,
                 CornerRadius = new CornerRadius(17),
                 BorderThickness = new Thickness(0),
-                Foreground = new SolidColorBrush(Colors.White),
-                Background = new SolidColorBrush(action.Danger ? Color.FromArgb(0xFF, 0xFF, 0x45, 0x3A) : Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)),
+                Foreground = action.Danger ? new SolidColorBrush(Colors.White) : Theme("OnSecondaryContainerBrush", Colors.White),
+                Background = action.Danger ? new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x45, 0x3A)) : Theme("SecondaryContainerBrush", Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)),
                 Content = action.Glyph is { } glyph
                     ? new FontIcon { Glyph = glyph, FontSize = 14 }
                     : new TextBlock { Text = action.Label, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
@@ -252,6 +275,7 @@ public sealed partial class DynamicIsland : UserControl
         {
             FadeTo(CompactRow, _expanded ? 0 : 1);
             FadeTo(ExpandedPanel, _expanded ? 1 : 0);
+            if (_expanded) SlideIn(ExpandedPanel, ExpandedShift);
         }
         if (_target != new Size(width, height))
         {
@@ -272,14 +296,75 @@ public sealed partial class DynamicIsland : UserControl
         _target = default;
         FadeTo(Bubble, 0, () => Bubble.Visibility = Visibility.Collapsed);
         FadeTo(Pill, 0);
+        PopOut();
         Animate(CompactHeight, CompactHeight, () =>
         {
             if (!_visible)
             {
                 Root.Visibility = Visibility.Collapsed;
                 BoundsChanged?.Invoke();
+                VisibilityChanged?.Invoke();
             }
         });
+    }
+
+    /// <summary>Raised when the island appears or goes (the desktop bubble resizes its window).</summary>
+    public event Action? VisibilityChanged;
+
+    /// <summary>Appearing: a drop that lands and settles (a spring on the pill's scale).</summary>
+    private void PopIn()
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(Pill);
+            var spring = visual.Compositor.CreateSpringVector3Animation();
+            visual.CenterPoint = new Vector3((float)CompactHeight / 2, (float)CompactHeight / 2, 0);
+            spring.InitialValue = new Vector3(0.35f, 0.35f, 1);
+            spring.FinalValue = Vector3.One;
+            spring.DampingRatio = 0.55f;
+            spring.Period = TimeSpan.FromMilliseconds(55);
+            visual.StartAnimation("Scale", spring);
+        }
+        catch (Exception)
+        {
+            // Composition unavailable (remote session): the fade alone still shows it arriving.
+        }
+    }
+
+    /// <summary>Going: shrinks toward its centre as it fades.</summary>
+    private void PopOut()
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(Pill);
+            var shrink = visual.Compositor.CreateVector3KeyFrameAnimation();
+            visual.CenterPoint = new Vector3((float)Pill.ActualWidth / 2, (float)Pill.ActualHeight / 2, 0);
+            shrink.InsertKeyFrame(1f, new Vector3(0.6f, 0.6f, 1));
+            shrink.Duration = TimeSpan.FromMilliseconds(260);
+            visual.StartAnimation("Scale", shrink);
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    /// <summary>New content: rises a few pixels into place as it fades in (from below when the island grows up).</summary>
+    private void SlideIn(UIElement element, TranslateTransform shift)
+    {
+        var from = GrowsUp ? 8 : -8;
+        var slide = new DoubleAnimation { From = element == CompactRow ? 10 : from, To = 0, Duration = new Duration(TimeSpan.FromMilliseconds(320)), EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut } };
+        Storyboard.SetTarget(slide, shift);
+        Storyboard.SetTargetProperty(slide, "Y");
+        var board = new Storyboard();
+        board.Children.Add(slide);
+        if (element == CompactRow)
+        {
+            var fade = new DoubleAnimation { From = 0, To = 1, Duration = new Duration(TimeSpan.FromMilliseconds(260)) };
+            Storyboard.SetTarget(fade, element);
+            Storyboard.SetTargetProperty(fade, "Opacity");
+            board.Children.Add(fade);
+        }
+        board.Begin();
     }
 
     private void SetExpanded(bool expanded)
@@ -334,7 +419,17 @@ public sealed partial class DynamicIsland : UserControl
         board.Begin();
     }
 
-    private static Color Accent(LiveActivityKind kind) => kind switch
+    /// <summary>An app palette brush (kept live by ThemeSyncService, which retints it in place).</summary>
+    private static Brush Theme(string key, Color fallback) =>
+        Application.Current.Resources.TryGetValue(key, out var value) && value is Brush brush ? brush : new SolidColorBrush(fallback);
+
+    /// <summary>The kind's colour; music and files take the app's own primary colour.</summary>
+    private static Color Accent(LiveActivityKind kind) =>
+        kind is LiveActivityKind.Share or LiveActivityKind.Media && Theme("PrimaryBrush", default) is SolidColorBrush { Color: var primary } && primary.A > 0
+            ? primary
+            : FixedAccent(kind);
+
+    private static Color FixedAccent(LiveActivityKind kind) => kind switch
     {
         LiveActivityKind.Call => Color.FromArgb(0xFF, 0x34, 0xC7, 0x59),
         LiveActivityKind.Link => Color.FromArgb(0xFF, 0xFF, 0x9F, 0x0A),

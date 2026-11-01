@@ -372,6 +372,13 @@ public partial class SettingsViewModel : ObservableObject
         set { _registry.SaveLiveIsland(value); OnPropertyChanged(); }
     }
 
+    /// <summary>Settings › Appearance › Linc Bubble: a floating bubble on the desktop that opens into the island.</summary>
+    public bool LiveBubble
+    {
+        get => _registry.LiveBubble;
+        set { _registry.SaveLiveBubble(value); OnPropertyChanged(); }
+    }
+
     /// <summary>Settings › Appearance › Clock style, in the order the radio buttons list them; the first is the default.</summary>
     private static readonly string[] ClockStyleKeys = ["classic", "bold", "stacked", "serif", "minimal"];
 
