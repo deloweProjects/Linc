@@ -1,370 +1,317 @@
-using Linc.Desktop.Services;
+using System.Collections.ObjectModel;
 using Linc.Desktop.ViewModels;
+using Linc.Desktop.Views.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Navigation;
 
 namespace Linc.Desktop.Views;
 
+/// <summary>
+/// Settings: a home of cards that open the collections' own pages, and a search over all of them
+/// (the owner, 2026-11-03: "fix PC app settings UI bro, you can do better"). Every collection's
+/// page is made once with this page and only shown or hidden, so its switches stay bound and the
+/// search can read every <see cref="SettingRow"/> without opening anything.
+/// </summary>
 public sealed partial class SettingsPage : Page
 {
     public SettingsViewModel ViewModel { get; }
+
+    /// <summary>The home's cards, in order.</summary>
+    public ObservableCollection<SettingsCategoryVm> Categories { get; } = [];
+
+    /// <summary>
+    /// The collections, in card order. A new collection is a UserControl in Views/Settings, a line
+    /// here, and its card's one-line summary in <see cref="SettingsViewModel.SummaryFor"/>. A new
+    /// setting is a <see cref="SettingRow"/> in its collection's page: the search finds it by itself.
+    /// </summary>
+    private static readonly (string Key, string Glyph, string Title, Func<UserControl> Create)[] Collections =
+    [
+        ("connection", "", "Connection", () => new ConnectionSettings()),
+        ("finding", "", "Finding your phone", () => new FindingSettings()),
+        ("devices", "", "Phones", () => new DevicesSettings()),
+        ("appearance", "", "Appearance", () => new AppearanceSettings()),
+        ("mirror", "", "Mirror and sound", () => new MirrorSettings()),
+        ("notifications", "", "Notifications", () => new NotificationSettings()),
+        ("clipboard", "", "Clipboard", () => new ClipboardSettings()),
+        ("startup", "", "Startup and tray", () => new StartupSettings()),
+        ("advanced", "", "Advanced", () => new AdvancedSettings()),
+        ("about", "", "About", () => new AboutSettings()),
+    ];
+
+    /// <summary>A collection to open when Settings next appears ("about"); <see cref="MainWindow.ShowPage"/> sets it.</summary>
+    public static string? OpenOnArrival { get; set; }
+
+    private sealed record Group(SettingsGroup? Card, List<SettingRow> Rows);
+
+    /// <param name="Decor">What a page shows besides its cards (About's banner), hidden while searching.</param>
+    private sealed record Section(SettingsCategoryVm Category, FrameworkElement Wrapper, FrameworkElement SearchHeader, List<Group> Groups, List<UIElement> Decor);
+
+    private readonly List<Section> _sections = [];
+
+    /// <summary>The open collection's key, or null on the home.</summary>
+    private string? _open;
 
     public SettingsPage()
     {
         ViewModel = App.Services.GetRequiredService<SettingsViewModel>();
         InitializeComponent();
-        ViewModel.RemoveRequested += vm => _ = ConfirmRemoveAsync(vm);
-        _cable = new VirtualCableSetup(App.Services.GetRequiredService<ILogService>(), PcVoiceAccess.CablePresent);
-        Loaded += async (_, _) => await RefreshCableAsync();
-        _hotspot = App.Services.GetRequiredService<PcHotspot>();
-        Action onHotspot = () => DispatcherQueue.TryEnqueue(() => ShowHotspot());
-        Loaded += (_, _) => { _hotspot.Changed += onHotspot; ShowHotspot(); };
-        Unloaded += (_, _) => _hotspot.Changed -= onHotspot;
-        _nearby = App.Services.GetRequiredService<NearbyRules>();
-        _ble = App.Services.GetRequiredService<IBlePresenceService>();
-        _registryForNearby = App.Services.GetRequiredService<IDeviceRegistry>();
-        Action onNearby = () => DispatcherQueue.TryEnqueue(() => ShowNearby());
-        var nearbyTimer = new Microsoft.UI.Xaml.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        nearbyTimer.Tick += (_, _) => ShowNearby();
-        Loaded += (_, _) => { _nearby.Changed += onNearby; ShowNearby(); nearbyTimer.Start(); };
-        Unloaded += (_, _) => { _nearby.Changed -= onNearby; nearbyTimer.Stop(); };
-    }
 
-    // ---- PC hotspot (LincLink step 6, by hand) ---------------------------------------
-
-    private readonly PcHotspot _hotspot;
-    private readonly NearbyRules _nearby;
-    private readonly IBlePresenceService _ble;
-    private readonly IDeviceRegistry _registryForNearby;
-    private bool _showingNearby;
-
-    private void ShowNearby(string? bluetoothMessage = null)
-    {
-        _showingNearby = true;
-        NearbyBluetooth.Text = bluetoothMessage ?? (_ble.IsScanning
-            ? (_ble.IsAdvertising ? "Bluetooth: listening for the phone, and the phone can hear this PC." : "Bluetooth: listening for the phone.")
-            : "Bluetooth: off or unavailable on this PC, so the phone isn't heard. Linc tries again every 15 s.");
-        NearbyBluetoothButton.Visibility = _ble.IsScanning ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
-        NearbyPhone.Text = _ble.LastStatus is { } heard
-            ? $"The phone, {Ago(heard.At)}: {BlePresenceService.Describe(heard.Flags)}."
-            : "The phone hasn't been heard over Bluetooth yet. On the phone: Linc › Settings › Finding your PC › Bluetooth helper (needs Nearby devices).";
-        var current = NearbyRules.CurrentNetworks();
-        var home = _nearby.AtHome;
-        var learnt = _nearby.LinkedNetworks();
-        NearbyHome.Text = current.Count == 0 ? "Home networks: this PC isn't on a network right now."
-            : home ? $"Home: you're on {string.Join(", ", current)}" + (current.Any(c => learnt.Contains(c, StringComparer.OrdinalIgnoreCase)) ? ", where the phone has linked before." : ", marked as home.")
-            : $"This PC is on {string.Join(", ", current)}" + (_registryForNearby.HomeNetworks.Count > 0 ? $" (home is {string.Join(", ", _registryForNearby.HomeNetworks)})." : ". Mark it as home to use the home rule below.");
-        NearbyHomeButton.Content = home ? "Not home" : "This is home";
-        // Learnt places can't be un-marked here (they come back on the next link); marked ones can.
-        NearbyHomeButton.Visibility = home && !current.Any(c => _registryForNearby.HomeNetworks.Contains(c, StringComparer.OrdinalIgnoreCase))
-            ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
-        NearbyHomeButton.IsEnabled = current.Count > 0;
-        NearbyBluetoothAtHome.IsOn = _registryForNearby.BluetoothAtHome;
-        _showingNearby = false;
-    }
-
-    private static string Ago(DateTimeOffset at)
-    {
-        var seconds = (DateTimeOffset.UtcNow - at).TotalSeconds;
-        return seconds < 10 ? "just now" : seconds < 90 ? $"{seconds:0} s ago" : $"{seconds / 60:0} min ago";
-    }
-
-    private async void OnNearbyBluetoothClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        NearbyBluetoothButton.IsEnabled = false;
-        var result = await _nearby.TurnPcBluetoothOnAsync();
-        NearbyBluetoothButton.IsEnabled = true;
-        ShowNearby(result);
-    }
-
-    private void OnNearbyHomeClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        _nearby.MarkCurrentAsHome(!_nearby.AtHome);
-        ShowNearby();
-    }
-
-    private void OnNearbyBluetoothAtHomeToggled(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        if (_showingNearby || NearbyBluetoothAtHome.IsOn == _registryForNearby.BluetoothAtHome) return;
-        _registryForNearby.SaveBluetoothAtHome(NearbyBluetoothAtHome.IsOn);
-        if (NearbyBluetoothAtHome.IsOn) _nearby.Recheck();
-    }
-    private bool _hotspotBusy;
-
-    private void ShowHotspot(string? message = null)
-    {
-        var on = _hotspot.Current != PcHotspot.Mode.Off;
-        HotspotButton.Content = on ? "Stop PC hotspot" : "Start PC hotspot";
-        HotspotButton.IsEnabled = !_hotspotBusy;
-        HotspotStatus.Text = message ?? (_hotspot.Current switch
+        foreach (var (key, glyph, title, create) in Collections)
         {
-            PcHotspot.Mode.WifiDirect => "On (Wi-Fi Direct).",
-            PcHotspot.Mode.MobileHotspot when _hotspot.WasAlreadyOn => "On: Windows' Mobile Hotspot is on (switched on outside Linc), so Linc uses it.",
-            PcHotspot.Mode.MobileHotspot => "On (Windows' Mobile Hotspot, started by Linc).",
-            _ => _hotspot.LastError ?? "Off",
-        });
-        HotspotDetails.Visibility = on && _hotspot.Network is not null ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
-        if (on && _hotspot.Network is { } network)
-        {
-            var (ssid, password) = network;
-            HotspotSsid.Text = $"Wi-Fi: {ssid}";
-            HotspotPassword.Text = $"Password: {password}";
-            using var generator = new QRCoder.QRCodeGenerator();
-            using var data = generator.CreateQrCode(PcHotspot.JoinQr(ssid, password), QRCoder.QRCodeGenerator.ECCLevel.Q);
-            var png = new QRCoder.PngByteQRCode(data).GetGraphic(8);
-            var image = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-            using var stream = new System.IO.MemoryStream(png);
-            image.SetSource(stream.AsRandomAccessStream());
-            HotspotQr.Source = image;
-        }
-    }
-
-    private async void OnHotspotClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        try
-        {
-            _hotspotBusy = true;
-            ShowHotspot(_hotspot.Current == PcHotspot.Mode.Off ? "Starting…" : "Stopping…");
-            string? result = null;
-            if (_hotspot.Current == PcHotspot.Mode.Off)
+            var category = new SettingsCategoryVm(key, glyph, title, Open);
+            if (key != "about")
             {
-                result = await Task.Run(_hotspot.StartAsync);
+                Categories.Add(category); // About has the banner at the top instead of a card
             }
-            else
-            {
-                await Task.Run(_hotspot.StopAsync);
-            }
-            _hotspotBusy = false;
-            ShowHotspot(result);
+            var page = create();
+            var header = SearchHeader(category);
+            var wrapper = new StackPanel { Visibility = Visibility.Collapsed };
+            wrapper.Children.Add(header);
+            wrapper.Children.Add(page);
+            Sections.Children.Add(wrapper);
+            var decor = page.Content is Panel root
+                ? root.Children.Where(c => c is not SettingsGroup and not SettingRow).ToList()
+                : [];
+            _sections.Add(new Section(category, wrapper, header, Groups(page), decor));
         }
-        catch (Exception ex)
-        {
-            _hotspotBusy = false;
-            ShowHotspot($"Couldn't: {ex.Message}");
-            AsyncVoidGuard.Report(ex, "SettingsPage.OnHotspotClick");
-        }
-    }
 
-    /// <summary>The same question as the tab's X "Remove completely" (D-079).</summary>
-    private async Task ConfirmRemoveAsync(KnownDeviceVm vm)
-    {
-        var dialog = new ContentDialog
+        Loaded += (_, _) =>
         {
-            Title = $"Remove {vm.Model}?",
-            Content = $"Linc will unpair {vm.Model} and delete its saved copy on this PC. You'd pair it again to use it.\n\n" +
-                "To just put it away, close its tab instead — it stays paired.",
-            PrimaryButtonText = "Remove completely",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = XamlRoot,
+            ViewModel.PropertyChanged += OnViewModelChanged;
+            RefreshSummaries();
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        Unloaded += (_, _) => ViewModel.PropertyChanged -= OnViewModelChanged;
+        // The mouse's back button goes back too, as it does in a browser.
+        AddHandler(PointerPressedEvent, new PointerEventHandler((_, e) =>
         {
-            ViewModel.RemoveDevice(vm);
-        }
-    }
-
-    // ---- phone as microphone (D-071) ----------------------------------------------
-
-    private readonly VirtualCableSetup _cable;
-
-    private async Task RefreshCableAsync(string? message = null)
-    {
-        bool present = await Task.Run(PcVoiceAccess.CablePresent); // COM: off the UI thread
-        bool busy = _cable.IsBusy;
-        CableStatus.Text = message ?? (busy ? "Setting up…" : present
-            ? "Ready — the phone can be this PC's microphone."
-            : "Not set up. Linc sets it up the first time you use your phone as the microphone, or here.");
-        CableInstallButton.IsEnabled = !busy && !present;
-        CableRemoveButton.IsEnabled = !busy && present;
-    }
-
-    private async void OnCableInstallClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        try
-        {
-            var dialog = new ContentDialog
+            if (e.GetCurrentPoint(this).Properties.IsXButton1Pressed && GoBack())
             {
-                Title = "Set up the phone as a microphone?",
-                Content = $"Linc will download {VirtualCablePackage.DisplayName} {VirtualCablePackage.Version} from vb-audio.com, check it, and open VB-Audio's own installer: approve Windows' prompt, then click \"Install Driver\". VB-CABLE is donationware — see vb-audio.com for its terms.",
-                PrimaryButtonText = "Set up",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = Content.XamlRoot,
-            };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-            CableInstallButton.IsEnabled = false;
-            CableStatus.Text = "Downloading VB-CABLE…";
-            var progress = new Progress<int>(p => CableStatus.Text = p < 100
-                ? $"Downloading VB-CABLE… {p} %"
-                : "Approve Windows' prompt, then click Install Driver in VB-Audio's setup.");
-            var result = await Task.Run(() => _cable.InstallAsync(progress));
-            await RefreshCableAsync(result.Ok ? null : result.Message);
-        }
-        catch (Exception ex)
+                e.Handled = true;
+            }
+        }), true);
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        if (OpenOnArrival is { } key)
         {
-            AsyncVoidGuard.Report(ex, "SettingsPage.OnCableInstallClick");
+            OpenOnArrival = null;
+            Open(key);
         }
     }
 
-    private async void OnCableRemoveClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    // ---- home and the collections' pages ------------------------------------------------
+
+    /// <summary>Opens one collection's page (a card's key); an unknown key shows the home.</summary>
+    public void Open(string key)
     {
-        try
+        if (_sections.All(s => s.Category.Key != key))
         {
-            CableRemoveButton.IsEnabled = false;
-            CableStatus.Text = "Approve Windows' prompt, then click Remove Driver in VB-Audio's setup.";
-            var result = await Task.Run(() => _cable.UninstallAsync());
-            await RefreshCableAsync(result.Message);
+            ShowHome();
+            return;
         }
-        catch (Exception ex)
+        _open = key;
+        if (SearchBox.Text.Length > 0)
         {
-            AsyncVoidGuard.Report(ex, "SettingsPage.OnCableRemoveClick");
+            SearchBox.Text = ""; // its TextChanged comes back through Show()
         }
+        Show();
+        Scroller.ChangeView(null, 0, null, disableAnimation: true);
+    }
+
+    private void ShowHome()
+    {
+        _open = null;
+        Show();
+    }
+
+    /// <summary>Lays the page out for what's on: a search, an open collection, or the home.</summary>
+    private void Show()
+    {
+        var query = SearchBox.Text.Trim();
+        if (query.Length > 0)
+        {
+            ShowSearch(query);
+            return;
+        }
+        NoMatches.Visibility = Visibility.Collapsed;
+        var open = _sections.FirstOrDefault(s => s.Category.Key == _open);
+        HomeView.Visibility = open is null ? Visibility.Visible : Visibility.Collapsed;
+        BackButton.Visibility = open is null ? Visibility.Collapsed : Visibility.Visible;
+        TitleIcon.Visibility = open is null ? Visibility.Collapsed : Visibility.Visible;
+        TitleIcon.Glyph = open?.Category.Glyph ?? "";
+        TitleText.Text = open?.Category.Title ?? "Settings";
+        foreach (var section in _sections)
+        {
+            section.Wrapper.Visibility = section == open ? Visibility.Visible : Visibility.Collapsed;
+            section.SearchHeader.Visibility = Visibility.Collapsed;
+            section.Decor.ForEach(d => d.Visibility = Visibility.Visible);
+            foreach (var group in section.Groups)
+            {
+                group.Card?.SetShown(true);
+                group.Rows.ForEach(r => r.SetShown(true));
+            }
+        }
+        if (open is null)
+        {
+            RefreshSummaries();
+        }
+    }
+
+    /// <summary>Back from a search or a collection; false when already on the home.</summary>
+    private bool GoBack()
+    {
+        if (SearchBox.Text.Length > 0)
+        {
+            SearchBox.Text = "";
+            return true;
+        }
+        if (_open is not null)
+        {
+            ShowHome();
+            return true;
+        }
+        return false;
+    }
+
+    private void OnBackClick(object sender, RoutedEventArgs e) => GoBack();
+
+    private void OnAboutBannerClick(object sender, RoutedEventArgs e) => Open("about");
+
+    private void OnEscapeInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) => args.Handled = GoBack();
+
+    private void OnFindInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        SearchBox.Focus(FocusState.Keyboard);
+        args.Handled = true;
+    }
+
+    private void RefreshSummaries()
+    {
+        foreach (var category in Categories)
+        {
+            category.Summary = ViewModel.SummaryFor(category.Key);
+        }
+    }
+
+    private void OnViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_open is null)
+        {
+            DispatcherQueue.TryEnqueue(RefreshSummaries);
+        }
+    }
+
+    // ---- search -------------------------------------------------------------------------
+
+    private void OnSearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        Show();
+        Scroller.ChangeView(null, 0, null, disableAnimation: true); // results start at the top
     }
 
     /// <summary>
-    /// "Clear history" confirmation gate (§2.4): the action must ask before deleting every stored
-    /// notification. Matches the Files page delete dialog shape — the gate lives in the code-behind
-    /// so the view model just runs the delete once the user confirms.
+    /// Every collection's page at once, each under its name, showing only what matches: a whole
+    /// collection when its name matches, a whole card when its title does, and the matching rows
+    /// otherwise. Every word typed has to be found.
     /// </summary>
-    private async void OnClearHistoryClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    private void ShowSearch(string query)
     {
-        try
+        var words = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool Matches(string text) => words.All(w => text.Contains(w, StringComparison.CurrentCultureIgnoreCase));
+
+        HomeView.Visibility = Visibility.Collapsed;
+        BackButton.Visibility = Visibility.Visible;
+        TitleIcon.Visibility = Visibility.Collapsed;
+        TitleText.Text = "Settings";
+        foreach (var section in _sections)
         {
-            var dialog = new ContentDialog
+            bool sectionHit = Matches(section.Category.Title);
+            bool anyGroup = false;
+            foreach (var group in section.Groups)
             {
-                Title = "Clear notification history?",
-                Content = "Every stored notification, for all devices, will be deleted from this PC. This can't be undone.",
-                PrimaryButtonText = "Clear",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = Content.XamlRoot,
-            };
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                await ViewModel.ClearHistoryCommand.ExecuteAsync(null);
+                bool groupHit = sectionHit || (group.Card is { } card && Matches(card.SearchText));
+                bool anyRow = false;
+                foreach (var row in group.Rows)
+                {
+                    bool hit = groupHit || Matches(row.SearchText);
+                    row.SetShown(hit);
+                    anyRow |= hit;
+                }
+                bool show = groupHit || anyRow;
+                group.Card?.SetShown(show);
+                anyGroup |= show;
             }
+            section.Wrapper.Visibility = anyGroup ? Visibility.Visible : Visibility.Collapsed;
+            section.SearchHeader.Visibility = Visibility.Visible;
+            section.Decor.ForEach(d => d.Visibility = Visibility.Collapsed);
         }
-        catch (Exception ex)
-        {
-            AsyncVoidGuard.Report(ex, "SettingsPage.OnClearHistoryClick");
-        }
+        bool none = _sections.All(s => s.Wrapper.Visibility == Visibility.Collapsed);
+        NoMatches.Visibility = none ? Visibility.Visible : Visibility.Collapsed;
+        NoMatchesText.Text = $"No setting matches “{query}”.\nTry another word, like Wi-Fi, bubble or font.";
     }
 
-    // ---- Connection Doctor -------------------------------------------------------------
+    /// <summary>The collection's name above its results while searching; a click opens it.</summary>
+    private FrameworkElement SearchHeader(SettingsCategoryVm category)
+    {
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        content.Children.Add(new FontIcon { Glyph = category.Glyph, FontSize = 16 });
+        content.Children.Add(new TextBlock { Text = category.Title, Style = (Style)Application.Current.Resources["TitleText"], VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
+        var button = new Button
+        {
+            Content = content,
+            Style = (Style)Application.Current.Resources["QuietButton"],
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(8, 6, 12, 6),
+            Margin = new Thickness(0, 4, 0, 8),
+            Visibility = Visibility.Collapsed,
+        };
+        ToolTipService.SetToolTip(button, $"Open {category.Title}");
+        button.Click += (_, _) => Open(category.Key);
+        return button;
+    }
 
     /// <summary>
-    /// Runs every check, shows each result with its plain reason, and a Fix button where Linc can
-    /// fix it; "Check again" re-runs them. Built in code: one list, no page of its own.
+    /// A page's cards and their rows, read once from what its XAML made (no visual tree needed, so
+    /// it works while the page is hidden). Rows outside any card form a group of their own.
     /// </summary>
-    private async void OnConnectionDoctorClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    private static List<Group> Groups(DependencyObject page)
     {
-        try
+        var groups = new List<Group>();
+        var loose = new List<SettingRow>();
+        void Walk(DependencyObject node, List<SettingRow> into)
         {
-            var doctor = App.Services.GetRequiredService<ConnectionDoctor>();
-            var list = new StackPanel { Spacing = 14, MinWidth = 460 };
-            var scroller = new ScrollViewer { Content = list, MaxHeight = 520 };
-            var dialog = new ContentDialog
+            switch (node)
             {
-                Title = "Connection Doctor",
-                Content = scroller,
-                PrimaryButtonText = "Check again",
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = Content.XamlRoot,
-            };
-
-            async Task RunAsync()
-            {
-                list.Children.Clear();
-                list.Children.Add(new StackPanel
-                {
-                    Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
-                    Spacing = 10,
-                    Children = { new ProgressRing { IsActive = true, Width = 18, Height = 18 }, new TextBlock { Text = "Checking…" } },
-                });
-                var findings = await Task.Run(() => doctor.RunAsync(CancellationToken.None));
-                list.Children.Clear();
-                foreach (var finding in findings)
-                {
-                    list.Children.Add(Row(finding));
-                }
+                case SettingsGroup card:
+                    var rows = new List<SettingRow>();
+                    foreach (var child in card.Items) Walk(child, rows);
+                    groups.Add(new Group(card, rows));
+                    return;
+                case SettingRow row:
+                    into.Add(row);
+                    return;
+                case Panel panel:
+                    foreach (var child in panel.Children) Walk(child, into);
+                    return;
+                case Border { Child: { } child }:
+                    Walk(child, into);
+                    return;
+                case UserControl { Content: { } child }:
+                    Walk(child, into);
+                    return;
             }
-
-            Microsoft.UI.Xaml.UIElement Row(DoctorFinding finding)
-            {
-                var (glyph, brush) = finding.Status switch
-                {
-                    DoctorStatus.Ok => ("", "SuccessBrush"),
-                    DoctorStatus.Warning => ("", "WarningBrush"),
-                    DoctorStatus.Problem => ("", "ErrorBrush"),
-                    _ => ("", "OnSurfaceVariantBrush"),
-                };
-                var icon = new FontIcon { Glyph = glyph, FontSize = 16, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Top, Margin = new Microsoft.UI.Xaml.Thickness(0, 2, 0, 0) };
-                if (Microsoft.UI.Xaml.Application.Current.Resources.TryGetValue(brush, out var b) && b is Microsoft.UI.Xaml.Media.Brush color)
-                {
-                    icon.Foreground = color;
-                }
-                var text = new StackPanel { Spacing = 2 };
-                text.Children.Add(new TextBlock { Text = finding.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-                var detail = new TextBlock { Text = finding.Detail, TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap, Opacity = 0.85 };
-                text.Children.Add(detail);
-                if (finding is { FixLabel: { } label, Fix: { } fix })
-                {
-                    var button = new Button { Content = label, Margin = new Microsoft.UI.Xaml.Thickness(0, 6, 0, 0) };
-                    button.Click += async (_, _) =>
-                    {
-                        try
-                        {
-                            button.IsEnabled = false;
-                            detail.Text = await Task.Run(fix);
-                        }
-                        catch (Exception ex)
-                        {
-                            detail.Text = $"That didn't work: {ex.Message}";
-                            button.IsEnabled = true;
-                        }
-                    };
-                    text.Children.Add(button);
-                }
-                var grid = new Grid { ColumnSpacing = 12 };
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new Microsoft.UI.Xaml.GridLength(1, Microsoft.UI.Xaml.GridUnitType.Star) });
-                grid.Children.Add(icon);
-                Grid.SetColumn(text, 1);
-                grid.Children.Add(text);
-                return grid;
-            }
-
-            dialog.PrimaryButtonClick += async (_, args) =>
-            {
-                args.Cancel = true; // stay open and check again
-                var deferral = args.GetDeferral();
-                try
-                {
-                    await RunAsync();
-                }
-                finally
-                {
-                    deferral.Complete();
-                }
-            };
-            dialog.Opened += async (_, _) =>
-            {
-                try
-                {
-                    await RunAsync();
-                }
-                catch (Exception ex)
-                {
-                    AsyncVoidGuard.Report(ex, "SettingsPage.ConnectionDoctor");
-                }
-            };
-            await dialog.ShowAsync();
         }
-        catch (Exception ex)
+        Walk(page, loose);
+        if (loose.Count > 0)
         {
-            AsyncVoidGuard.Report(ex, "SettingsPage.OnConnectionDoctorClick");
+            groups.Add(new Group(null, loose));
         }
+        return groups;
     }
 }

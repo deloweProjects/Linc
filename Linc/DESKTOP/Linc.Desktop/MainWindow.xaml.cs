@@ -637,11 +637,27 @@ public sealed partial class MainWindow : Window
 
     public void ShowSharePage() => ShowPage("Share");
 
-    /// <summary>Bring Linc up on one of its pages (by Nav tag), or just bring it up (null). The Linc Bubble's shortcuts.</summary>
+    /// <summary>
+    /// Bring Linc up on one of its pages (by Nav tag), or just bring it up (null). The Linc Bubble's
+    /// shortcuts. "Settings" opens Settings, and "Settings/about" one of its collections (the keys
+    /// in SettingsPage.Collections).
+    /// </summary>
     public void ShowPage(string? tag) => DispatcherQueue.TryEnqueue(() =>
     {
         AppWindow.Show();
         Activate();
+        if (tag is not null && (tag == "Settings" || tag.StartsWith("Settings/", StringComparison.Ordinal)))
+        {
+            var section = tag.Length > "Settings/".Length ? tag["Settings/".Length..] : null;
+            if (ContentFrame.Content is SettingsPage open)
+            {
+                if (section is not null) open.Open(section);
+                return;
+            }
+            SettingsPage.OpenOnArrival = section;
+            Nav.SelectedItem = Nav.SettingsItem;
+            return;
+        }
         var item = tag is null ? null : Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == tag);
         if (item is not null)
         {
