@@ -289,7 +289,9 @@ public partial class MirrorSettingsViewModel : ObservableObject
             AudioBitRate: AudioBitRate,
             AudioSource: AudioSource == AudioSourceDefault ? null : AudioSource,
             MutePhone: current.MutePhone,
-            ScreenShape: current.ScreenShape);
+            ScreenShape: current.ScreenShape,
+            ControlStrip: current.ControlStrip,
+            BarColour: current.BarColour);
         _saving = true;
         try
         {

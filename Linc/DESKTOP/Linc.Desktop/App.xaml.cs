@@ -266,6 +266,12 @@ public partial class App : Application
                 Views.LincBubbleHost.Preview();
                 return;
             }
+            // Development only: the phone buttons beside any window titled "Linc" (MirrorStripHost.Preview).
+            if (Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--strip-preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                Views.MirrorStripHost.Preview();
+                return;
+            }
             // 1.0.0.11 (D-085): the uninstaller's clean-up. Put back anything Linc changed on the
             // PC — the default and Voice Access microphones, the display scale, Explorer's menu and
             // the autostart entry — then exit without a window. VB-CABLE stays installed.
@@ -374,6 +380,7 @@ public partial class App : Application
             // MainWindow.OnAppWindowClosing) — no second hiding mechanism.
             _window.Activate();
             Views.LincBubbleHost.Begin(); // Settings › Appearance › Linc Bubble (off by default)
+            Views.MirrorStripHost.Begin(); // the phone's buttons beside the mirror while it runs
             var commandLineArgs = Environment.GetCommandLineArgs();
             if (StartupRegistration.IsStartupLaunch(commandLineArgs) && quickSharePaths.Count == 0 && phonePaths.Count == 0)
             {
