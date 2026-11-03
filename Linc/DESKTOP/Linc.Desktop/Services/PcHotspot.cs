@@ -157,16 +157,20 @@ public sealed class PcHotspot(
             return;
         }
         var key = registry.PairedSerial ?? live.Serial; // the same key the Bluetooth sighting carries
-        var stamp = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{key}|{net.Ssid}|{net.Password}")))[..16];
-        if (SentStamp(key) == stamp)
+        // Once per link, not once for ever (owner's log, 2026-11-01): a stamp saved on disk said
+        // "the phone has it" while the phone had lost it (reinstalled, or an older Linc that ignored
+        // link.hotspot), so the phone never learnt the hotspot and couldn't rejoin it by itself.
+        // The phone ignores a network it already holds, so a resend per connect costs nothing.
+        var stamp = $"{key}|{net.Ssid}|{net.Password}|{supervisor.ConnectedAtUtc?.UtcTicks}";
+        if (_sentFor == stamp)
         {
-            return; // the phone already has exactly this network
+            return; // this link already has exactly this network
         }
         try
         {
             await connection.SendToPhoneAsync(Protocol.Envelope.Create(Protocol.MessageType.LinkHotspot,
                 new System.Text.Json.Nodes.JsonObject { ["ssid"] = net.Ssid, ["password"] = net.Password }), CancellationToken.None);
-            SaveSentStamp(key, stamp);
+            _sentFor = stamp;
             log.Log(LogLevel.Info, $"PC hotspot: gave the phone this PC's hotspot (\"{net.Ssid}\") so it can join by itself later.");
         }
         catch (Exception ex)
@@ -246,34 +250,8 @@ public sealed class PcHotspot(
         }
     }
 
-    private string SentPath => Path.Combine(registry.RootPath, "pc-hotspot-sent.json");
-
-    private string? SentStamp(string serial)
-    {
-        try
-        {
-            return File.Exists(SentPath) && JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(SentPath)) is { } map &&
-                map.TryGetValue(serial, out var stamp) ? stamp : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private void SaveSentStamp(string serial, string stamp)
-    {
-        try
-        {
-            var map = File.Exists(SentPath) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(SentPath)) ?? [] : [];
-            map[serial] = stamp;
-            File.WriteAllText(SentPath, JsonSerializer.Serialize(map));
-        }
-        catch (Exception ex)
-        {
-            log.Log(LogLevel.Warn, $"PC hotspot: couldn't note that the phone has the hotspot ({ex.Message})");
-        }
-    }
+    // What the current link was last given (OnLinkChangedAsync).
+    private string? _sentFor;
 
     private readonly object _lock = new();
     private WiFiDirectAdvertisementPublisher? _publisher;

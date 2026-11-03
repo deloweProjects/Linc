@@ -49,8 +49,16 @@
     <Content Include="Assets/**/*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <None Include="..\..\SCRCPY\Linc.scrcpy\bin\**\*">
+    <None Include="..\..\SCRCPY\Linc.scrcpy\bin\**\*" Exclude="..\..\SCRCPY\Linc.scrcpy\bin\adb.exe">
       <Link>SCRCPY\Linc.scrcpy\bin\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Linc's own adb ships as linc-adb.exe (owner, 2026-11-03): its server already has its own
+         port (5038), and under its own name a tool that kills every adb.exe leaves it alone, and
+         Task Manager shows which adb is Linc's. It still ends in "adb.exe", as AdvancedSharpAdbClient
+         requires. -->
+    <None Include="..\..\SCRCPY\Linc.scrcpy\bin\adb.exe">
+      <Link>SCRCPY\Linc.scrcpy\bin\linc-adb.exe</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -55,7 +55,16 @@ object PcHotspotJoin {
     /** The PC's `link.hotspot`. */
     fun onDetails(context: Context, ssid: String, password: String) {
         val held = held(context)
-        if (!isNew(held, ssid, password)) return
+        // The PC sends this on every connect. A network already held is suggested again anyway:
+        // Android's copy can be gone while Linc's prefs remain (owner's phone, 2026-11-01: Wi-Fi
+        // had no suggestion from Linc at all), and adding a duplicate is harmless.
+        if (!isNew(held, ssid, password)) {
+            runCatching {
+                context.applicationContext.getSystemService(WifiManager::class.java)
+                    ?.addNetworkSuggestions(listOf(suggestion(ssid, password)))
+            }
+            return
+        }
         val wifi = context.applicationContext.getSystemService(WifiManager::class.java) ?: return
         runCatching {
             held?.let { (oldSsid, oldPassword) -> wifi.removeNetworkSuggestions(listOf(suggestion(oldSsid, oldPassword))) }

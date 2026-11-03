@@ -436,6 +436,9 @@ public sealed partial class DynamicIsland : UserControl
         LiveActivityKind.Share => Color.FromArgb(0xFF, 0x8F, 0x6A, 0xD8),
         LiveActivityKind.Mirror => Color.FromArgb(0xFF, 0x5B, 0x5B, 0xD6),
         LiveActivityKind.Battery => Color.FromArgb(0xFF, 0xFF, 0x45, 0x3A),
+        LiveActivityKind.Notification => Color.FromArgb(0xFF, 0x0A, 0x84, 0xFF),
+        LiveActivityKind.Status => Color.FromArgb(0xFF, 0x34, 0xC7, 0x59),
+        LiveActivityKind.Clipboard => Color.FromArgb(0xFF, 0x30, 0xB0, 0xC7),
         _ => Color.FromArgb(0xFF, 0xE0, 0x45, 0x7B),
     };
 

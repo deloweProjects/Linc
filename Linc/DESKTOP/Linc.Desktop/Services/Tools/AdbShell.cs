@@ -149,6 +149,34 @@ public sealed class AdbShell(IAdbServerHost server, ILogService log) : IAdbShell
         }
     }
 
+    public async Task<string?> StreamAsync(string serial, string command, Action<string> onLine, CancellationToken ct)
+    {
+        log.Log(LogLevel.Info, $"Tools: {command} (live)");
+        if (!_devices.TryGetValue(serial, out var device))
+        {
+            return "The phone isn't connected.";
+        }
+        try
+        {
+            var receiver = new FunctionOutputReceiver(line =>
+            {
+                onLine(line);
+                return !ct.IsCancellationRequested;
+            });
+            await _adb.ExecuteRemoteCommandAsync(command, device, receiver, System.Text.Encoding.UTF8, ct);
+            return ct.IsCancellationRequested ? null : "The phone stopped sending.";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (Exception ex)
+        {
+            log.Log(LogLevel.Warn, $"Tools: live command ended: {ex.Message}");
+            return "Lost the phone. Check the cable or wireless debugging.";
+        }
+    }
+
     public async Task<ShellResult> AdbAsync(string serial, string[] args, TimeSpan? timeout = null, CancellationToken ct = default)
     {
         var command = "adb " + string.Join(' ', args);

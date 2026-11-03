@@ -117,6 +117,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         getSystemService(ClipboardManager::class.java)
             .addPrimaryClipChangedListener(clipboardListener)
+        // In the foreground, so Android can ask for the device-log access background clipboard sync needs.
+        app.linc.android.service.ClipboardWatcher.refresh()
         // Opening Linc is the user saying "connect" (D-081): skip the dialler's wait.
         app.linc.android.service.ReconnectSignal.poke("Linc opened")
         // LincLink: and it starts Linc if it isn't running (unless it was stopped by hand), so the

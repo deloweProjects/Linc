@@ -378,6 +378,35 @@
                         <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.LiveBubble, Mode=TwoWay}" />
                     </Grid>
+                    <Grid ColumnSpacing="16" Visibility="{x:Bind ViewModel.LiveBubble, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Bubble size" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="How big the Linc Bubble is on your desktop. Its shortcuts: click the bubble, then the pencil." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Slider Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                Minimum="28" Maximum="64" StepFrequency="2" SmallChange="2"
+                                Value="{x:Bind ViewModel.BubbleSizeValue, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnSpacing="16" Visibility="{x:Bind ViewModel.LiveBubble, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="When the bubble is idle" Style="{StaticResource BodyText}" />
+                            <TextBlock views:Explain.IsHelp="True" Text="Slim tab: it slides into the screen edge as a thin tab. Hidden: nothing shows until you move the pointer to that edge or something happens. Always a bubble: it stays as it is." Style="{StaticResource BodyText}" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" MinWidth="160" VerticalAlignment="Center"
+                                  SelectedIndex="{x:Bind ViewModel.BubbleIdleIndex, Mode=TwoWay}">
+                            <x:String>Slim tab</x:String>
+                            <x:String>Hidden</x:String>
+                            <x:String>Always a bubble</x:String>
+                        </ComboBox>
+                    </Grid>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

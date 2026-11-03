@@ -20,6 +20,9 @@ public interface IClipboardSyncService
 
     event Action? HistoryChanged;
 
+    /// <summary>Raised on the UI thread when a copy from the phone landed on this PC's clipboard.</summary>
+    event Action<string>? ReceivedFromPhone;
+
     /// <summary>Put an item back on this PC's clipboard ("Copy here").</summary>
     void Recopy(ClipEntry entry);
 
@@ -66,6 +69,10 @@ public sealed class ClipboardSyncService(
     private DispatcherQueue? _dispatcher;
     private string? _lastReceived;
     private string? _lastSent;
+    // The newest copy made on this PC and when, so a phone's replayed copy (sent again after a
+    // drop) can be weighed against it: the newer one wins on both sides.
+    private string? _localCopy;
+    private DateTimeOffset _localCopyAtUtc;
     private IReadOnlyList<ClipEntry> _history = [];
 
     public bool Enabled
@@ -77,6 +84,7 @@ public sealed class ClipboardSyncService(
     public IReadOnlyList<ClipEntry> History => _history;
 
     public event Action? HistoryChanged;
+    public event Action<string>? ReceivedFromPhone;
 
     /// <summary>Whose history: the connected phone, else the active tab's phone.</summary>
     private string? Key => connection.Current?.CacheKey ?? registry.PairedSerial;
@@ -220,6 +228,7 @@ public sealed class ClipboardSyncService(
             if (registry.PairedSerial is not null && await ReadShareableTextAsync() is { } pending && pending != _lastReceived)
             {
                 _lastSent = pending;
+                NoteLocalCopy(pending);
                 await outbox.EnqueueTextAsync(OutboxService.ClipKind, pending);
             }
             return;
@@ -248,15 +257,36 @@ public sealed class ClipboardSyncService(
             return;
         }
         _lastSent = text;
+        if (text != _lastReceived)
+        {
+            NoteLocalCopy(text);
+        }
+        await SendOrQueueAsync(text);
+    }
+
+    private void NoteLocalCopy(string text)
+    {
+        _localCopy = text;
+        _localCopyAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Sends a clip to the phone, or queues it for the reconnect when the link turns out dead
+    /// (owner, 2026-11-01: "clipboard sync broken both ways" around Wi-Fi drops: during the 12 s
+    /// the session is kept, or on a stale link, the send failed and the copy was dropped).
+    /// </summary>
+    private async Task SendOrQueueAsync(string text)
+    {
         try
         {
             await connection.SendClipboardAsync(text, CancellationToken.None);
             log.Log(LogLevel.Info, "Clipboard synced to phone");
             AddHistory(text, fromPhone: false);
         }
-        catch (LincException)
+        catch (Exception ex) when (ex is LincException or IOException or ObjectDisposedException or TimeoutException)
         {
-            // Link is dying; the supervisor's health loop will notice and reconnect.
+            await outbox.EnqueueTextAsync(OutboxService.ClipKind, text);
+            log.Log(LogLevel.Info, "Clipboard: the phone didn't take the copy (the link is down); it goes when the phone is back");
         }
     }
 
@@ -331,6 +361,17 @@ public sealed class ClipboardSyncService(
         {
             return;
         }
+        // A copy the phone sends again after a drop (replay: true, at = when it was copied, v32+
+        // phones): if this PC copied something newer meanwhile, the PC's wins on both sides.
+        var replay = Replay(envelope.Payload);
+        if (replay is { } atMs &&
+            _localCopy is { } mine && mine != text &&
+            DateTimeOffset.FromUnixTimeMilliseconds(atMs) < _localCopyAtUtc)
+        {
+            KeepLocalCopy(mine);
+            return;
+        }
+        var phoneWins = replay is not null && _localCopy is { } older && older != text;
         var repeat = text == _lastReceived;
         _lastReceived = text;
         try
@@ -341,12 +382,52 @@ public sealed class ClipboardSyncService(
                 package.SetText(text);
                 Clipboard.SetContent(package);
                 log.Log(LogLevel.Info, "Clipboard synced from phone");
+                ReceivedFromPhone?.Invoke(text);
             }
             AddHistory(text, fromPhone: true);
+            if (phoneWins)
+            {
+                // The PC may have handed the phone its older copy on reconnect: give the phone
+                // its own newer one back so both end on the same clip.
+                _lastSent = text;
+                _ = SendOrQueueAsync(text);
+            }
         }
         catch (Exception)
         {
             // Another app holds the clipboard open; the next change will win.
+        }
+    }
+
+    /// <summary>A replayed phone copy lost to a newer one made here: keep (or put back) this PC's and send it to the phone.</summary>
+    private void KeepLocalCopy(string mine)
+    {
+        _lastSent = mine;
+        try
+        {
+            var package = new DataPackage();
+            package.SetText(mine);
+            Clipboard.SetContent(package);
+        }
+        catch (Exception)
+        {
+            // Another app holds the clipboard open; the phone still gets this PC's copy.
+        }
+        log.Log(LogLevel.Info, "Clipboard: this PC's copy is newer than the one the phone sent again; kept it on both");
+        _ = SendOrQueueAsync(mine);
+    }
+
+    /// <summary>When a replayed phone copy was made (unix ms), or null for an ordinary live copy.</summary>
+    private static long? Replay(JsonObject payload)
+    {
+        try
+        {
+            return payload["replay"] is JsonValue r && r.TryGetValue<bool>(out var yes) && yes &&
+                payload["at"] is JsonValue a && a.TryGetValue<long>(out var at) ? at : null;
+        }
+        catch (Exception)
+        {
+            return null; // malformed: treat as a live copy
         }
     }
 }

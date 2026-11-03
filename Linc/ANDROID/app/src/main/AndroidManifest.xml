@@ -306,6 +306,19 @@
             android:exported="true"
             android:foregroundServiceType="connectedDevice|microphone|mediaProjection" />
 
+        <!-- Quick Settings tile: start/stop Linc, lit while it runs. -->
+        <service
+            android:name=".service.LincTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_linc"
+            android:label="Linc"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true" />
+        </service>
+
         <service
             android:name=".service.LincNotificationListener"
             android:exported="false"

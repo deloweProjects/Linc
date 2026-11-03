@@ -49,6 +49,21 @@ public static class QsShellIntegration
     /// <summary>True for the pipe message <see cref="TryForwardQuit"/> sends.</summary>
     public static bool IsQuit(IReadOnlyList<string> paths) => paths.Count == 1 && paths[0] == QuitMarker;
 
+    private const string ShowMarker = "@show";
+
+    /// <summary>Linc was started again (the desktop or Start icon) while it runs: ask the running one to show its window.</summary>
+    public static bool TryForwardShow()
+    {
+        AllowSetForegroundWindow(-1); // ASFW_ANY: this launch holds the foreground; let the running Linc take it
+        return TryForward([ShowMarker]);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
+
+    /// <summary>True for the pipe message <see cref="TryForwardShow"/> sends.</summary>
+    public static bool IsShow(IReadOnlyList<string> paths) => paths.Count == 1 && paths[0] == ShowMarker;
+
     /// <summary>Per user and per session, so two people signed in never cross wires.</summary>
     private static string PipeName => $"LincQuickShare-{Environment.UserName}-{System.Diagnostics.Process.GetCurrentProcess().SessionId}";
 

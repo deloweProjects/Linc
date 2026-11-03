@@ -33,6 +33,13 @@ object ClipboardBridge {
     @Volatile
     private var lastSent: String? = null
 
+    /** When [lastSent] was copied here and when the PC's last clip arrived (wall clock, ms). */
+    @Volatile
+    private var lastSentAt = 0L
+
+    @Volatile
+    private var lastFromDesktopAt = 0L
+
     /** True while Linc's own window has focus — the only time Android lets it read the clipboard. */
     @Volatile
     var focused: Boolean = false
@@ -44,6 +51,7 @@ object ClipboardBridge {
     fun applyFromDesktop(context: Context, text: String) {
         if (!ClipboardSettings.syncEnabled(context)) return
         lastFromDesktop = text
+        lastFromDesktopAt = System.currentTimeMillis()
         val clipboard = context.getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(ClipData.newPlainText("Linc", text))
         ClipboardHistoryStore.init(context)
@@ -65,6 +73,7 @@ object ClipboardBridge {
             return
         }
         lastSent = text
+        lastSentAt = System.currentTimeMillis()
         ClipboardHistoryStore.init(context)
         ClipboardHistoryStore.record(text, fromPhone = true)
         send(text, context)
@@ -78,6 +87,7 @@ object ClipboardBridge {
     fun sendToPc(context: Context, text: String): Boolean {
         if (text.isBlank() || !CompanionOutbox.canSend(1)) return false
         lastSent = text
+        lastSentAt = System.currentTimeMillis()
         ClipboardHistoryStore.init(context)
         ClipboardHistoryStore.record(text, fromPhone = true, sent = true)
         send(text)
@@ -106,6 +116,28 @@ object ClipboardBridge {
     fun onPcAsked(context: Context) {
         if (focused) pushIfChanged(context, force = true)
     }
+
+    /**
+     * A PC link just came up ([PendingSends.flushSoon]): send this phone's newest copy again if
+     * nothing newer came from the PC since (owner, 2026-11-01: "clipboard sync broken both ways"
+     * around Wi-Fi drops — a copy sent into a link that was already dead was lost). Marked as a
+     * replay with when it was copied, so the PC keeps whichever side's copy is newer, on both.
+     */
+    fun replayNewest() {
+        val text = lastSent ?: return
+        if (lastSentAt <= lastFromDesktopAt) return
+        CompanionOutbox.trySend(replayEnvelope(text, lastSentAt), requiredVersion = 1, topic = Topic.CLIPBOARD)
+    }
+
+    /** `clipboard.changed` for a copy sent again after a drop; older PCs ignore the extra fields. */
+    fun replayEnvelope(text: String, at: Long): Envelope = Envelope(
+        type = MessageType.CLIPBOARD_CHANGED,
+        payload = buildJsonObject {
+            put("text", text)
+            put("replay", true)
+            put("at", at)
+        },
+    )
 
     private fun send(text: String, context: Context? = null) {
         if (context != null && !CompanionOutbox.canSend(1)) {

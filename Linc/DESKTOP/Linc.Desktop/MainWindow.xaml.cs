@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     public RelayCommand SendClipboardCommand { get; }
     public RelayCommand PasteAndSendCommand { get; }
     public RelayCommand TogglePauseCommand { get; }
+    public RelayCommand ToggleBubbleCommand { get; }
 
     private System.Drawing.Icon? _trayConnected;
     private System.Drawing.Icon? _trayDisconnected;
@@ -49,6 +50,10 @@ public sealed partial class MainWindow : Window
         ShowWindowCommand = new RelayCommand(() =>
         {
             AppWindow.Show();
+            if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
+            {
+                presenter.Restore();
+            }
             Activate();
         });
         ShowShareCommand = new RelayCommand(ShowSharePage);
@@ -56,6 +61,12 @@ public sealed partial class MainWindow : Window
         SendClipboardCommand = new RelayCommand(() => _ = SendClipboardAsync(pasteFiles: false));
         PasteAndSendCommand = new RelayCommand(() => _ = SendClipboardAsync(pasteFiles: true));
         TogglePauseCommand = new RelayCommand(() => Shell.TogglePause());
+        // The Linc Bubble's own close button turns it off; the tray brings it back (and hides it too).
+        ToggleBubbleCommand = new RelayCommand(() =>
+        {
+            var registry = App.Services.GetRequiredService<IDeviceRegistry>();
+            registry.SaveLiveBubble(!registry.LiveBubble);
+        });
         ExitCommand = new RelayCommand(() =>
         {
             // Never leave the phone's virtual cable as the PC's default microphone (D-071).
@@ -104,6 +115,10 @@ public sealed partial class MainWindow : Window
         App.Services.GetRequiredService<IThemeSyncService>().Start((FrameworkElement)Content);
         ApplyBackdrop();
         App.Services.GetRequiredService<IDeviceRegistry>().AppearanceChanged += () => DispatcherQueue.TryEnqueue(ApplyNavStyle);
+        // The tray's Linc Bubble switch shows whether it's on (the bubble's own ✕, or Settings, may change it).
+        BubbleTrayToggle.IsChecked = App.Services.GetRequiredService<IDeviceRegistry>().LiveBubble;
+        App.Services.GetRequiredService<IDeviceRegistry>().AppearanceChanged += () => DispatcherQueue.TryEnqueue(() =>
+            BubbleTrayToggle.IsChecked = App.Services.GetRequiredService<IDeviceRegistry>().LiveBubble);
 
         // The Linc Island: its buttons can open a page, and the title-bar copy must stay clickable.
         App.Services.GetRequiredService<ILiveActivityService>().NavigateRequested += SelectPage;

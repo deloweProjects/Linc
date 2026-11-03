@@ -379,6 +379,20 @@ public partial class SettingsViewModel : ObservableObject
         set { _registry.SaveLiveBubble(value); OnPropertyChanged(); }
     }
 
+    /// <summary>Settings › Appearance › Linc Bubble size: its diameter, 28–64 px.</summary>
+    public double BubbleSizeValue
+    {
+        get => int.TryParse(_registry.BubbleSize, out var px) ? px : 36;
+        set { _registry.SaveBubbleSize(((int)Math.Round(value)).ToString()); OnPropertyChanged(); }
+    }
+
+    /// <summary>Settings › Appearance › Linc Bubble when idle: 0 slim tab, 1 hidden, 2 stays a bubble.</summary>
+    public int BubbleIdleIndex
+    {
+        get => _registry.BubbleIdle switch { "hidden" => 1, "visible" => 2, _ => 0 };
+        set { _registry.SaveBubbleIdle(value switch { 1 => "hidden", 2 => "visible", _ => "tab" }); OnPropertyChanged(); }
+    }
+
     /// <summary>Settings › Appearance › Clock style, in the order the radio buttons list them; the first is the default.</summary>
     private static readonly string[] ClockStyleKeys = ["classic", "bold", "stacked", "serif", "minimal"];
 

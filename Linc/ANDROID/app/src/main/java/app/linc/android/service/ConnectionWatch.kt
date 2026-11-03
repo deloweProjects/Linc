@@ -28,6 +28,7 @@ import java.util.Locale
  * The usual reasons a phone drops a Wi-Fi link to the PC are the phone's own power saving:
  * battery optimisation (and the maker's harsher version of it) freezing the app with the screen
  * off, Doze, and Wi-Fi power save. So while the companion service runs this:
+ *  - asks Android to keep Wi-Fi up even without internet (the PC's hotspot has none);
  *  - holds a high-performance Wi-Fi lock (Android 13 and older honour it for a foreground service;
  *    newer ones ignore it, harmlessly);
  *  - logs the screen going off/on, Doze, battery saver and Wi-Fi coming and going, so a copied log
@@ -82,8 +83,16 @@ class ConnectionWatch(
                 }
                 override fun onLost(n: Network) = log("Wi-Fi lost")
             }
-            context.getSystemService(ConnectivityManager::class.java).registerNetworkCallback(
-                NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(), callback)
+            // A request, not just a listen (owner's log, 2026-11-01): on the PC's hotspot (no
+            // internet) Android marked the Wi-Fi "unwanted" and dropped it about a minute after
+            // joining, then stopped joining it by itself. A standing request for Wi-Fi that needn't
+            // have internet tells Android Linc needs that network, so it stays up for the link;
+            // mobile data still carries the internet (an unvalidated Wi-Fi never wins the default).
+            context.getSystemService(ConnectivityManager::class.java).requestNetwork(
+                NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build(), callback)
             network = callback
         }
         wifiLock = runCatching {

@@ -51,6 +51,10 @@ public sealed class AdbServerHost : IAdbServerHost
     public static void UseIsolatedServerPort()
     {
         Environment.SetEnvironmentVariable(ServerPortVariable, PrivateServerPort.ToString());
+        // Linc's adb is linc-adb.exe (ToolLocator.BundledAdbName), and AdvancedSharpAdbClient refuses
+        // any file not named exactly adb.exe unless forced. Measured: forced, it starts and talks to
+        // linc-adb.exe like any adb.
+        Factories.AdbCommandLineClientFactory = path => new AdbCommandLineClient(path, isForce: true, logger: null);
     }
 
     public string? AdbPath => ToolLocator.FindAdb();
@@ -78,14 +82,26 @@ public sealed class AdbServerHost : IAdbServerHost
         }
         var adbPath = AdbPath
             ?? throw new LincException(
-                $"Linc couldn't find its ADB engine on this PC. It looked for adb.exe bundled at " +
-                $"{Path.Combine(AppContext.BaseDirectory, "SCRCPY", "Linc.scrcpy", "bin", "adb.exe")}, " +
+                $"Linc couldn't find its ADB engine on this PC. It looked for its bundled adb at " +
+                $"{Path.Combine(AppContext.BaseDirectory, "SCRCPY", "Linc.scrcpy", "bin", ToolLocator.BundledAdbName)}, " +
                 "then in the Android SDK (the ANDROID_HOME environment variable, and " +
                 @"%LOCALAPPDATA%\Android\Sdk\platform-tools). Reinstall Linc so the bundled copy is " +
                 "restored, or install Android platform-tools and set ANDROID_HOME.");
         try
         {
-            await AdbServer.Instance.StartServerAsync(adbPath, restartServerIfNewer: false, ct);
+            if (OldLincServerRunning() && adbPath.EndsWith(ToolLocator.BundledAdbName, StringComparison.OrdinalIgnoreCase))
+            {
+                // A Linc from before the rename left its server running as adb.exe on our port:
+                // hand it to linc-adb.exe once, so nothing of Linc's still answers to "adb.exe".
+                // A real stop and start: the library's restart keeps a server of the same version
+                // (measured, 2026-11-03: island4 still ran island3's adb.exe after its "restart").
+                await AdbProcess.RunAsync(adbPath, TimeSpan.FromSeconds(10), ct, ["kill-server"]);
+                await AdbServer.Instance.StartServerAsync(adbPath, restartServerIfNewer: false, ct);
+            }
+            else
+            {
+                await AdbServer.Instance.StartServerAsync(adbPath, restartServerIfNewer: false, ct);
+            }
         }
         catch (Exception ex) when (ex is not LincException and not OperationCanceledException)
         {
@@ -94,6 +110,31 @@ public sealed class AdbServerHost : IAdbServerHost
                 "or another phone tool) may be blocking it — close it and try again.", ex);
         }
         _started = true;
+    }
+
+    /// <summary>An adb.exe running from a Linc bundle (the name before linc-adb.exe): Linc's own old server.</summary>
+    private static bool OldLincServerRunning()
+    {
+        try
+        {
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("adb"))
+            {
+                using (p)
+                {
+                    string? path = null;
+                    try { path = p.MainModule?.FileName; } catch (Exception) { }
+                    if (path is not null && path.EndsWith(Path.Combine("Linc.scrcpy", "bin", "adb.exe"), StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Can't look: start as usual.
+        }
+        return false;
     }
 
     public async Task RestartAsync(CancellationToken ct)

@@ -39,6 +39,14 @@ public interface IAdbShell
 
     /// <summary><c>adb -s &lt;serial&gt; &lt;args&gt;</c> (reboot, install, bugreport).</summary>
     Task<ShellResult> AdbAsync(string serial, string[] args, TimeSpan? timeout = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// <c>adb shell &lt;command&gt;</c> that keeps printing (logcat): each line goes to
+    /// <paramref name="onLine"/> as it arrives, from adb's reader thread, until the command ends
+    /// or <paramref name="ct"/> stops it. Outside the three-at-once limit, so a live log never
+    /// holds up a button press. Returns why it ended, in words, or null when it was stopped.
+    /// </summary>
+    Task<string?> StreamAsync(string serial, string command, Action<string> onLine, CancellationToken ct);
 }
 
 /// <summary>
@@ -106,5 +114,15 @@ public sealed class FakeAdbShell : IAdbShell
         var command = string.Join(' ', args);
         History.Add("adb " + command);
         return Task.FromResult(new ShellResult(true, Answer("adb " + command), "adb " + command));
+    }
+
+    /// <summary>Gives the canned answer line by line, then stays open like logcat until stopped.</summary>
+    public async Task<string?> StreamAsync(string serial, string command, Action<string> onLine, CancellationToken ct)
+    {
+        History.Add(command);
+        foreach (var line in Answer(command).Split('\n')) onLine(line.TrimEnd('\r'));
+        try { await Task.Delay(Timeout.Infinite, ct); }
+        catch (OperationCanceledException) { }
+        return null;
     }
 }

@@ -3,8 +3,12 @@ using Microsoft.UI.Xaml.Media;
 
 namespace Linc.Desktop.Services;
 
-/// <summary>What a live activity is about. The order is the default priority: a call beats everything.</summary>
-public enum LiveActivityKind { Call, Link, Share, Mirror, Battery, Media }
+/// <summary>
+/// What a live activity is about. The order is the default priority: a call beats everything, a
+/// phone notification shows over the rest for its few seconds, music sits at the back.
+/// <see cref="Status"/> is a short good-news note (connected again, charging).
+/// </summary>
+public enum LiveActivityKind { Call, Notification, Link, Share, Mirror, Battery, Status, Clipboard, Media }
 
 /// <summary>
 /// A button on an expanded activity. <see cref="Danger"/> draws it red (Decline, Stop); with a
@@ -65,6 +69,7 @@ public sealed class LiveActivityService : ILiveActivityService
 {
     private readonly List<(LiveActivity Activity, long Seq)> _items = [];
     private readonly Dictionary<string, long> _endTokens = [];
+    private readonly HashSet<Microsoft.UI.Dispatching.DispatcherQueueTimer> _timers = [];
     private DispatcherQueue? _dispatcher;
     private long _seq;
 
@@ -106,9 +111,13 @@ public sealed class LiveActivityService : ILiveActivityService
         var timer = _dispatcher!.CreateTimer();
         timer.Interval = delay;
         timer.IsRepeating = false;
+        // Held until it fires: a timer nothing references is collected and never ticks, which
+        // left finished activities on the island for good.
+        _timers.Add(timer);
         timer.Tick += (_, _) =>
         {
             timer.Stop();
+            _timers.Remove(timer);
             // Posted again since (a new share with the same name, the call ringing again): keep it.
             if (_endTokens.TryGetValue(id, out var current) && current == token)
             {

@@ -34,6 +34,10 @@ object ClipboardWatcher {
     @Volatile
     private var lastTriggerMs = 0L
 
+    /** Set by [refresh]: the next logcat starts at once instead of after the back-off. */
+    @Volatile
+    private var restartNow = false
+
     /** Registered only so that the system logs a denial on every copy; it reads nothing itself. */
     private val listener = ClipboardManager.OnPrimaryClipChangedListener { }
 
@@ -48,6 +52,19 @@ object ClipboardWatcher {
         app.getSystemService(ClipboardManager::class.java).addPrimaryClipChangedListener(listener)
         thread = Thread({ watch(app) }, "linc-clipboard-watch").apply { isDaemon = true; start() }
         LogStore.log(LogLevel.INFO, "Clipboard: syncing copies to the PC in the background")
+    }
+
+    /**
+     * Linc is on screen: start logcat again now (owner, 2026-11-03: "it takes a few manual sync
+     * presses"). Android 13+ asks "Allow Linc to access all device logs?" only while the app is
+     * in the foreground; the watcher starts with the background service, so Android quietly let it
+     * see only Linc's own lines and no copy ever triggered a sync. Restarted here, the question
+     * shows (once per boot) and from then on copies sync by themselves.
+     */
+    fun refresh() {
+        if (thread == null) return
+        restartNow = true
+        process?.destroy()
     }
 
     fun stop(context: Context) {
@@ -80,6 +97,11 @@ object ClipboardWatcher {
                 LogStore.log(LogLevel.WARN, "Clipboard watcher stopped: ${e.message}")
             }
             // logcat ended under us (it can be killed); start it again, gently.
+            if (restartNow) {
+                restartNow = false
+                backoffMs = 1_000L
+                continue
+            }
             try { Thread.sleep(backoffMs) } catch (_: InterruptedException) { return }
             backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
         }

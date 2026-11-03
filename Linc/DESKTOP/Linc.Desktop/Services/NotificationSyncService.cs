@@ -23,6 +23,12 @@ public interface INotificationSyncService
     /// <summary>Raised on the UI thread whenever the list changes.</summary>
     event Action? Changed;
 
+    /// <summary>Raised on the UI thread for a new notification (not a reconnect's backlog).</summary>
+    event Action<NotificationItem>? Posted;
+
+    /// <summary>Raised on the UI thread when a notification went away (cleared on the phone, or dismissed here).</summary>
+    event Action<string>? Removed;
+
     IReadOnlyList<NotificationItem> Items { get; }
 
     /// <summary>Removes locally and cancels the notification on the phone.</summary>
@@ -57,6 +63,8 @@ public sealed class NotificationSyncService(
     private DispatcherQueue? _dispatcher;
 
     public event Action? Changed;
+    public event Action<NotificationItem>? Posted;
+    public event Action<string>? Removed;
 
     public IReadOnlyList<NotificationItem> Items => _items;
     public int RelayedCount { get; private set; }
@@ -169,6 +177,7 @@ public sealed class NotificationSyncService(
                 {
                     RelayedCount++;
                     ShowToast(item);
+                    Posted?.Invoke(item);
                     log.Log(LogLevel.Info, $"Notification relayed from {item.App}");
 
                     // M9b (D-045): the single guarded persist point. The check happens HERE, at
@@ -191,6 +200,10 @@ public sealed class NotificationSyncService(
                 if (key is not null && _items.RemoveAll(existing => existing.Key == key) > 0)
                 {
                     Changed?.Invoke();
+                }
+                if (key is not null)
+                {
+                    Removed?.Invoke(key);
                 }
                 break;
         }

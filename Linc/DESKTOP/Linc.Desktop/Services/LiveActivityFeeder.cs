@@ -1,13 +1,18 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices.WindowsRuntime;
 using Linc.Desktop.ViewModels;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Storage.Streams;
 
 namespace Linc.Desktop.Services;
 
 /// <summary>
 /// Turns what Linc already knows into Linc Island activities: a share going to or arriving from
-/// the phone, a ringing call, music playing, mirroring, connecting / reconnecting and a low
-/// battery. It only listens: every source's events are read as they are, nothing about them
+/// the phone, a ringing call, music playing, mirroring, connecting / reconnecting, a low
+/// battery, and (owner, 2026-11-02: "add more stuff to the dynamic island, include notifications")
+/// the phone's notifications, a copy arriving from the phone, connected again and charging. It
+/// only listens: every source's events are read as they are, nothing about them
 /// changes. Each handler hops to the UI thread before doing anything, so a slow or failing island
 /// can never hold up the feature that raised the event.
 /// </summary>
@@ -18,8 +23,14 @@ public sealed class LiveActivityFeeder(
     IMirrorService mirror,
     IConnectionSupervisor supervisor,
     HomeViewModel home,
+    INotificationSyncService notifications,
+    IClipboardSyncService clipboard,
+    IConnectionManager connection,
     ILogService log)
 {
+    private static readonly TimeSpan NotificationShows = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan NoteShows = TimeSpan.FromSeconds(3.5);
+
     private const int LowBattery = 15;
     private const int BatteryRearm = 20;
 
@@ -34,6 +45,9 @@ public sealed class LiveActivityFeeder(
     private DateTimeOffset? _pausedAt;
     private static readonly TimeSpan MediaLinger = TimeSpan.FromSeconds(30);
     private LinkState _lastLink = LinkState.NoDevice;
+    private bool? _lastCharging;
+    private string? _notificationKey;
+    private int _notificationSeq;
     private DateTimeOffset _linkWindowStart = DateTimeOffset.UtcNow;
 
     /// <summary>Must be called once from the UI thread.</summary>
@@ -54,6 +68,9 @@ public sealed class LiveActivityFeeder(
         supervisor.StateChanged += () => OnUi(OnLink);
         supervisor.StatusUpdated += s => OnUi(() => OnStatus(s));
         home.PropertyChanged += OnHomeChanged;
+        notifications.Posted += n => OnUi(() => OnNotification(n));
+        notifications.Removed += key => OnUi(() => OnNotificationRemoved(key));
+        clipboard.ReceivedFromPhone += text => OnUi(() => OnClipFromPhone(text));
 
         OnLink();
         OnMedia();
@@ -197,7 +214,20 @@ public sealed class LiveActivityFeeder(
             _linkWindowStart = DateTimeOffset.UtcNow; // the link just dropped
         }
         var wasConnected = _lastLink == LinkState.Connected;
+        var wasLooking = _lastLink is LinkState.Searching or LinkState.Connecting;
         _lastLink = state;
+        if (state != LinkState.Connected)
+        {
+            _lastCharging = null; // the next connect's first status is not "started charging"
+        }
+        else if (!wasConnected && wasLooking)
+        {
+            var how = supervisor.Route is { Length: > 0 } route ? route : "Connected";
+            island.Post(new LiveActivity("connected", LiveActivityKind.Status, "\uE8EA",
+                $"{Phone} connected", how, null, null,
+                [new LiveAction("Open Linc", () => island.RequestNavigate("Home"))]));
+            island.EndAfter("connected", NoteShows);
+        }
 
         bool recent = DateTimeOffset.UtcNow - _linkWindowStart < LinkWindow;
         if (state is LinkState.Connected or LinkState.NoDevice or LinkState.Paused || !recent)
@@ -219,6 +249,13 @@ public sealed class LiveActivityFeeder(
 
     private void OnStatus(DeviceStatus status)
     {
+        if (_lastCharging == false && status.Charging && status.Battery >= 0)
+        {
+            island.Post(new LiveActivity("charging", LiveActivityKind.Status, "\uEBB5",
+                "Charging", $"{Phone} is at {status.Battery}%", $"{status.Battery}%", status.Battery));
+            island.EndAfter("charging", NoteShows);
+        }
+        _lastCharging = status.Charging;
         if (status.Charging || status.Battery > BatteryRearm)
         {
             _batteryShown = false;
@@ -234,6 +271,124 @@ public sealed class LiveActivityFeeder(
             $"Battery {status.Battery}%", $"{Phone} is not charging", $"{status.Battery}%", null,
             [new LiveAction("Dismiss", () => island.End("battery"))]));
         island.EndAfter("battery", TimeSpan.FromMinutes(1));
+    }
+
+    // ---- Phone notifications (INotificationSyncService.Posted / Removed, read only) ----
+
+    /// <summary>
+    /// A new notification on the phone: the island shows it for a few seconds (the newest replaces
+    /// the one before), with its own buttons (not replies: the island never takes the keyboard, so
+    /// Reply opens Linc) and Dismiss. The sender's picture or the app's icon follows when it arrives.
+    /// </summary>
+    private void OnNotification(NotificationItem n)
+    {
+        _notificationKey = n.Key;
+        var seq = ++_notificationSeq;
+        island.Post(NotificationActivity(n, null));
+        island.EndAfter("notification", NotificationShows);
+        _ = LoadNotificationArtAsync(n, seq);
+    }
+
+    private LiveActivity NotificationActivity(NotificationItem n, BitmapImage? art)
+    {
+        var title = !string.IsNullOrWhiteSpace(n.Title) ? n.Title : n.App;
+        var text = string.IsNullOrWhiteSpace(n.Text) ? n.App : n.Text;
+        var actions = new List<LiveAction>();
+        foreach (var a in (n.Actions ?? []).Where(a => !a.AllowsReply).Take(2))
+        {
+            actions.Add(new LiveAction(a.Title, () =>
+            {
+                _ = notifications.FireActionAsync(n.Key, a.Index);
+                island.End("notification");
+            }));
+        }
+        if ((n.Actions ?? []).Any(a => a.AllowsReply))
+        {
+            actions.Add(new LiveAction("Reply", () => island.RequestNavigate("Home")));
+        }
+        actions.Add(new LiveAction("Dismiss", () =>
+        {
+            _ = notifications.DismissAsync(n.Key);
+            island.End("notification");
+        }));
+        return new LiveActivity("notification", LiveActivityKind.Notification, "\uEA8F", title, text, n.App, null,
+            actions.TakeLast(3).ToList(), Art: art);
+    }
+
+    private async Task LoadNotificationArtAsync(NotificationItem n, int seq)
+    {
+        try
+        {
+            byte[]? bytes = null;
+            if (n.LargeIconId is { Length: > 0 } large)
+            {
+                bytes = await connection.FetchBulkAsync("largeIcon", large, CancellationToken.None);
+            }
+            if (bytes is not { Length: > 0 } && n.AppPackage is { Length: > 0 } package)
+            {
+                bytes = await connection.FetchAppIconAsync(package, CancellationToken.None);
+            }
+            if (bytes is not { Length: > 0 } found)
+            {
+                return;
+            }
+            OnUi(() => _ = ShowNotificationArtAsync(n, seq, found));
+        }
+        catch (Exception)
+        {
+            // No picture: the bell glyph stays.
+        }
+    }
+
+    private async Task ShowNotificationArtAsync(NotificationItem n, int seq, byte[] bytes)
+    {
+        try
+        {
+            var art = await ToImageAsync(bytes, 96);
+            // Still the same notification on the island (a newer one, or Dismiss, may have come).
+            if (seq == _notificationSeq && island.Activities.Any(a => a.Id == "notification"))
+            {
+                island.Post(NotificationActivity(n, art));
+                island.EndAfter("notification", NotificationShows);
+            }
+        }
+        catch (Exception)
+        {
+            // Not a picture Windows can read: the bell glyph stays.
+        }
+    }
+
+    private void OnNotificationRemoved(string key)
+    {
+        if (key == _notificationKey)
+        {
+            _notificationKey = null;
+            island.End("notification");
+        }
+    }
+
+    private static async Task<BitmapImage> ToImageAsync(byte[] bytes, int decodeWidth)
+    {
+        using var stream = new InMemoryRandomAccessStream();
+        await stream.WriteAsync(bytes.AsBuffer());
+        stream.Seek(0);
+        var image = new BitmapImage { DecodePixelWidth = decodeWidth };
+        await image.SetSourceAsync(stream);
+        return image;
+    }
+
+    // ---- A copy from the phone (IClipboardSyncService.ReceivedFromPhone, read only) ----
+
+    private void OnClipFromPhone(string text)
+    {
+        var line = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (line.Length > 80)
+        {
+            line = line[..80] + "…";
+        }
+        island.Post(new LiveActivity("clipboard", LiveActivityKind.Clipboard, "\uE77F", "Copied from your phone",
+            line, null, null, [new LiveAction("Clipboard", () => island.RequestNavigate("Clipboard"))]));
+        island.EndAfter("clipboard", NoteShows);
     }
 
     // ---- Helpers ----

@@ -77,15 +77,16 @@ object PendingSends {
         scope.launch {
             delay(2_000)
             val items = synchronized(lock) { fresh(load(context), System.currentTimeMillis()) }
+            // The newest copy goes again even when nothing waited: it may have been sent into a
+            // link that was already dead (no clip waiting here means that's the one to resend).
+            if (items.none { it.kind == CLIP }) ClipboardBridge.replayNewest()
             if (items.isEmpty()) return@launch
             var sent = 0
             for (item in items) {
                 val ok = when (item.kind) {
                     CLIP -> CompanionOutbox.canSend(1).also {
-                        if (it) CompanionOutbox.trySend(Envelope(
-                            type = MessageType.CLIPBOARD_CHANGED,
-                            payload = buildJsonObject { put("text", item.text) },
-                        ), requiredVersion = 1, topic = Topic.CLIPBOARD)
+                        if (it) CompanionOutbox.trySend(ClipboardBridge.replayEnvelope(item.text, item.at),
+                            requiredVersion = 1, topic = Topic.CLIPBOARD)
                     }
                     else -> CompanionOutbox.canSend(10).also {
                         if (it) CompanionOutbox.trySend(Envelope(

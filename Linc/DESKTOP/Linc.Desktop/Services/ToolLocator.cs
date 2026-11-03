@@ -9,6 +9,12 @@ namespace Linc.Desktop.Services;
 /// </summary>
 public static class ToolLocator
 {
+    /// <summary>
+    /// The bundled adb's file name: Linc's own copy is linc-adb.exe, so it never shares a name with
+    /// the PC's adb (its server has its own port too, <see cref="AdbServerHost.PrivateServerPort"/>).
+    /// </summary>
+    public const string BundledAdbName = "linc-adb.exe";
+
     public static string? FindAdb()
     {
         var candidates = new[]
@@ -17,6 +23,8 @@ public static class ToolLocator
             // is the one matched to the bundled scrcpy-server, so preferring a random
             // system-installed adb of unknown version is a real correctness risk, not merely a
             // packaging one. This makes behaviour deterministic on every machine.
+            Path.Combine(AppContext.BaseDirectory, "SCRCPY", "Linc.scrcpy", "bin", BundledAdbName),
+            // A folder from before the rename (or one put together by hand).
             Path.Combine(AppContext.BaseDirectory, "SCRCPY", "Linc.scrcpy", "bin", "adb.exe"),
             // Dev-tree fallback (M12c A2.3), mirroring FindScrcpy's below: a Debug build's
             // AppContext.BaseDirectory (DESKTOP\Linc.Desktop\bin\x64\Debug\<tfm>\) is six

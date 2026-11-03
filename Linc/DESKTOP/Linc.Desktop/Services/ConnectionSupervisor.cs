@@ -348,7 +348,17 @@ public sealed class ConnectionSupervisor(
                 return; // the engine was switched off
             }
             var via = State == LinkState.Connected ? await connection.AdbViaAsync(ct) : null;
-            if (via != _adbVia)
+            // AdbViaAsync attaches (or detaches) the ADB route beside a direct link by renaming the
+            // link's Serial to the name adb knows. Every feature (Mirror, Tools, apps, sound) reads
+            // Device, so it must follow, or scrcpy asks adb for "2C14…" while adb only knows
+            // "192.168.137.2:33801" (owner's log, 2026-11-01: "Could not find ADB device").
+            var renamed = State == LinkState.Connected && Device is { } live && connection.Current is { } now &&
+                now.SerialNo == live.SerialNo && now.Transport == live.Transport && now.Serial != live.Serial;
+            if (renamed)
+            {
+                Device = connection.Current;
+            }
+            if (via != _adbVia || renamed)
             {
                 _adbVia = via;
                 StateChanged?.Invoke(); // the chip (here and, via link.state, on the phone) follows

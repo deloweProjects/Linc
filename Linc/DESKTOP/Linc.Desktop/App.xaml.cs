@@ -259,6 +259,13 @@ public partial class App : Application
         // exits cleanly instead of hanging or vanishing.
         try
         {
+            // Development only: the Linc Bubble on its own with pretend activity (LincBubbleHost.Preview),
+            // so it can be looked at beside a running Linc without touching it.
+            if (Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--bubble-preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                Views.LincBubbleHost.Preview();
+                return;
+            }
             // 1.0.0.11 (D-085): the uninstaller's clean-up. Put back anything Linc changed on the
             // PC — the default and Voice Access microphones, the display scale, Explorer's menu and
             // the autostart entry — then exit without a window. VB-CABLE stays installed.
@@ -294,6 +301,12 @@ public partial class App : Application
                 if (phonePaths.Count > 0)
                 {
                     QuickShare.QsShellIntegration.TryForward(phonePaths, toPhone: true);
+                }
+                if (quickSharePaths.Count == 0 && phonePaths.Count == 0)
+                {
+                    // The desktop or Start icon while Linc runs in the tray (owner, 2026-11-02: "app
+                    // doesn't open from the icon on the desktop, it'll be running"): show that one.
+                    QuickShare.QsShellIntegration.TryForwardShow();
                 }
                 Exit(); // another Linc is already running; let it own the tray and the port
                 return;
@@ -374,6 +387,10 @@ public partial class App : Application
                     if (QuickShare.QsShellIntegration.IsQuit(paths))
                     {
                         window.ExitCommand.Execute(null);
+                    }
+                    else if (QuickShare.QsShellIntegration.IsShow(paths))
+                    {
+                        window.ShowWindowCommand.Execute(null);
                     }
                     else if (toPhone)
                     {

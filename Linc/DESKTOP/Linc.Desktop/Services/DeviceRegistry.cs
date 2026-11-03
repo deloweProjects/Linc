@@ -190,6 +190,18 @@ public interface IDeviceRegistry
     bool LiveBubble => false;
     void SaveLiveBubble(bool show) { }
 
+    /// <summary>The Linc Bubble's diameter in pixels as text, 28–64 (default 36; older "small"/"medium"/"large" still read).</summary>
+    string BubbleSize => "36";
+    void SaveBubbleSize(string size) { }
+
+    /// <summary>The Linc Bubble's shortcuts, in order (comma-separated names); empty means the default set.</summary>
+    string BubbleTiles => "";
+    void SaveBubbleTiles(string tiles) { }
+
+    /// <summary>The Linc Bubble when idle: "tab" (a slim tab at the edge, default), "hidden" (nothing until the pointer reaches the edge or something happens) or "visible".</summary>
+    string BubbleIdle => "tab";
+    void SaveBubbleIdle(string idle) { }
+
     /// <summary>Raised after any of <see cref="SaveFloatingNav"/>, <see cref="SaveHomeClock"/>, <see cref="SaveWallpaperBackdrop"/>, <see cref="SaveClockStyle"/>, <see cref="SaveAppFont"/>.</summary>
     event Action? AppearanceChanged;
 
@@ -432,7 +444,12 @@ public sealed class DeviceRegistry : IDeviceRegistry
         bool? LiveBubble = null,
         // Finding your phone: appended at the end; missing reads back as none / off.
         string[]? HomeNetworks = null,
-        bool? BluetoothAtHome = null);
+        bool? BluetoothAtHome = null,
+        // Linc Bubble size and idle look: appended at the end; missing reads back as medium / tab.
+        string? BubbleSize = null,
+        string? BubbleIdle = null,
+        // Linc Bubble shortcuts: appended at the end; missing reads back as the default set.
+        string? BubbleTiles = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -621,6 +638,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 AppFont = Blank(settings?.AppFont) ?? "default";
                 LiveIsland = settings?.LiveIsland ?? false;
                 LiveBubble = settings?.LiveBubble ?? false;
+                BubbleSize = NormalBubbleSize(settings?.BubbleSize);
+                BubbleTiles = settings?.BubbleTiles ?? "";
+                BubbleIdle = settings?.BubbleIdle is "hidden" or "visible" ? settings.BubbleIdle : "tab";
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
                 // existing user's tab strip isn't empty on first run after upgrading.
@@ -854,6 +874,27 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public string AppFont { get; private set; } = "default";
     public bool LiveIsland { get; private set; }
     public bool LiveBubble { get; private set; }
+    public string BubbleSize { get; private set; } = "36";
+    public string BubbleTiles { get; private set; } = "";
+
+    /// <summary>A diameter 28–64 as text; the old names map to sizes, anything else to the default 36.</summary>
+    public static string NormalBubbleSize(string? size) => size switch
+    {
+        "small" => "32",
+        "medium" => "40",
+        "large" => "52",
+        _ when int.TryParse(size, out var px) => Math.Clamp(px, 28, 64).ToString(),
+        _ => "36",
+    };
+
+    public void SaveBubbleTiles(string tiles)
+    {
+        if (BubbleTiles == tiles) return;
+        BubbleTiles = tiles;
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
+    public string BubbleIdle { get; private set; } = "tab";
     public event Action? AppearanceChanged;
 
     public void SaveFloatingNav(bool floating) => SaveAppearance(FloatingNav, floating, v => FloatingNav = v);
@@ -861,6 +902,24 @@ public sealed class DeviceRegistry : IDeviceRegistry
     public void SaveWallpaperBackdrop(bool show) => SaveAppearance(WallpaperBackdrop, show, v => WallpaperBackdrop = v);
     public void SaveLiveIsland(bool show) => SaveAppearance(LiveIsland, show, v => LiveIsland = v);
     public void SaveLiveBubble(bool show) => SaveAppearance(LiveBubble, show, v => LiveBubble = v);
+
+    public void SaveBubbleSize(string size)
+    {
+        size = NormalBubbleSize(size);
+        if (BubbleSize == size) return;
+        BubbleSize = size;
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
+
+    public void SaveBubbleIdle(string idle)
+    {
+        idle = idle is "hidden" or "visible" ? idle : "tab";
+        if (BubbleIdle == idle) return;
+        BubbleIdle = idle;
+        Persist();
+        AppearanceChanged?.Invoke();
+    }
 
     public void SaveClockStyle(string style)
     {
@@ -1105,7 +1164,10 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 AutoHotspot: AutoHotspot,
                 LiveBubble: LiveBubble,
                 HomeNetworks: HomeNetworks.ToArray(),
-                BluetoothAtHome: BluetoothAtHome)));
+                BluetoothAtHome: BluetoothAtHome,
+                BubbleSize: BubbleSize,
+                BubbleIdle: BubbleIdle,
+                BubbleTiles: BubbleTiles)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

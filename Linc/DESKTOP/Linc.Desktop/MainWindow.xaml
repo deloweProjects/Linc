@@ -180,6 +180,9 @@
                     <MenuFlyoutItem Text="Quick Share…" Command="{x:Bind ShowShareCommand}">
                         <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72D;" /></MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
+                    <ToggleMenuFlyoutItem x:Name="BubbleTrayToggle" Text="Linc Bubble" Command="{x:Bind ToggleBubbleCommand}">
+                        <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE8BD;" /></ToggleMenuFlyoutItem.Icon>
+                    </ToggleMenuFlyoutItem>
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem Text="{x:Bind Shell.TrayPhoneText, Mode=OneWay}" IsEnabled="False">
                         <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8EA;" /></MenuFlyoutItem.Icon>
