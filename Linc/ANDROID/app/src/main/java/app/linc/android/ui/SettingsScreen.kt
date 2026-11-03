@@ -101,6 +101,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
     var presence by remember { mutableStateOf(TransportStore.presenceEnabled(context)) }
     var engine by remember { mutableStateOf(app.linc.android.service.link.LinkStore.engineOn(context)) }
     var clipSync by remember { mutableStateOf(ClipboardSettings.syncEnabled(context)) }
+    var pcNotes by remember { mutableStateOf(app.linc.android.service.PcQuick.notesEnabled(context)) }
     var keepHistory by remember { mutableStateOf(ClipboardSettings.keepHistory(context)) }
     var historySize by remember { mutableIntStateOf(ClipboardSettings.historySize(context)) }
     var skipSensitive by remember { mutableStateOf(ClipboardSettings.skipSensitive(context)) }
@@ -181,6 +182,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenLogs: () -> Unit, onRerunSetup: () 
                     { s -> SettingsRow("Clipboard sync", s, LincSymbols.Clipboard,
                         supporting = "Copy on one device, paste on the other.",
                         trailing = { Switch(clipSync, { clipSync = it; ClipboardSettings.setSyncEnabled(context, it) }) }) },
+                    { s -> SettingsRow("The PC's notifications", s, LincSymbols.DesktopWindows,
+                        supporting = "Show your PC's own notifications on Home, under Control.",
+                        trailing = { Switch(pcNotes, { pcNotes = it; app.linc.android.service.PcQuick.setNotesEnabled(context, it) }) }) },
                     { s -> GrantRow(s, "All files access", LincSymbols.Folder, allFiles,
                         "Send files to your PC, browse this phone's files from it, and show its wallpaper.") { openAllFilesSettings(context) } },
                 ))

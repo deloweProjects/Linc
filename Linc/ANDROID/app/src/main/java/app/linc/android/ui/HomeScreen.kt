@@ -150,6 +150,7 @@ private fun HomeContent(
     var connectionSheet by remember { mutableStateOf(false) }
     var voiceSheet by remember { mutableStateOf(false) }
     var powerSheet by remember { mutableStateOf(false) }
+    var pcSettingsSheet by remember { mutableStateOf(false) }
     var telegramDone by remember { mutableStateOf(ProjectLinks.telegramCardDone(context)) }
     val connected = connection as? ServiceState.Connected
 
@@ -212,6 +213,12 @@ private fun HomeContent(
                     HomeTool("Power", LincSymbols.PowerOff, MaterialShapes.Sunny, enabled = ready) { powerSheet = true },
                 ))
             }
+            // 2026-11-03: under Control, the PC itself — its settings, its notifications, its tiles.
+            if (connected != null) {
+                item("pc-settings") { PcSettingsButton { pcSettingsSheet = true } }
+                item("pc-notes") { PcNotesSection(connected) }
+                item("pc-tiles") { PcTilesSection() }
+            }
             lastClip?.let { clip ->
                 item("clip") {
                     Surface(
@@ -250,7 +257,16 @@ private fun HomeContent(
         }
     }
 
+    PcControlExtrasEffects(connected)
     if (connectionSheet) ConnectionSheet(onDismiss = { connectionSheet = false })
+    if (pcSettingsSheet) {
+        LincBottomSheet(onDismissRequest = { pcSettingsSheet = false }) {
+            Column(
+                Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(Kit.groupGap),
+            ) { PcSettingsSheet(connected) }
+        }
+    }
     if (powerSheet) {
         // The PC's power, from Home: lock, sleep, restart, shut down, and its brightness.
         LincBottomSheet(onDismissRequest = { powerSheet = false }) {

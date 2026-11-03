@@ -46,6 +46,22 @@
                             OnContent="On" OffContent="Off"
                             IsOn="{x:Bind ViewModel.NotificationSyncEnabled, Mode=TwoWay}" />
                     </Grid>
+                    <!-- 2026-11-03: the other way, the PC's own notifications on the phone's Home. -->
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="Send this PC's notifications to the phone — they show on the phone's Home, under Control. Windows asks once whether Linc may read them"
+                            Style="{StaticResource BodyText}" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Content="Allow" Command="{x:Bind ViewModel.AllowPcNotificationsCommand}" />
+                        <ToggleSwitch
+                            Grid.Column="2"
+                            OnContent="On" OffContent="Off"
+                            IsOn="{x:Bind ViewModel.PcNotifsToPhone, Mode=TwoWay}" />
+                    </Grid>
                 </StackPanel>
             </Border>
 

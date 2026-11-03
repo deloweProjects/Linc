@@ -885,3 +885,45 @@ Which routes the Wi-Fi can read:
 
 The PC classifies the live link with `LinkPolicy.IsPlainWifi` (a network adb serial ending `:5555`) and shows it on Home; the phone shows it under Connection › Security from `link.state.encrypted`. 
 **Encrypt Wi-Fi links** (PC Settings › Connection, off by default, needs the new engine): when a plain link comes up (or the switch is turned on), the PC dials the phone's LincLink listener beside it and `LinkPolicy.ShouldEngage` lets Direct TLS take over the plain ADB Wi-Fi link (make-before-break; the v32 session moves without loss). Nothing ever moves back to plain ADB Wi-Fi on its own. Cost: on the encrypted link `HasAdb` is false, so Mirror, Tools and fast ADB file copies wait for wireless debugging or the cable. No wire change beyond the optional field.
+
+## The PC from the phone's Home › Control: quick settings, shortcuts, notifications (2026-11-03)
+
+No version bump, like `link.hotspot`: the phone sends these only at a negotiated version of 27 or
+more (the v27 PC tools), a PC that doesn't know them ignores them per the envelope rules, and the
+phone then shows "Needs the newer Linc on the PC" after 5 s without an answer. The owner: "on phone
+add a button under Control in Home that gives settings like dark theme or light theme for PC; then
+below that a section for notifications from the PC (not the ones from the phone), and a section
+for those quick tiles from the PC and its quick settings too."
+
+**Quick settings and shortcuts.** The PC owns the list; the phone draws what it is sent.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `pc.quick.get` | phone → desktop | `{}` |
+| `pc.quick.set` | phone → desktop | `{id, on?}`: a toggle is set to `on` (flipped when `on` is absent); an action runs. An id not in the PC's list is refused (`error: "unknown"`), never guessed at |
+| `pc.quick.state` | desktop → phone | `{items: [{id, label, group: "setting"\|"shortcut", kind: "toggle"\|"action", on?, available, note?}], error?}`. After every `set`, in answer to `get`, and unprompted when the PC hotspot changes |
+
+Ids today. Settings: `dark` (Windows' app and system theme, the same registry values as
+`pc.look.set`), `nightlight` (Night light's CloudStore state; `available: false` when its stored
+value isn't the shape Linc knows), `wifi` and `bluetooth` (`Windows.Devices.Radios`; `available:
+false` without such a radio or when Windows refuses access), `dnd` (Windows' "Notifications" master
+switch, `NOC_GLOBAL_SETTING_TOASTS_ENABLED`: banners off while on), `hotspot` (the PC hotspot Linc
+already runs, `PcHotspot`). Shortcuts: `lock`, `desktop` (Win+D), `snip` (Win+Shift+S), `taskview`
+(Win+Tab), `clipboard` (the PC's clipboard to the phone, as the Linc Bubble's tile), `openlinc`
+(Linc's window on the PC). `error` names what failed in the last `set`: `unknown`, `unavailable`,
+`denied` or Windows' own message.
+
+**The PC's own notifications.** Read with `UserNotificationListener` (Windows asks the user once,
+on the PC). Toasts from Linc itself (the phone's notifications mirrored on the PC) are never sent.
+
+| Type | Direction | Payload |
+|---|---|---|
+| `pc.notifs.watch` | phone → desktop | `{on, ask?}`: start/stop sending them to this phone. `ask: true` makes the PC show Windows' permission prompt when it hasn't been answered yet |
+| `pc.notifs` | desktop → phone | `{enabled, access, items: [note]}`: in answer to `watch`, and again when access or the PC's switch changes. `enabled`: PC Settings › "Send this PC's notifications to the phone" (on by default). `access`: `allowed`, `denied`, `ask` (not answered yet) or `unavailable` (this Windows can't share them; `error` says why). `items` only while both are allowed |
+| `pc.notif.posted` | desktop → phone | `note = {id (string), app, title, text, time (Unix ms)}`; while watched |
+| `pc.notif.removed` | desktop → phone | `{id}`; while watched |
+| `pc.notif.dismiss` | phone → desktop | `{id}` or `{all: true}`: removed from Windows' notification centre |
+
+The phone's own switch (Settings › Features shared with your PC › "The PC's notifications", on by
+default) stops it watching: with it off the phone sends `watch {on: false}` and shows no section.
+The PC sends nothing while unwatched, and stops when the phone goes away.
