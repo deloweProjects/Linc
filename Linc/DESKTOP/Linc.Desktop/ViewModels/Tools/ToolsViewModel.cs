@@ -15,7 +15,7 @@ namespace Linc.Desktop.ViewModels.Tools;
 public partial class ToolsViewModel : ObservableObject
 {
     public const string TypeName = "Type", RescueName = "Rescue", AppsName = "Apps", CaptureName = "Capture",
-        HealthName = "Health", SystemName = "System", CommandsName = "Commands", ConsoleName = "Console";
+        HealthName = "Health", SystemName = "System", CommandsName = "Commands", MacrosName = "Macros", ConsoleName = "Console";
 
     private readonly ToolsContext _ctx;
     private readonly DispatcherQueue _dispatcher;
@@ -29,15 +29,15 @@ public partial class ToolsViewModel : ObservableObject
 
     public ToolsViewModel(IConnectionSupervisor link, IHotspotLinkService hotspot, ToolsContext ctx, TypeToolViewModel type, RescueToolViewModel rescue, AppsToolViewModel apps,
         CaptureToolViewModel capture, HealthToolViewModel health, SystemToolViewModel system, CommandsToolViewModel commands,
-        ConsoleToolViewModel console)
+        ConsoleToolViewModel console, MacrosToolViewModel macros)
     {
         _ctx = ctx;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
-        TypeTool = type; RescueTool = rescue; AppsTool = apps; CaptureTool = capture; HealthTool = health; SystemTool = system; CommandsTool = commands; ConsoleTool = console;
+        TypeTool = type; RescueTool = rescue; AppsTool = apps; CaptureTool = capture; HealthTool = health; SystemTool = system; CommandsTool = commands; ConsoleTool = console; MacrosTool = macros;
         _sections = new()
         {
             [TypeName] = type, [RescueName] = rescue, [AppsName] = apps, [CaptureName] = capture,
-            [HealthName] = health, [SystemName] = system, [CommandsName] = commands, [ConsoleName] = console,
+            [HealthName] = health, [SystemName] = system, [CommandsName] = commands, [MacrosName] = macros, [ConsoleName] = console,
         };
         ctx.CommandShown += command => _dispatcher.TryEnqueue(() => LastCommand = "⌘ " + command);
         ctx.Notice += text => _dispatcher.TryEnqueue(() => ShowNotice(text));
@@ -63,6 +63,7 @@ public partial class ToolsViewModel : ObservableObject
     public SystemToolViewModel SystemTool { get; }
     public CommandsToolViewModel CommandsTool { get; }
     public ConsoleToolViewModel ConsoleTool { get; }
+    public MacrosToolViewModel MacrosTool { get; }
 
     public ObservableCollection<ToolsDevice> Devices { get; } = [];
 
@@ -76,6 +77,7 @@ public partial class ToolsViewModel : ObservableObject
         new(HealthName, "\uE95E", "Battery, temperature, storage and what's busy"),
         new(SystemName, "\uE713", "Dark mode, screen timeout, brightness and more"),
         new(CommandsName, "\uE721", "Find an adb command by what it does, fill it in, run or copy it"),
+        new(MacrosName, "\uE768", "A few steps run with one click: Do Not Disturb, music, mirror and more"),
         new(ConsoleName, "\uE756", "Type adb shell commands yourself", StartsAdvanced: true),
     ];
 
@@ -88,7 +90,7 @@ public partial class ToolsViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsType), nameof(IsRescue), nameof(IsApps), nameof(IsCapture),
-        nameof(IsHealth), nameof(IsSystem), nameof(IsCommands), nameof(IsConsole))]
+        nameof(IsHealth), nameof(IsSystem), nameof(IsCommands), nameof(IsConsole), nameof(IsMacros), nameof(NoPhone), nameof(ShowsPhoneSections))]
     public partial string Section { get; set; } = TypeName;
 
     partial void OnSectionChanged(string value) => OnPropertyChanged(nameof(SelectedSectionItem));
@@ -101,9 +103,13 @@ public partial class ToolsViewModel : ObservableObject
     public bool IsSystem => Section == SystemName;
     public bool IsCommands => Section == CommandsName;
     public bool IsConsole => Section == ConsoleName;
+    public bool IsMacros => Section == MacrosName;
+
+    /// <summary>The ADB sections show with a phone; Macros shows always (its link steps don't need ADB).</summary>
+    public bool ShowsPhoneSections => HasPhone && !IsMacros;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasPhone), nameof(NoPhone), nameof(DeviceLabel), nameof(EmptyTitle), nameof(EmptyText))]
+    [NotifyPropertyChangedFor(nameof(HasPhone), nameof(NoPhone), nameof(ShowsPhoneSections), nameof(DeviceLabel), nameof(EmptyTitle), nameof(EmptyText))]
     public partial ToolsDevice? SelectedDevice { get; set; }
 
     [ObservableProperty]
@@ -113,7 +119,7 @@ public partial class ToolsViewModel : ObservableObject
     public bool HasPhone => SelectedDevice is { Authorized: true };
 
     /// <summary>The "plug your phone in" card; hidden for the first look so it doesn't flash.</summary>
-    public bool NoPhone => Searched && !HasPhone;
+    public bool NoPhone => Searched && !HasPhone && !IsMacros;
 
     public bool ManyDevices => Devices.Count > 1;
 

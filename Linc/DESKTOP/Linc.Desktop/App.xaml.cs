@@ -174,6 +174,7 @@ public partial class App : Application
             .AddSingleton<Linc.Desktop.ViewModels.Tools.SystemToolViewModel>()
             .AddSingleton<Linc.Desktop.ViewModels.Tools.CommandsToolViewModel>()
             .AddSingleton<Linc.Desktop.ViewModels.Tools.ConsoleToolViewModel>()
+            .AddSingleton<Linc.Desktop.ViewModels.Tools.MacrosToolViewModel>()
             .AddSingleton<Linc.Desktop.ViewModels.Tools.ToolsViewModel>()
             .AddSingleton<AppShellViewModel>()
             .AddSingleton<DeviceTabsViewModel>()

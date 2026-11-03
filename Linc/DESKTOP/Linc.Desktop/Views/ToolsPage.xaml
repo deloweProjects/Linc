@@ -108,7 +108,7 @@
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Row="1" Visibility="{x:Bind ViewModel.HasPhone, Mode=OneWay}">
+            <Grid Grid.Row="1" Visibility="{x:Bind ViewModel.ShowsPhoneSections, Mode=OneWay}">
                 <tools:TypeSection Visibility="{x:Bind ViewModel.IsType, Mode=OneWay}" />
                 <tools:RescueSection Visibility="{x:Bind ViewModel.IsRescue, Mode=OneWay}" />
                 <tools:AppsSection Visibility="{x:Bind ViewModel.IsApps, Mode=OneWay}" />
@@ -118,6 +118,7 @@
                 <tools:CommandsSection Visibility="{x:Bind ViewModel.IsCommands, Mode=OneWay}" />
                 <tools:ConsoleSection Visibility="{x:Bind ViewModel.IsConsole, Mode=OneWay}" />
             </Grid>
+            <tools:MacrosSection Grid.Row="1" Visibility="{x:Bind ViewModel.IsMacros, Mode=OneWay}" />
 
             <!-- The command the last action ran (design rule 3). Click copies it. -->
             <HyperlinkButton Grid.Row="2" Padding="0" Visibility="{x:Bind ViewModel.HasLastCommand, Mode=OneWay}"

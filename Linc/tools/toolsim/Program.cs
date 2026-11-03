@@ -23,6 +23,8 @@ Console.WriteLine("[mirror: Fill this monitor's safety net]");
 ShapeGuardTests.Run(Check);
 Console.WriteLine("[commands]");
 CommandsTests.Run(Check);
+Console.WriteLine("[macros]");
+MacrosTests.Run(Check);
 
 Console.WriteLine(failures.Count == 0 ? "\ntoolsim: all checks passed" : $"\ntoolsim: {failures.Count} check(s) failed");
 return failures.Count == 0 ? 0 : 1;
