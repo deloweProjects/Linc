@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -182,11 +183,25 @@ public static partial class UiDump
     private static long Area(UiNode n) => (long)n.Width * n.Height;
 }
 
-/// <summary>What one macro step does (TOOLS.md §9).</summary>
+/// <summary>What one macro step does (TOOLS.md §9). From <see cref="SendClipboard"/> on, the steps
+/// go over Linc's own link or run on this PC (the owner, 2026-11-03: "add a macros section in
+/// Tools on PC and phone").</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<MacroStepKind>))]
 public enum MacroStepKind
 {
     Key, Text, Pin, Tap, TapElement, Swipe, OpenApp, OpenLink, OpenSettings, Wait, WaitApp, WaitText, WaitScreenOn, Shell,
+    SendClipboard, Ring, Dnd, Screenshot, Mirror, Media, PcOpen,
+}
+
+/// <summary>What a step needs before it can run: the phone over ADB, Linc's link, or nothing.</summary>
+public enum MacroNeed { Adb, Link, Nothing }
+
+/// <summary>One entry of the "Add step" menu: what it's called, what its box asks for.</summary>
+public sealed record MacroStepInfo(MacroStepKind Kind, string Title, string Glyph, MacroNeed Need, string ValueLabel = "", string Example = "")
+{
+    public bool HasValue => ValueLabel.Length > 0;
+
+    public override string ToString() => Title;
 }
 
 /// <summary>One step. <see cref="Value"/> is the key, text, element selector, package, link,
@@ -201,6 +216,41 @@ public static partial class MacroSteps
 {
     /// <summary>How long a "Wait until" step waits by default.</summary>
     public const double DefaultWaitSeconds = 10;
+
+    /// <summary>The longest a Wait step may hold a run (ten minutes).</summary>
+    public const double MaxWaitSeconds = 600;
+
+    /// <summary>The phone's media actions (<c>media.control</c>).</summary>
+    public static IReadOnlyList<string> MediaActions { get; } = ["play", "pause", "next", "prev"];
+
+    /// <summary>The "Add step" menu, in its order. A catalogue command comes in as a Shell step
+    /// from the command picker; Tap element from the Inspector.</summary>
+    public static IReadOnlyList<MacroStepInfo> Kinds { get; } =
+    [
+        new(MacroStepKind.OpenApp, "Open an app on the phone", "\uE71D", MacroNeed.Adb, "Package", "com.spotify.music"),
+        new(MacroStepKind.OpenLink, "Open a link on the phone", "\uE774", MacroNeed.Adb, "Link", "https://example.com"),
+        new(MacroStepKind.OpenSettings, "Open a settings screen", "\uE713", MacroNeed.Adb, "Settings action", "android.settings.WIFI_SETTINGS"),
+        new(MacroStepKind.Key, "Press a key", "\uE765", MacroNeed.Adb, "Key", "HOME"),
+        new(MacroStepKind.Text, "Type text", "\uE8D2", MacroNeed.Adb, "Text", "hello"),
+        new(MacroStepKind.Pin, "Type the PIN (asked each run)", "\uE72E", MacroNeed.Adb),
+        new(MacroStepKind.Tap, "Tap a point", "\uE7C9", MacroNeed.Adb, "x, y", "540, 1200"),
+        new(MacroStepKind.Swipe, "Swipe", "\uE7C9", MacroNeed.Adb, "x, y, x2, y2", "540, 1800, 540, 600"),
+        new(MacroStepKind.Shell, "Shell command", "\uE756", MacroNeed.Adb, "Command", "cmd uimode night yes"),
+        new(MacroStepKind.Screenshot, "Take a screenshot", "\uE722", MacroNeed.Adb),
+        new(MacroStepKind.SendClipboard, "Send to the phone's clipboard", "\uE77F", MacroNeed.Link, "Text (empty: this PC's clipboard)"),
+        new(MacroStepKind.Ring, "Ring the phone", "\uEA8F", MacroNeed.Link),
+        new(MacroStepKind.Dnd, "Do Not Disturb", "\uE708", MacroNeed.Link, "on or off", "on"),
+        new(MacroStepKind.Media, "Phone media", "\uE768", MacroNeed.Link, "play, pause, next or prev", "pause"),
+        new(MacroStepKind.Mirror, "Mirror the phone", "\uE8AF", MacroNeed.Link),
+        new(MacroStepKind.PcOpen, "Open a file or app on this PC", "\uE8E5", MacroNeed.Nothing, "File, app or link", @"C:\Windows\notepad.exe"),
+        new(MacroStepKind.Wait, "Wait", "\uE916", MacroNeed.Nothing, "Seconds", "2"),
+        new(MacroStepKind.WaitApp, "Wait until an app is on screen", "\uE916", MacroNeed.Adb, "Package", "com.spotify.music"),
+        new(MacroStepKind.WaitText, "Wait until text shows", "\uE916", MacroNeed.Adb, "Text", "Done"),
+        new(MacroStepKind.WaitScreenOn, "Wait until the screen is on", "\uE916", MacroNeed.Adb),
+    ];
+
+    public static MacroNeed Need(MacroStepKind kind) =>
+        Kinds.FirstOrDefault(k => k.Kind == kind)?.Need ?? MacroNeed.Adb;
 
     [GeneratedRegex(@"^[A-Za-z0-9_.]+$")]
     private static partial Regex Word();
@@ -248,8 +298,73 @@ public static partial class MacroSteps
         MacroStepKind.WaitText => $"Wait until \"{s.Value}\" shows",
         MacroStepKind.WaitScreenOn => "Wait until the screen is on",
         MacroStepKind.Shell => $"Run: {s.Value}",
+        MacroStepKind.SendClipboard => s.Value.Length == 0 ? "Send this PC's clipboard to the phone" : $"Send \"{s.Value}\" to the phone's clipboard",
+        MacroStepKind.Ring => "Ring the phone",
+        MacroStepKind.Dnd => $"Do Not Disturb {s.Value}",
+        MacroStepKind.Screenshot => "Take a screenshot",
+        MacroStepKind.Mirror => "Mirror the phone",
+        MacroStepKind.Media => $"Phone media: {s.Value}",
+        MacroStepKind.PcOpen => $"Open {(Path.GetFileName(s.Value.TrimEnd('\\')) is { Length: > 0 } name ? name : s.Value)} on this PC",
         _ => s.Kind.ToString(),
     };
+
+    /// <summary>Why a step can't run as it is filled in, or null when it can (the editor's check).</summary>
+    public static string? Problem(MacroStep s) => s.Kind switch
+    {
+        MacroStepKind.Key => KeyCode(s.Value) is null ? "Give a key like HOME, BACK or a number" : null,
+        MacroStepKind.Text => Command(s) is null ? "Fill in the text" : null,
+        MacroStepKind.Shell => CommandCatalog.Placeholder().Match(s.Value) is { Success: true } m ? $"Fill in {m.Value}"
+            : Command(s) is null ? "Fill in the command" : null,
+        MacroStepKind.OpenApp or MacroStepKind.WaitApp => Word().IsMatch(s.Value) && s.Value.Contains('.') ? null : "Give the app's package, like com.spotify.music",
+        MacroStepKind.OpenLink => Command(s) is null ? "Give a whole link, starting with https://" : null,
+        MacroStepKind.OpenSettings => Command(s) is null ? "Give a settings action, like android.settings.WIFI_SETTINGS" : null,
+        MacroStepKind.Tap => s.X < 0 || s.Y < 0 ? "Give the point as x, y" : null,
+        MacroStepKind.Swipe => s.X < 0 || s.Y < 0 || s.X2 < 0 || s.Y2 < 0 ? "Give the swipe as x, y, x2, y2" : null,
+        MacroStepKind.WaitText => s.Value.Trim().Length == 0 ? "Give the text to wait for" : null,
+        MacroStepKind.Dnd => s.Value is "on" or "off" ? null : "Say on or off",
+        MacroStepKind.Media => MediaActions.Contains(s.Value) ? null : "Say play, pause, next or prev",
+        MacroStepKind.PcOpen => s.Value.Trim().Length == 0 ? "Give a file, an app or a link" : null,
+        MacroStepKind.Wait => s.Seconds is >= 0.1 and <= MaxWaitSeconds ? null : "Give seconds, from 0.1 to 600",
+        _ => null,
+    };
+
+    /// <summary>A step from the "Add step" box: <paramref name="text"/> is what was typed. Points
+    /// are "x, y" (and "x2, y2" for a swipe); a Wait's seconds are its number.</summary>
+    public static MacroStep FromInput(MacroStepKind kind, string text)
+    {
+        var t = text.Trim();
+        switch (kind)
+        {
+            case MacroStepKind.Wait:
+                return new(kind, Seconds: double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var sec) ? sec : 0);
+            case MacroStepKind.WaitApp or MacroStepKind.WaitText or MacroStepKind.WaitScreenOn:
+                return new(kind, t, Seconds: DefaultWaitSeconds);
+            case MacroStepKind.Tap or MacroStepKind.Swipe:
+                var n = t.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
+                    .Select(p => int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var v) ? v : -1).ToArray();
+                int At(int i) => i < n.Length ? n[i] : -1;
+                return new(kind, X: At(0), Y: At(1), X2: At(2), Y2: At(3));
+            case MacroStepKind.Dnd or MacroStepKind.Media:
+                return new(kind, t.ToLowerInvariant());
+            default:
+                return new(kind, t);
+        }
+    }
+
+    /// <summary>"Step 2 (Ring the phone) failed: …", the line a failed run leaves.</summary>
+    public static string FailureText(int index, MacroStep step, string reason) =>
+        $"Step {index + 1} ({Describe(step)}) failed: {reason}";
+
+    /// <summary>A list with one item moved (the ↑ ↓ buttons); out of range, no change.</summary>
+    public static IReadOnlyList<T> Moved<T>(IReadOnlyList<T> list, int from, int to)
+    {
+        if (from < 0 || from >= list.Count || to < 0 || to >= list.Count || from == to) return list;
+        var copy = list.ToList();
+        var item = copy[from];
+        copy.RemoveAt(from);
+        copy.Insert(to, item);
+        return copy;
+    }
 
     /// <summary>Steps that change things a plain tap can't, asked before each run (PLAN.md §2 rule 4).</summary>
     public static bool IsRisky(MacroStep s) => s.Kind == MacroStepKind.Shell && ConsoleRisk.Describe(s.Value) is not null;
@@ -267,9 +382,18 @@ public static partial class MacroSteps
 
     private static string Seconds(double s) => s == 1 ? "1 second" : $"{s.ToString("0.#", CultureInfo.InvariantCulture)} seconds";
 
-    /// <summary>Ready-made macros for the "+ New" menu (TOOLS.md §9).</summary>
+    /// <summary>Ready-made macros for the "+ New" menu (TOOLS.md §9). A first look gets them all,
+    /// the owner's "Presenting" first.</summary>
     public static IReadOnlyList<Macro> Templates { get; } =
     [
+        new("presenting", "Presenting", "",
+        [
+            new(MacroStepKind.Dnd, "on"),
+            new(MacroStepKind.Media, "pause"),
+            new(MacroStepKind.Mirror),
+        ]),
+        new("done-presenting", "Done presenting", "", [new(MacroStepKind.Dnd, "off")]),
+        new("find-phone", "Find my phone", "", [new(MacroStepKind.Ring)]),
         new("wake-unlock", "Wake & unlock", "\uE72E",
         [
             new(MacroStepKind.Key, "WAKEUP"),
@@ -298,16 +422,45 @@ public static partial class MacroSteps
     public static string Serialize(IReadOnlyList<Macro> macros) => JsonSerializer.Serialize(macros, Json);
 
     /// <summary>The saved macros; an unreadable file gives none rather than throwing.</summary>
-    public static IReadOnlyList<Macro> Deserialize(string json)
+    public static IReadOnlyList<Macro> Deserialize(string json) => TryDeserialize(json) ?? [];
+
+    /// <summary>The saved macros, or null when the file isn't one (so the caller keeps it rather
+    /// than writing over it). A step this Linc doesn't know, from a newer one, is left out; the
+    /// rest of its macro stays.</summary>
+    public static IReadOnlyList<Macro>? TryDeserialize(string json)
     {
+        JsonArray? list;
         try
         {
-            return JsonSerializer.Deserialize<List<Macro>>(json, Json) ?? [];
+            list = JsonNode.Parse(json) as JsonArray;
         }
         catch (JsonException)
         {
-            return [];
+            return null;
         }
+        if (list is null) return null;
+        var macros = new List<Macro>();
+        foreach (var node in list)
+        {
+            if (node is not JsonObject m) continue;
+            string Str(string key) => m[key] is JsonValue v && v.TryGetValue<string>(out var t) ? t : "";
+            if (Str("Id").Length == 0) continue;
+            var steps = new List<MacroStep>();
+            foreach (var s in m["Steps"] as JsonArray ?? [])
+            {
+                try
+                {
+                    if (s?.Deserialize<MacroStep>(Json) is { } step) steps.Add(step);
+                }
+                catch (JsonException)
+                {
+                    // A step from a newer Linc: left out, the rest of the macro stays.
+                }
+            }
+            macros.Add(new Macro(Str("Id"), Str("Name") is { Length: > 0 } name ? name : "Macro",
+                Str("Glyph") is { Length: > 0 } glyph ? glyph : "", steps));
+        }
+        return macros;
     }
 }
 

@@ -70,6 +70,7 @@ enum class ToolPage(val label: String, val icon: ImageVector) {
     Files("Files", LincSymbols.Folder),
     Sync("Sync", LincSymbols.Sync),
     Terminal("Terminal", LincSymbols.Terminal),
+    Macros("Macros", LincSymbols.Play),
 }
 
 /** Which Tools page shows; Home's shortcuts set it before switching to the Tools tab. */
@@ -108,6 +109,7 @@ fun ToolsScreen(onSettings: (() -> Unit)?, onBack: (() -> Unit)? = null, onMirro
                     ToolPage.Files -> PcFilesScreen(onBack = onBack, onSettings = onSettings)
                     ToolPage.Sync -> SyncScreen(onBack = onBack, onSettings = onSettings)
                     ToolPage.Terminal -> TerminalHome(onBack = onBack, onSettings = onSettings)
+                    ToolPage.Macros -> MacrosScreen(onBack = onBack, onSettings = onSettings, onMirror = onMirror)
                 }
             }
         }
