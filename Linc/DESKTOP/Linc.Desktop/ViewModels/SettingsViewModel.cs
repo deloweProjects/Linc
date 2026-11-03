@@ -239,6 +239,25 @@ public partial class SettingsViewModel : ObservableObject
         set { _registry.SaveLincLinkEnabled(value); OnPropertyChanged(); }
     }
 
+    /// <summary>Settings › "Send this PC's notifications to the phone" (on by default, 2026-11-03).</summary>
+    public bool PcNotifsToPhone
+    {
+        get => _registry.PcNotifsToPhone;
+        set
+        {
+            _registry.SavePcNotifsToPhone(value);
+            OnPropertyChanged();
+            Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<PcNotificationsService>(App.Services)?.SettingChanged();
+        }
+    }
+
+    /// <summary>Settings' "Allow": Windows asks whether Linc may read the PC's notifications.</summary>
+    [RelayCommand]
+    private async Task AllowPcNotificationsAsync()
+    {
+        if (Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<PcNotificationsService>(App.Services) is { } service) await service.AskAsync();
+    }
+
     /// <summary>Settings › Connection › Start the PC hotspot when the phone is near (off by default).</summary>
     public bool AutoHotspot
     {

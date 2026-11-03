@@ -1177,6 +1177,11 @@ class SocketServer(
                 MessageType.PC_CURTAIN_STATE -> if (negotiated >= 28) PcTools.onCurtain(message.payload)
                 MessageType.PC_BTAUDIO_STATE -> if (negotiated >= 29) PcTools.onBtAudio(message.payload)
                 MessageType.SYNC_STATE -> if (negotiated >= 30) SyncRemote.onState(message.payload)
+                // 2026-11-03: Home › Control — the PC's quick tiles and its own notifications.
+                MessageType.PC_QUICK_STATE -> if (negotiated >= 27) PcQuick.onState(message.payload)
+                MessageType.PC_NOTIFS -> if (negotiated >= 27) PcQuick.onNotes(message.payload)
+                MessageType.PC_NOTIF_POSTED -> if (negotiated >= 27) PcQuick.onPosted(message.payload)
+                MessageType.PC_NOTIF_REMOVED -> if (negotiated >= 27) PcQuick.onRemoved(message.payload)
                 MessageType.PHONE_SOUND_ASK -> if (negotiated >= 28) PhoneReach.soundAsk(message.payload)
                 MessageType.PHONE_USAGE_GET -> if (negotiated >= 28) PhoneReach.usage()
                 MessageType.PHONE_WALLPAPER_SET -> if (negotiated >= 28) PhoneReach.wallpaper(message.payload)

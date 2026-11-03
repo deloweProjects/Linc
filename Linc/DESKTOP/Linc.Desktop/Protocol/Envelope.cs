@@ -162,6 +162,18 @@ public static class MessageType
     public const string SyncLaneSet = "sync.lane.set";              // phone → desktop: {lane, on}
     public const string SyncNow = "sync.now";                       // phone → desktop: {}
 
+    // 2026-11-03 (no version bump; the phone sends them at ≥ 27 and an older PC ignores them) —
+    // Home › Control on the phone: the PC's quick settings and shortcuts as tiles, and the PC's
+    // own notifications ("make the user feel as if their phone really is here", owner).
+    public const string PcQuickGet = "pc.quick.get";                // phone → desktop: {}
+    public const string PcQuickSet = "pc.quick.set";                // phone → desktop: {id, on?}
+    public const string PcQuickState = "pc.quick.state";            // desktop → phone: {items: [{id, label, group, kind, on?, available, note?}], error?}
+    public const string PcNotifsWatch = "pc.notifs.watch";          // phone → desktop: {on, ask?}
+    public const string PcNotifs = "pc.notifs";                     // desktop → phone: {enabled, access, items: [note]}
+    public const string PcNotifPosted = "pc.notif.posted";          // desktop → phone: note {id, app, title, text, time}
+    public const string PcNotifRemoved = "pc.notif.removed";        // desktop → phone: {id}
+    public const string PcNotifDismiss = "pc.notif.dismiss";        // phone → desktop: {id} or {all: true}
+
     // v15 — display control from the PC (M5c, D-001/D-055): rotation and brightness widgets
     // ride the protocol so a Direct-TLS link without ADB still works, and the phone applies
     // them through Settings.System (it has the WRITE_SETTINGS appop, the desktop doesn't).

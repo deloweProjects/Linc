@@ -198,6 +198,13 @@ public interface IDeviceRegistry
     string BubbleTiles => "";
     void SaveBubbleTiles(string tiles) { }
 
+    /// <summary>
+    /// Settings › "Send this PC's notifications to the phone" (on by default, 2026-11-03): the
+    /// phone's Home › Control shows them. Windows asks once as well (UserNotificationListener).
+    /// </summary>
+    bool PcNotifsToPhone => true;
+    void SavePcNotifsToPhone(bool enabled) { }
+
     /// <summary>The Linc Bubble when idle: "tab" (a slim tab at the edge, default), "hidden" (nothing until the pointer reaches the edge or something happens) or "visible".</summary>
     string BubbleIdle => "tab";
     void SaveBubbleIdle(string idle) { }
@@ -449,7 +456,9 @@ public sealed class DeviceRegistry : IDeviceRegistry
         string? BubbleSize = null,
         string? BubbleIdle = null,
         // Linc Bubble shortcuts: appended at the end; missing reads back as the default set.
-        string? BubbleTiles = null);
+        string? BubbleTiles = null,
+        // The PC's notifications on the phone: appended at the end; missing reads back as on.
+        bool? PcNotifsToPhone = null);
 
     /// <summary>
     /// The owner's real store, <c>%LOCALAPPDATA%\Linc</c> — what production always uses. Exposed
@@ -640,6 +649,7 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 LiveBubble = settings?.LiveBubble ?? false;
                 BubbleSize = NormalBubbleSize(settings?.BubbleSize);
                 BubbleTiles = settings?.BubbleTiles ?? "";
+                PcNotifsToPhone = settings?.PcNotifsToPhone ?? true;
                 BubbleIdle = settings?.BubbleIdle is "hidden" or "visible" ? settings.BubbleIdle : "tab";
                 _knownDevices = settings?.KnownDevices ?? [];
                 // Settings written before M03 have no list; adopt the active device so an
@@ -886,6 +896,15 @@ public sealed class DeviceRegistry : IDeviceRegistry
         _ when int.TryParse(size, out var px) => Math.Clamp(px, 28, 64).ToString(),
         _ => "36",
     };
+
+    public bool PcNotifsToPhone { get; private set; } = true;
+
+    public void SavePcNotifsToPhone(bool enabled)
+    {
+        if (PcNotifsToPhone == enabled) return;
+        PcNotifsToPhone = enabled;
+        Persist();
+    }
 
     public void SaveBubbleTiles(string tiles)
     {
@@ -1167,7 +1186,8 @@ public sealed class DeviceRegistry : IDeviceRegistry
                 BluetoothAtHome: BluetoothAtHome,
                 BubbleSize: BubbleSize,
                 BubbleIdle: BubbleIdle,
-                BubbleTiles: BubbleTiles)));
+                BubbleTiles: BubbleTiles,
+                PcNotifsToPhone: PcNotifsToPhone)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

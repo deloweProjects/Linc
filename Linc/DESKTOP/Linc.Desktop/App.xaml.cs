@@ -149,6 +149,8 @@ public partial class App : Application
             .AddSingleton<PhoneSoundOnPc>()
             .AddSingleton<SyncRemote>()
             .AddSingleton<PcToolsService>()
+            .AddSingleton<PcQuickService>()
+            .AddSingleton<PcNotificationsService>()
             .AddSingleton<Linc.Desktop.QuickShare.IQuickShareService, Linc.Desktop.QuickShare.QuickShareService>()
             .AddSingleton<QuickShareViewModel>()
             .AddSingleton<ClipboardViewModel>()
@@ -367,6 +369,9 @@ public partial class App : Application
             // connected, and starts the hotspot when its Bluetooth beacon is heard with no link.
             Services.GetRequiredService<PcHotspot>().Begin();
             Services.GetRequiredService<NearbyRules>().Begin();
+            // The phone's Home › Control (2026-11-03): the PC's quick tiles and its notifications.
+            Services.GetRequiredService<PcQuickService>().Attach();
+            Services.GetRequiredService<PcNotificationsService>().Attach();
             // M9e: view models are constructed synchronously as part of Activate() — always call
             // it, even on a silent startup launch, or AppShellViewModel never starts and the app
             // sits in the tray connected to nothing. A startup launch just hides the window right

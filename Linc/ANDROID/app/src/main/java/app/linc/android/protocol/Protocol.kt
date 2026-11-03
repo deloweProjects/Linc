@@ -153,6 +153,17 @@ object MessageType {
     const val SYNC_LANE_SET = "sync.lane.set"                 // phone → desktop: {lane, on}
     const val SYNC_NOW = "sync.now"                           // phone → desktop: {}
 
+    // 2026-11-03 (no version bump; sent at ≥ 27, an older PC ignores them): Home › Control —
+    // the PC's quick settings and shortcuts as tiles, and the PC's own notifications.
+    const val PC_QUICK_GET = "pc.quick.get"                   // phone → desktop: {}
+    const val PC_QUICK_SET = "pc.quick.set"                   // phone → desktop: {id, on?}
+    const val PC_QUICK_STATE = "pc.quick.state"               // desktop → phone: {items: [{id, label, group, kind, on?, available, note?}], error?}
+    const val PC_NOTIFS_WATCH = "pc.notifs.watch"             // phone → desktop: {on, ask?}
+    const val PC_NOTIFS = "pc.notifs"                         // desktop → phone: {enabled, access, items, error?}
+    const val PC_NOTIF_POSTED = "pc.notif.posted"             // desktop → phone: {id, app, title, text, time}
+    const val PC_NOTIF_REMOVED = "pc.notif.removed"           // desktop → phone: {id}
+    const val PC_NOTIF_DISMISS = "pc.notif.dismiss"           // phone → desktop: {id} or {all: true}
+
     // v15 — display control from the PC (M5c, D-055): the PC sends these, the phone
     // applies them through Settings.System with WRITE_SETTINGS (an appop, never adb — D-001).
     const val DISPLAY_ROTATION_SET = "display.rotation.set"     // desktop → phone

@@ -1,4 +1,7 @@
 # What's new in the current test release (shown in the Telegram post; plain lines, no headings below)
+• Phone Home › Control › PC settings: switch the PC between light and dark theme, and turn its Night light, Wi-Fi, Bluetooth, Do not disturb and the PC hotspot on or off from the phone. (Do not disturb is Windows' Notifications switch; if banners still show, check whether it needs Explorer restarted on your Windows build)
+• Phone Home › From your PC: the PC's own notifications (not the phone's ones Linc shows on the PC), newest first, with ✕ to dismiss each on the PC and Clear all. Windows asks once on the PC (tap "Ask on the PC", or PC Settings › Allow). Off switches on both: PC Settings › "Send this PC's notifications to the phone", phone Settings › The PC's notifications
+• Phone Home › PC quick tiles: the PC's quick settings plus Lock, Show desktop, Snip, Task view, Send PC clipboard and Open Linc as tiles; a tap runs it on the PC and the tile shows what Windows did. Needs the new Linc on both; an older PC says so
 • Phone: a Linc tile in Quick Settings, lit while Linc runs and showing your PC when linked; tap to start or stop Linc
 • Linc Bubble: clicking anywhere else folds it back into the bubble
 • Clipboard really on its own: Android only lets Linc watch for copies after you allow "access all device logs", and it only asks while Linc is on screen. Linc now asks when you open it; allow it once and copies go both ways with no Sync button
