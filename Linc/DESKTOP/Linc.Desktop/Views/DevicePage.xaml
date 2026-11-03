@@ -524,6 +524,20 @@
                                 </ComboBox>
                                 <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
                                            Text="One of them plays, so there's no echo. To hear it on both, use Play everywhere." />
+                                <!-- 2026-11-03: the phone's buttons beside the mirror, and the bars' colour; both apply at once -->
+                                <ComboBox Header="Phone buttons beside the mirror" HorizontalAlignment="Stretch" SelectedIndex="{x:Bind Mirror.ControlStripIndex, Mode=TwoWay}">
+                                    <x:String>On the right</x:String>
+                                    <x:String>On the left</x:String>
+                                    <x:String>Off</x:String>
+                                </ComboBox>
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Text="Back, Home, Recents, swipes, volume, rotate, screenshot, lock, notifications and typing, in a strip that follows the mirror window, so gesture navigation needs no change on the phone." />
+                                <ComboBox Header="Bars beside the picture" HorizontalAlignment="Stretch" SelectedIndex="{x:Bind Mirror.BarColourIndex, Mode=TwoWay}">
+                                    <x:String>Black</x:String>
+                                    <x:String>White</x:String>
+                                </ComboBox>
+                                <TextBlock views:Explain.IsHelp="True" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                           Text="Linc shapes the mirror window to the picture, so there's nothing beside it. Maximised or full screen, the space left over takes this colour." />
                                 <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
                                            Text="Screen shape and sound apply the next time mirroring starts." />
 

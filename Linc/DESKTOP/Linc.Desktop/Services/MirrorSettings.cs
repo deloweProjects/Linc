@@ -39,10 +39,23 @@ public sealed record MirrorSettings(
     /// <see cref="ShapeMonitor"/> resizes the phone's display to this PC's monitor resolution
     /// for the session and opens the mirror full screen, so landscape fills the monitor with no
     /// black bars; <see cref="ShapeMonitorLandscape"/> also turns the phone sideways.</summary>
-    string? ScreenShape = null)
+    string? ScreenShape = null,
+    /// <summary>2026-11-03: the phone's buttons (Back, Home, Recents, swipes, volume...) in a strip
+    /// beside the mirror window. The owner: "my phone has swipe gestures for nav so it's so hard to
+    /// get around, there should be the nav buttons next to it". <c>null</c> = on the right (on by
+    /// default), <see cref="StripLeft"/>, or <see cref="StripOff"/>. Changes apply at once.</summary>
+    string? ControlStrip = null,
+    /// <summary>2026-11-03: the colour of the bars beside the picture where the window can't be
+    /// fitted to it (maximised, full screen). The owner: "add a setting so it's black or white".
+    /// <c>null</c> = black, or <see cref="BarsWhite"/>. scrcpy has no colour option, so Linc lays
+    /// its own click-through panels over the bars.</summary>
+    string? BarColour = null)
 {
     public const string ShapeMonitor = "monitor";
     public const string ShapeMonitorLandscape = "monitor-landscape";
+    public const string StripLeft = "left";
+    public const string StripOff = "off";
+    public const string BarsWhite = "white";
 
     /// <summary>A method, not a property, so it never lands in the saved settings JSON.</summary>
     public bool FillsMonitor() => ScreenShape is ShapeMonitor or ShapeMonitorLandscape;

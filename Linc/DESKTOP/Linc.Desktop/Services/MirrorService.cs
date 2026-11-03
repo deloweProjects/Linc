@@ -24,6 +24,16 @@ public interface IMirrorService : IDisposable
     /// <summary>May fire on background threads.</summary>
     event Action<string>? ErrorRaised;
 
+    /// <summary>The running scrcpy's process id (it changes when a crashed session restarts); null when stopped.</summary>
+    int? ProcessId { get; }
+
+    /// <summary>The phone picture's size in the mirror, from scrcpy's "Texture: WxH" line (at the
+    /// start and on every rotation); null until the first frame.</summary>
+    (int Width, int Height)? PictureSize { get; }
+
+    /// <summary>The picture changed size or shape (a rotation). May fire on background threads.</summary>
+    event Action? PictureSizeChanged;
+
     Task StartAsync(string serial, string windowTitle, MirrorSettings settings);
     Task StopAsync();
 
@@ -53,6 +63,20 @@ public sealed class MirrorService(ILogService log) : IMirrorService
 
     public event Action? StateChanged;
     public event Action<string>? ErrorRaised;
+    public event Action? PictureSizeChanged;
+
+    public int? ProcessId
+    {
+        get
+        {
+            lock (_lock)
+            {
+                try { return _process?.Id; } catch (InvalidOperationException) { return null; }
+            }
+        }
+    }
+
+    public (int Width, int Height)? PictureSize { get; private set; }
 
     private readonly object _lock = new();
     // StateChanged / ErrorRaised decided under _lock are queued here and raised once it is let go
@@ -208,6 +232,7 @@ public sealed class MirrorService(ILogService log) : IMirrorService
             startInfo.ArgumentList.Add("--audio-dup");
         }
 
+        PictureSize = null;
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.Exited += (_, _) => OnProcessExited(process);
         // scrcpy's own lines (renderer, encoder, audio warnings) go to Linc's log, so a stutter or
@@ -395,6 +420,13 @@ public sealed class MirrorService(ILogService log) : IMirrorService
         if (!string.IsNullOrWhiteSpace(line))
         {
             log.Log(line.Contains("ERROR", StringComparison.Ordinal) ? LogLevel.Warn : LogLevel.Info, $"scrcpy: {line.Trim()}");
+            // The phone buttons beside the mirror fit the window to the picture by this.
+            var (w, h) = MirrorStripLayout.ParseTexture(line);
+            if (w > 0 && PictureSize != (w, h))
+            {
+                PictureSize = (w, h);
+                PictureSizeChanged?.Invoke();
+            }
         }
     }
 

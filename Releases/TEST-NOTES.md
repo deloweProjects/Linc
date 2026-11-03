@@ -1,4 +1,5 @@
 # What's new in the current test release (shown in the Telegram post; plain lines, no headings below)
+• Phone buttons beside the mirror (Device › Phone buttons beside the mirror: right, left or off): Back, Home, Recents, swipe up/down/left/right, volume, rotate, notifications, screenshot, typing, phone screen off and power, in a strip that follows the mirror window, never takes the keyboard from it and hides when it's minimised. The mirror window now keeps the picture's shape after you resize it, so there are no side bars; maximised or full screen, the bars are black or white (Bars beside the picture)
 • Phone: a Linc tile in Quick Settings, lit while Linc runs and showing your PC when linked; tap to start or stop Linc
 • Linc Bubble: clicking anywhere else folds it back into the bubble
 • Clipboard really on its own: Android only lets Linc watch for copies after you allow "access all device logs", and it only asks while Linc is on screen. Linc now asks when you open it; allow it once and copies go both ways with no Sync button

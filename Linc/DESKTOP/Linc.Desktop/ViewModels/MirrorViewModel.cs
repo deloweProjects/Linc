@@ -109,6 +109,18 @@ public partial class MirrorViewModel : ObservableObject
             OnPropertyChanged(nameof(SoundIndex));
         }
         OnPropertyChanged(nameof(SoundOnPc));
+        var strip = StripToIndex(s.ControlStrip);
+        if (strip != _controlStripIndex)
+        {
+            _controlStripIndex = strip;
+            OnPropertyChanged(nameof(ControlStripIndex));
+        }
+        var bars = s.BarColour == MirrorSettings.BarsWhite ? 1 : 0;
+        if (bars != _barColourIndex)
+        {
+            _barColourIndex = bars;
+            OnPropertyChanged(nameof(BarColourIndex));
+        }
     }
 
     // ---- 1.0.0.18: screen shape and phone sound, on the card itself (saved as they change) ----
@@ -171,6 +183,55 @@ public partial class MirrorViewModel : ObservableObject
 
     /// <summary>The phone's sound plays on this PC (the audio source and bit rate apply).</summary>
     public bool SoundOnPc => _registry.Mirror.AudioEnabled;
+
+    // ---- 2026-11-03: the phone's buttons beside the mirror, and the bars' colour (apply at once) ----
+
+    private static int StripToIndex(string? strip) => strip switch
+    {
+        MirrorSettings.StripLeft => 1,
+        MirrorSettings.StripOff => 2,
+        _ => 0,
+    };
+
+    private int _controlStripIndex;
+
+    /// <summary>0 = buttons on the right of the mirror, 1 = on the left, 2 = off.</summary>
+    public int ControlStripIndex
+    {
+        get => _controlStripIndex;
+        set
+        {
+            if (value < 0 || value > 2 || !SetProperty(ref _controlStripIndex, value))
+            {
+                return;
+            }
+            _registry.SaveMirror(_registry.Mirror with
+            {
+                ControlStrip = value switch
+                {
+                    1 => MirrorSettings.StripLeft,
+                    2 => MirrorSettings.StripOff,
+                    _ => null,
+                },
+            });
+        }
+    }
+
+    private int _barColourIndex;
+
+    /// <summary>0 = black bars, 1 = white.</summary>
+    public int BarColourIndex
+    {
+        get => _barColourIndex;
+        set
+        {
+            if (value < 0 || value > 1 || !SetProperty(ref _barColourIndex, value))
+            {
+                return;
+            }
+            _registry.SaveMirror(_registry.Mirror with { BarColour = value == 1 ? MirrorSettings.BarsWhite : null });
+        }
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
