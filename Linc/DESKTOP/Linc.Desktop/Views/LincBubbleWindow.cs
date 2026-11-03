@@ -35,7 +35,7 @@ namespace Linc.Desktop.Views;
 /// The window is a fixed transparent canvas that never takes focus; a window region follows the
 /// shape every frame, so nothing square ever shows and clicks outside the shape go to the app below.
 /// </summary>
-public sealed class LincBubbleWindow : Window
+public sealed partial class LincBubbleWindow : Window
 {
     // Settings › Appearance › Bubble size (owner, 2026-11-02: "make it smaller ... allow to reduce its size").
     private double BubbleSize;
@@ -51,13 +51,14 @@ public sealed class LincBubbleWindow : Window
     private const double Margin = 10;
     // Room past the card for its spring overshoot: a card wider than the window for a moment showed its cut edge as a white line.
     private const double CanvasWidth = CardWidth + Margin * 2 + 48;
-    private const double CanvasHeight = 420;
+    // Tall enough for the bubble's own pages (notifications, clipboard, share, files) as well.
+    private const double CanvasHeight = 560;
 
     private static readonly TimeSpan PillShows = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LeaveGrace = TimeSpan.FromMilliseconds(1300);
     private static readonly TimeSpan TuckAfter = TimeSpan.FromSeconds(4);
 
-    private enum Shape { Bubble, Pill, Card, Panel }
+    private enum Shape { Bubble, Pill, Card, Panel, Mini }
 
     private sealed record Place(bool Right, double YFraction);
 
@@ -124,9 +125,10 @@ public sealed class LincBubbleWindow : Window
     private (double W, double H, double X, double Y)? _lastRegion;
     private string? _cardKey;
 
-    public LincBubbleWindow(bool preview = false)
+    public LincBubbleWindow(bool preview = false, BubbleSources? sources = null)
     {
         _preview = preview;
+        _src = sources ?? BubbleSources.Live();
         _supervisor = preview ? null : App.Services.GetService<IConnectionSupervisor>();
         Title = "Linc Bubble";
         _place = preview ? new Place(true, 0.35) : LoadPlace();
@@ -153,8 +155,8 @@ public sealed class LincBubbleWindow : Window
         _leaveTimer.Tick += (_, _) =>
         {
             _leaveTimer.Stop();
-            if (_pointerOver || _shown?.AutoExpand == true) return;
-            if (_shape is Shape.Pill or Shape.Card or Shape.Panel) SetShape(Shape.Bubble);
+            if (_pointerOver || _typing || _holdOpen || _shown?.AutoExpand == true) return;
+            if (_shape is Shape.Pill or Shape.Card or Shape.Panel or Shape.Mini) SetShape(Shape.Bubble);
         };
         _tuckTimer.Tick += (_, _) =>
         {
@@ -165,8 +167,10 @@ public sealed class LincBubbleWindow : Window
         _registry.AppearanceChanged += OnLookChanged;
         if (_supervisor is not null) _supervisor.StateChanged += OnLinkChanged;
         CompositionTarget.Rendering += FollowShape;
+        WireMini();
         Closed += (_, _) =>
         {
+            UnwireMini();
             _live.Changed -= OnLiveChanged;
             _registry.AppearanceChanged -= OnLookChanged;
             if (_supervisor is not null) _supervisor.StateChanged -= OnLinkChanged;
@@ -249,6 +253,7 @@ public sealed class LincBubbleWindow : Window
         faces.Children.Add(_pillFace);
         faces.Children.Add(_cardFace);
         faces.Children.Add(_panelFace);
+        faces.Children.Add(_miniFace);
         faces.Children.Add(_bubbleFace);
         _cardFace.RenderTransform = _cardZoom;
         _panelFace.RenderTransform = _panelZoom;
@@ -349,6 +354,9 @@ public sealed class LincBubbleWindow : Window
         // activity never stands between you and the shortcuts (owner, 2026-11-03: "I'm mirroring,
         // it shows the mirror expand and I can't get to the quick actions").
         _panelFace.Children.Add(_liveRows);
+        // The phone's notifications, whole and answerable here (owner, 2026-11-03: "I want to see
+        // the message and even type a reply from the bubble").
+        _panelFace.Children.Add(BuildNoteRow());
 
         for (int c = 0; c < 4; c++) _tileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         BuildTiles();
@@ -411,19 +419,19 @@ public sealed class LincBubbleWindow : Window
     /// <summary>Every shortcut the bubble offers; the owner picks which show, in this order.</summary>
     private IReadOnlyList<Shortcut> AllShortcuts()
     {
-        var main = App.MainWindowInstance as MainWindow;
+        // Clipboard, Files and Share open the bubble's own small pages, each with "Open in Linc".
         return
         [
-            new("\uE80F", "Open Linc", () => main?.ShowPage(null), true),
+            new("\uE80F", "Open Linc", () => OpenInLinc(null), true),
             new("\uE7F4", "Mirror", () => Home()?.StartMirrorCommand.Execute(null), false),
             new("\uEA8F", "Ring", () => Home()?.RingPhoneCommand.Execute(null), false),
             new("\uE722", "Screenshot", () => Home()?.PullScreenshotCommand.Execute(null), false),
-            new("\uE77F", "Clipboard", () => main?.SendClipboardToPhone(), false),
-            new("\uE8B7", "Files", () => main?.ShowPage("Files"), true),
-            new("\uE72D", "Share", () => main?.ShowPage("Share"), true),
+            new("\uE77F", "Clipboard", () => OpenMini(MiniPage.Clipboard), false),
+            new("\uE8B7", "Files", () => OpenMini(MiniPage.Files), false),
+            new("\uE72D", "Share", () => OpenMini(MiniPage.Share), false),
             new("\uE704", "Hotspot", () => _ = ToggleHotspotAsync(), false),
-            new("\uE8EA", "Device", () => main?.ShowPage("Device"), true),
-            new("\uE90F", "Tools", () => main?.ShowPage("Tools"), true),
+            new("\uE8EA", "Device", () => OpenInLinc("Device"), true),
+            new("\uE90F", "Tools", () => OpenInLinc("Tools"), true),
         ];
     }
 
@@ -464,8 +472,7 @@ public sealed class LincBubbleWindow : Window
                     return;
                 }
                 try { shortcut.Run(); } catch (Exception) { /* the feature reports its own failures */ }
-                if (shortcut.OpensLinc) SetShape(Shape.Bubble);
-                else RefreshLink(); // e.g. the hotspot tile's colour
+                if (!shortcut.OpensLinc) RefreshLink(); // e.g. the hotspot tile's colour (OpenInLinc folds the bubble)
             });
             if (_editing && !on) tile.Opacity = 0.45;
             if (shortcut.Label == "Hotspot") _hotspotTile = tile;
@@ -519,6 +526,11 @@ public sealed class LincBubbleWindow : Window
             var activity = a;
             button.Click += (_, _) =>
             {
+                if (activity.Kind == LiveActivityKind.Notification)
+                {
+                    OpenNotification(activity);
+                    return;
+                }
                 FillCard(activity);
                 SetShape(Shape.Card);
             };
@@ -656,7 +668,7 @@ public sealed class LincBubbleWindow : Window
         {
             _lastNotificationPop = DateTimeOffset.UtcNow;
         }
-        if (attention && _shape is Shape.Card or Shape.Panel && !_pointerOver)
+        if (attention && _shape is Shape.Card or Shape.Panel or Shape.Mini && !_pointerOver)
         {
             _peekPending = true; // shown as a pill once the open card closes
         }
@@ -796,6 +808,7 @@ public sealed class LincBubbleWindow : Window
         {
             return;
         }
+        if (_shape == Shape.Mini) LeftMini();
         _shape = shape;
         Dress();
         if (shape != Shape.Bubble && _tucked) Tuck(false);
@@ -805,6 +818,7 @@ public sealed class LincBubbleWindow : Window
         {
             RefreshLink();
             FillLiveRows();
+            RefreshNoteRow();
         }
         Resize(animate: true);
         if (shape == Shape.Bubble) ArmTuck(); else _tuckTimer.Stop();
@@ -814,7 +828,7 @@ public sealed class LincBubbleWindow : Window
             PeekSoon();
         }
         // Opened and never touched (a click and away, or opened by itself): it still closes.
-        if (shape is Shape.Card or Shape.Panel && !_pointerOver && _shown?.AutoExpand != true)
+        if (shape is Shape.Card or Shape.Panel or Shape.Mini && !_pointerOver && _shown?.AutoExpand != true)
         {
             _leaveTimer.Interval = TimeSpan.FromSeconds(8);
             _leaveTimer.Start();
@@ -907,6 +921,29 @@ public sealed class LincBubbleWindow : Window
     /// <summary>The preview's stand-in for a click: open the card (something live) or the shortcuts.</summary>
     internal void PreviewClick() => SetShape(Shape.Panel);
 
+    /// <summary>The preview opens one of the bubble's pages: notifications (WhatsApp's newest opened, replying with <paramref name="reply"/>), clipboard, share or files.</summary>
+    internal void PreviewPage(string page, bool reply = false, bool hold = false)
+    {
+        _holdOpen = hold; // stays open for a screenshot
+        switch (page)
+        {
+            case "clipboard": OpenMini(MiniPage.Clipboard); break;
+            case "share": OpenMini(MiniPage.Share); break;
+            case "files": OpenMini(MiniPage.Files); break;
+            case "panel": SetShape(Shape.Panel); break;
+            default:
+                OpenMini(MiniPage.Notifications, _src.Notifications.Items.FirstOrDefault()?.Key);
+                if (reply)
+                {
+                    _replyOpen = true;
+                    _replyDraft = "On my way, 10 min";
+                    BuildMini();
+                    Resize(animate: true);
+                }
+                break;
+        }
+    }
+
     /// <summary>The shell's size for the shape, then a morph to it, faces crossfading on the way.</summary>
     private void Resize(bool animate)
     {
@@ -934,6 +971,13 @@ public sealed class LincBubbleWindow : Window
                 width = CardWidth;
                 height = Math.Ceiling(_panelFace.DesiredSize.Height) + 2;
                 break;
+            case Shape.Mini:
+                _miniFace.Visibility = Visibility.Visible;
+                _miniFace.Width = CardWidth;
+                _miniFace.Measure(new Windows.Foundation.Size(CardWidth, double.PositiveInfinity));
+                width = CardWidth;
+                height = Math.Min(Math.Ceiling(_miniFace.DesiredSize.Height) + 2, CanvasHeight - Margin * 2);
+                break;
             default:
                 width = _tucked ? TabWidth : BubbleSize;
                 height = _tucked ? TabHeight : BubbleSize;
@@ -944,10 +988,12 @@ public sealed class LincBubbleWindow : Window
         Fade(_pillFace, _shape == Shape.Pill ? 1 : 0, animate);
         Fade(_cardFace, _shape == Shape.Card ? 1 : 0, animate, () => { if (_shape != Shape.Card) _cardFace.Visibility = Visibility.Collapsed; }, _cardZoom);
         Fade(_panelFace, _shape == Shape.Panel ? 1 : 0, animate, () => { if (_shape != Shape.Panel) _panelFace.Visibility = Visibility.Collapsed; }, _panelZoom);
+        Fade(_miniFace, _shape == Shape.Mini ? 1 : 0, animate, () => { if (_shape != Shape.Mini) _miniFace.Visibility = Visibility.Collapsed; }, _miniZoom);
         _bubbleFace.IsHitTestVisible = _shape == Shape.Bubble;
         _pillFace.IsHitTestVisible = _shape == Shape.Pill;
         _cardFace.IsHitTestVisible = _shape == Shape.Card;
         _panelFace.IsHitTestVisible = _shape == Shape.Panel;
+        _miniFace.IsHitTestVisible = _shape == Shape.Mini;
         if (_shape == Shape.Pill && animate) SlideFace();
         Morph(width, height, animate);
     }
@@ -1067,14 +1113,14 @@ public sealed class LincBubbleWindow : Window
     /// Open and a click lands anywhere else on the screen: fold back into the bubble (owner,
     /// 2026-11-03: "when I hover away from the bubble and click elsewhere, hide it"). The bubble
     /// never takes focus, so it can't hear the click itself; it looks at the mouse button each frame.
-    /// A ringing call's card stays.
+    /// A ringing call's card stays, and so does a page being typed in (a reply) or picking a file.
     /// </summary>
     private void CloseOnClickElsewhere()
     {
         var down = (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0; // VK_LBUTTON, VK_RBUTTON
         var pressedNow = down && !_mouseWasDown;
         _mouseWasDown = down;
-        if (!pressedNow || _shape == Shape.Bubble || _pointerOver || _shown?.AutoExpand == true || _preview) return;
+        if (!pressedNow || _shape == Shape.Bubble || _pointerOver || _typing || _holdOpen || _shown?.AutoExpand == true || _preview) return;
         SetShape(Shape.Bubble);
     }
 
@@ -1133,6 +1179,7 @@ public sealed class LincBubbleWindow : Window
         var corner = new Windows.Foundation.Point(_place.Right ? 1 : 0, _growUp ? 1 : 0);
         _cardFace.RenderTransformOrigin = corner;
         _panelFace.RenderTransformOrigin = corner;
+        _miniFace.RenderTransformOrigin = corner;
         _slideTarget = null;
         AppWindow.MoveAndResize(new RectInt32(x, y, size.Width, size.Height));
         StayOnTop();
@@ -1176,8 +1223,8 @@ public sealed class LincBubbleWindow : Window
 
     private void OnPressed(object sender, PointerRoutedEventArgs e)
     {
-        // Buttons inside the card and the panel take their own clicks.
-        if (_shape is Shape.Card or Shape.Panel) return;
+        // Buttons inside the card, the panel and the pages take their own clicks.
+        if (_shape is Shape.Card or Shape.Panel or Shape.Mini) return;
         _pressed = true;
         _dragged = false;
         GetCursorPos(out _pressCursor);
@@ -1211,8 +1258,11 @@ public sealed class LincBubbleWindow : Window
         Squeeze(1);
         if (!_dragged)
         {
-            // A click: the card when something is live, the shortcuts when not.
-            SetShape(_shape == Shape.Pill && _shown is not null ? Shape.Card : Shape.Panel);
+            // A click: the card when something is live, the shortcuts when not; a notification
+            // opens to the message itself (owner, 2026-11-03: "I click, I just see 'WhatsApp has
+            // 30 notifications', nah, I want to see the message").
+            if (_shape == Shape.Pill && _shown is { Kind: LiveActivityKind.Notification } note) OpenNotification(note);
+            else SetShape(_shape == Shape.Pill && _shown is not null ? Shape.Card : Shape.Panel);
             return;
         }
         // Snap to the nearer side, keep the height.
@@ -1415,9 +1465,34 @@ public static class LincBubbleHost
     {
         var live = App.Services.GetRequiredService<ILiveActivityService>();
         live.Start();
-        var window = new LincBubbleWindow(preview: true);
+        var window = new LincBubbleWindow(preview: true, LincBubblePreview.Sources());
         window.ShowQuietly();
         var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        // `--bubble-page notifications|reply|clipboard|share|files|panel`: open that page and keep it
+        // open (no loop), to look at one page or screenshot it.
+        var args = Environment.GetCommandLineArgs();
+        var at = Array.FindIndex(args, a => string.Equals(a, "--bubble-page", StringComparison.OrdinalIgnoreCase));
+        if (at >= 0 && at + 1 < args.Length)
+        {
+            var page = args[at + 1].ToLowerInvariant();
+            var once = dispatcher.CreateTimer();
+            once.Interval = TimeSpan.FromSeconds(1.5);
+            once.IsRepeating = false;
+            _previewTimer = once;
+            once.Tick += (_, _) =>
+            {
+                try
+                {
+                    window.PreviewPage(page == "reply" ? "notifications" : page, reply: page == "reply", hold: true);
+                }
+                catch (Exception ex)
+                {
+                    File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "linc-bubble-preview.txt"), ex + Environment.NewLine);
+                }
+            };
+            once.Start();
+            return;
+        }
         var step = 0;
         var timer = dispatcher.CreateTimer();
         timer.Interval = TimeSpan.FromSeconds(7);
@@ -1425,8 +1500,20 @@ public static class LincBubbleHost
         _previewTimer = timer; // held: an unreferenced timer is collected and stops
         timer.Tick += (_, _) =>
         {
-            switch (step++ % 9)
+            switch (step++ % 13)
             {
+                case 9:
+                    window.PreviewPage("notifications"); // the WhatsApp message itself
+                    break;
+                case 10:
+                    window.PreviewPage("notifications", reply: true);
+                    break;
+                case 11:
+                    window.PreviewPage("clipboard");
+                    break;
+                case 12:
+                    window.PreviewPage("files");
+                    break;
                 case 6:
                     live.Post(new LiveActivity("notification", LiveActivityKind.Notification, "", "Thandi", "Are we still meeting at 3? I'm at the library", "WhatsApp", null,
                         [new LiveAction("Mark as read", () => { }), new LiveAction("Reply", () => { }), new LiveAction("Dismiss", () => { })]));
