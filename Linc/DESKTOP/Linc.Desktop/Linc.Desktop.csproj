@@ -88,6 +88,15 @@
     <AssemblyMetadata Include="LincTestName" Value="$(LincTestName)" />
   </ItemGroup>
 
+  <!-- Settings › About › What's new (Services/ReleaseNotes.cs): the notes as they were when this
+       build was made. Both files are a few tens of KB; a checkout without them still builds. -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\..\..\Releases\RELEASE-NOTES.md" LogicalName="Linc.ReleaseNotes.md"
+                      Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\Releases\RELEASE-NOTES.md')" Link="Releases\RELEASE-NOTES.md" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\..\..\Releases\TEST-NOTES.md" LogicalName="Linc.TestNotes.md"
+                      Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\Releases\TEST-NOTES.md')" Link="Releases\TEST-NOTES.md" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AdvancedSharpAdbClient" Version="3.6.16" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings › Clipboard: sync, and clipboard history (D-083: on by default, 500 items per phone). -->
+<UserControl
+    x:Class="Linc.Desktop.Views.Settings.ClipboardSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:Linc.Desktop.Views.Settings">
+
+    <StackPanel>
+        <s:SettingsGroup Title="Sync" Keywords="copy paste">
+            <s:SettingRow Header="Clipboard sync" Keywords="copy paste both ways"
+                          Description="Phone → PC works while Linc is open on the phone (an Android limit).">
+                <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.ClipboardSyncEnabled, Mode=TwoWay}" />
+            </s:SettingRow>
+        </s:SettingsGroup>
+
+        <s:SettingsGroup Title="History" Keywords="clips saved">
+            <s:SettingRow Header="Keep history" Keywords="clipboard history private password"
+                          Description="Saved on this PC, per phone. Off: clips still sync but aren't kept. Copies Windows marks as private (password managers) are never kept or sent.">
+                <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.ClipboardHistoryEnabled, Mode=TwoWay}" />
+            </s:SettingRow>
+            <s:SettingRow Header="History size" Keywords="items 100 500 2000">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <RadioButton Content="100" MinWidth="0" GroupName="ClipboardSize" IsChecked="{x:Bind ViewModel.IsClipboard100, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.ClipboardHistoryEnabled, Mode=OneWay}" />
+                    <RadioButton Content="500" MinWidth="0" GroupName="ClipboardSize" IsChecked="{x:Bind ViewModel.IsClipboard500, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.ClipboardHistoryEnabled, Mode=OneWay}" />
+                    <RadioButton Content="2,000" MinWidth="0" GroupName="ClipboardSize" IsChecked="{x:Bind ViewModel.IsClipboard2000, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.ClipboardHistoryEnabled, Mode=OneWay}" />
+                </StackPanel>
+            </s:SettingRow>
+        </s:SettingsGroup>
+    </StackPanel>
+</UserControl>

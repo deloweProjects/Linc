@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings › Mirror and sound: Mirror PC's encoder (D-087) and the phone as this PC's microphone
+     (D-071). The phone-screen mirror's own options stay on Device, beside the mirror. -->
+<UserControl
+    x:Class="Linc.Desktop.Views.Settings.MirrorSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:Linc.Desktop.Views.Settings">
+
+    <StackPanel>
+        <s:SettingsGroup Title="Mirror PC" Keywords="screen cast encoder video">
+            <s:SettingRow Header="Use software encoding" Keywords="cpu gpu hardware freeze"
+                          Description="Turn on if Mirror PC won't start or freezes. Uses more CPU, but works on any PC. Linc already switches by itself when the graphics chip's encoder fails.">
+                <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.ForceSoftwareEncoding, Mode=TwoWay}" />
+            </s:SettingRow>
+            <s:SettingRow Header="Phone screen on this PC" IsHelp="False" Keywords="scrcpy sound shape fill"
+                          Description="The phone mirror's own settings (sound, screen shape, quality) are on the Device page, beside the mirror.">
+                <Button Content="Open Device" Click="OnOpenDeviceClick" />
+            </s:SettingRow>
+        </s:SettingsGroup>
+
+        <s:SettingsGroup Title="Phone as microphone" Keywords="voice access mic vb-cable audio"
+                         Description="Windows Voice Access can hear you through your phone. Windows only accepts a microphone a driver provides, so Linc sets up VB-CABLE, VB-Audio's free virtual audio cable, downloaded from vb-audio.com. Your own microphone stays the default except while the phone is in use.">
+            <s:SettingRow Header="Virtual cable (VB-CABLE)" Keywords="driver install remove">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="CableInstallButton" Content="Set up" Click="OnCableInstallClick" />
+                    <Button x:Name="CableRemoveButton" Content="Remove" Click="OnCableRemoveClick" />
+                </StackPanel>
+                <s:SettingRow.Below>
+                    <TextBlock x:Name="CableStatus" Style="{StaticResource BodyText}" FontSize="13" />
+                </s:SettingRow.Below>
+            </s:SettingRow>
+        </s:SettingsGroup>
+    </StackPanel>
+</UserControl>

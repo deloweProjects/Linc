@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings › Startup and tray (M12e: start with Windows is opt-in, default OFF). -->
+<UserControl
+    x:Class="Linc.Desktop.Views.Settings.StartupSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:Linc.Desktop.Views.Settings">
+
+    <StackPanel>
+        <s:SettingsGroup Title="Startup" Keywords="boot login sign in windows autostart">
+            <s:SettingRow Header="Start Linc when I sign in" Keywords="startup run windows"
+                          Description="Linc opens quietly in the notification area.">
+                <ToggleSwitch OnContent="On" OffContent="Off" IsOn="{x:Bind ViewModel.StartWithWindows, Mode=TwoWay}" />
+            </s:SettingRow>
+        </s:SettingsGroup>
+
+        <s:SettingsGroup Title="Tray" Keywords="notification area system tray icon close">
+            <s:SettingRow Header="Linc stays in the tray" Keywords="background minimise close window quit"
+                          Description="Closing the window leaves Linc in the notification area, so the phone stays linked. Right-click its icon to send files or the clipboard, Quick Share, switch the Linc Bubble on or off, or pause Linc." />
+        </s:SettingsGroup>
+    </StackPanel>
+</UserControl>

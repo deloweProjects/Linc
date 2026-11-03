@@ -1,4 +1,5 @@
 # What's new in the current test release (shown in the Telegram post; plain lines, no headings below)
+• PC Settings, redone: a home of cards (Connection, Finding your phone, Phones, Appearance, Mirror and sound, Notifications, Clipboard, Startup and tray, Advanced), each saying how it's set and opening its own page; a Find a setting box (Ctrl+F) that finds any setting by name across all of them; Esc or the mouse's back button goes back. About is a proper page: the Linc mark, version and channel (the test build number on a test build), Check for updates, the phone's Linc version, what's new in this build, links (Telegram, GitHub, report a problem), what Linc is built with and their licences, and Copy diagnostic info for bug reports
 • Phone: a Linc tile in Quick Settings, lit while Linc runs and showing your PC when linked; tap to start or stop Linc
 • Linc Bubble: clicking anywhere else folds it back into the bubble
 • Clipboard really on its own: Android only lets Linc watch for copies after you allow "access all device logs", and it only asks while Linc is on screen. Linc now asks when you open it; allow it once and copies go both ways with no Sync button

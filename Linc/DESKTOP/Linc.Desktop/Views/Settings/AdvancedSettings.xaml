@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings › Advanced: ADB status, the shell box (D-009: the one place Linc runs raw ADB, per
+     explicit request) and the log files. -->
+<UserControl
+    x:Class="Linc.Desktop.Views.Settings.AdvancedSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Linc.Desktop.ViewModels"
+    xmlns:s="using:Linc.Desktop.Views.Settings">
+
+    <StackPanel>
+        <s:SettingsGroup Title="ADB" Keywords="android debug bridge developer linc-adb server">
+            <s:SettingRow Header="ADB server" IsHelp="False" Keywords="restart refresh path linc-adb"
+                          Description="{x:Bind ViewModel.AdbPathText, Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="20" Height="20" />
+                    <Button Content="Refresh" Command="{x:Bind ViewModel.RefreshDevicesCommand}" />
+                    <Button Content="Restart ADB server" Command="{x:Bind ViewModel.RestartAdbServerCommand}" />
+                </StackPanel>
+            </s:SettingRow>
+            <s:SettingRow Header="Devices ADB sees" Keywords="adb devices serial state">
+                <s:SettingRow.Below>
+                    <StackPanel Spacing="8">
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Devices}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:AdbDeviceVm">
+                                    <TextBlock Style="{StaticResource BodyText}" FontSize="13">
+                                        <Run Text="{x:Bind Serial}" FontFamily="Consolas" />
+                                        <Run Text=" — " />
+                                        <Run Text="{x:Bind State}" />
+                                        <Run Text=" — " />
+                                        <Run Text="{x:Bind Model}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Port forwards (connected device)" Style="{StaticResource BodyText}" FontSize="13" FontWeight="SemiBold"
+                                   Visibility="{x:Bind ViewModel.HasConnectedDevice, Mode=OneWay}" />
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Forwards}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ForwardVm">
+                                    <TextBlock FontFamily="Consolas" FontSize="13">
+                                        <Run Text="{x:Bind Local}" />
+                                        <Run Text=" → " />
+                                        <Run Text="{x:Bind Remote}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </s:SettingRow.Below>
+            </s:SettingRow>
+        </s:SettingsGroup>
+
+        <s:SettingsGroup Title="Run an ADB shell command" Keywords="terminal console dumpsys developer">
+            <s:SettingRow Header="Shell command" IsHelp="False" IsWarning="True" Keywords="adb shell run"
+                          Description="Runs directly on your phone via ADB shell. Powerful — mistakes here can affect your phone. Use with care.">
+                <s:SettingRow.Below>
+                    <StackPanel Spacing="8">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Style="{StaticResource ExpressiveTextBox}"
+                                     PlaceholderText="e.g. dumpsys battery"
+                                     AutomationProperties.Name="Shell command"
+                                     Text="{x:Bind ViewModel.ShellCommand, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{x:Bind ViewModel.HasConnectedDevice, Mode=OneWay}" />
+                            <Button Grid.Column="1" Content="Run" Style="{StaticResource FilledButton}" Padding="24,10"
+                                    Command="{x:Bind ViewModel.RunShellCommandCommand}"
+                                    IsEnabled="{x:Bind ViewModel.HasConnectedDevice, Mode=OneWay}" />
+                        </Grid>
+                        <Border Background="{ThemeResource SurfaceContainerBrush}" CornerRadius="{StaticResource ShapeLarge}"
+                                Padding="12" MinHeight="80" MaxHeight="240">
+                            <ScrollViewer>
+                                <TextBlock Text="{x:Bind ViewModel.ShellOutput, Mode=OneWay}" FontFamily="Consolas"
+                                           TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </s:SettingRow.Below>
+            </s:SettingRow>
+        </s:SettingsGroup>
+
+        <s:SettingsGroup Title="Logs" Keywords="log files debug diagnostics">
+            <s:SettingRow Header="Log files" Description="What Linc did, for when something goes wrong. The Logs page shows them live.">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Open log folder" Command="{x:Bind ViewModel.OpenLogFolderCommand}" />
+                    <Button Content="Clear logs" Command="{x:Bind ViewModel.ClearLogsCommand}" />
+                </StackPanel>
+            </s:SettingRow>
+        </s:SettingsGroup>
+    </StackPanel>
+</UserControl>

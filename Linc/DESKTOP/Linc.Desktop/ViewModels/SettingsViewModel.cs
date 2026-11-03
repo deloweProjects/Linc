@@ -118,6 +118,7 @@ public partial class SettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(IsPaused));
             OnPropertyChanged(nameof(OneAtATimeText));
             OnPropertyChanged(nameof(ShowOneAtATimeNote));
+            RaisePhoneAbout();
         });
 
         // Keep the Devices list in step with the tab strip: pairing, closing a tab and switching
@@ -125,6 +126,7 @@ public partial class SettingsViewModel : ObservableObject
         _registry.KnownDevicesChanged += () => _dispatcher.TryEnqueue(RebuildKnownDevices);
         _registry.ActiveDeviceChanged += () => _dispatcher.TryEnqueue(RebuildKnownDevices);
         RebuildKnownDevices();
+        FillNotes();
 
         _ = RefreshDevicesAsync();
     }
@@ -633,6 +635,7 @@ public partial class SettingsViewModel : ObservableObject
                 device, device.Serial == _registry.PairedSerial, ActivateDevice, vm => RemoveRequested?.Invoke(vm)));
         }
         OnPropertyChanged(nameof(HasKnownDevices));
+        OnPropertyChanged(nameof(HasNoKnownDevices));
     }
 
     /// <summary>Make a phone active from the list; un-hides its tab if it had been closed.</summary>

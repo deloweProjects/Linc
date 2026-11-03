@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings › Finding your phone (LincLink helpers, owner 2026-11-01): Bluetooth both ways, home
+     networks, and what the phone last said. The code-behind fills it (NearbyRules). -->
+<UserControl
+    x:Class="Linc.Desktop.Views.Settings.FindingSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:Linc.Desktop.Views.Settings">
+
+    <StackPanel>
+        <s:SettingsGroup Title="Bluetooth" Keywords="ble nearby presence"
+                         Description="The PC and the phone hear each other over Bluetooth and swap a few status clues (linked, Wi-Fi, hotspot), so they start looking for each other at once and the log says why they can't. Nothing else goes over Bluetooth. After 10 minutes with no phone, Linc looks less often to save power, and at full speed again the moment anything changes.">
+            <s:SettingRow Header="Bluetooth on this PC" Keywords="heard status">
+                <Button x:Name="NearbyBluetoothButton" Content="Turn Bluetooth on" Click="OnNearbyBluetoothClick" />
+                <s:SettingRow.Below>
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="NearbyBluetooth" Style="{StaticResource BodyText}" FontSize="13" />
+                        <TextBlock x:Name="NearbyPhone" Style="{StaticResource BodyText}" FontSize="13" Opacity="0.8" />
+                    </StackPanel>
+                </s:SettingRow.Below>
+            </s:SettingRow>
+        </s:SettingsGroup>
+
+        <s:SettingsGroup Title="Home" Keywords="network wifi place">
+            <s:SettingRow Header="Home networks" Keywords="mark this is home">
+                <Button x:Name="NearbyHomeButton" Content="This is home" Click="OnNearbyHomeClick" />
+                <s:SettingRow.Below>
+                    <TextBlock x:Name="NearbyHome" Style="{StaticResource BodyText}" FontSize="13" />
+                </s:SettingRow.Below>
+            </s:SettingRow>
+            <s:SettingRow Header="At home, turn Bluetooth on" IsHelp="False"
+                          Description="On this PC, and on the phone whenever the cable or wireless debugging reaches it. The phone can also ask you to turn its Bluetooth on at home (Linc on the phone › Settings › Finding your PC).">
+                <ToggleSwitch x:Name="NearbyBluetoothAtHome" OnContent="On" OffContent="Off" Toggled="OnNearbyBluetoothAtHomeToggled" />
+            </s:SettingRow>
+        </s:SettingsGroup>
+    </StackPanel>
+</UserControl>

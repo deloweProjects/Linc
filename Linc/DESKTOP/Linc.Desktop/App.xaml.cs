@@ -282,7 +282,14 @@ public partial class App : Application
                 RestoreAndExit();
                 return;
             }
-            _singleInstance = new System.Threading.Mutex(initiallyOwned: true, @"Local\LincDesktopSingleInstance", out var isFirst);
+            // A clean-room copy (--data-root) runs beside the installed Linc and leaves it alone: it
+            // neither takes over from it nor hands over to it, and doesn't answer Explorer (below).
+            // Before, a test copy opened beside the owner's asked the owner's to quit.
+            bool isFirst = true;
+            if (_parsedDataRoot is null)
+            {
+                _singleInstance = new System.Threading.Mutex(initiallyOwned: true, @"Local\LincDesktopSingleInstance", out isFirst);
+            }
             var quickSharePaths = QuickShare.QsShellIntegration.PathsFrom(Environment.GetCommandLineArgs());
             var phonePaths = QuickShare.QsShellIntegration.PathsFrom(
                 Environment.GetCommandLineArgs(), QuickShare.QsShellIntegration.PhoneArgument);
@@ -381,7 +388,7 @@ public partial class App : Application
             }
             var quickShare = Services.GetRequiredService<QuickShare.IQuickShareService>();
             var window = (MainWindow)_window;
-            QuickShare.QsShellIntegration.Listen(
+            if (_parsedDataRoot is null) QuickShare.QsShellIntegration.Listen(
                 (paths, toPhone) => window.DispatcherQueue.TryEnqueue(() =>
                 {
                     if (QuickShare.QsShellIntegration.IsQuit(paths))
@@ -415,7 +422,7 @@ public partial class App : Application
             }
             // 1.0.0.15: Explorer's right-click entries and Send to list are on unless the user turned
             // them off; an Explorer menu registered by an older Linc gains whatever it was missing.
-            try
+            if (_parsedDataRoot is null) try
             {
                 QuickShare.QsShellIntegration.EnableOnceByDefault(Environment.ProcessPath ?? "");
                 QuickShare.QsShellIntegration.UpgradeIfRegistered(Environment.ProcessPath ?? "");
